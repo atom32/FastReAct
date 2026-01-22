@@ -1,30 +1,33 @@
-# FastReAct 🔥
+# FastReAct
 
-> 超高性能ReACT框架 - 完全手搓，零依赖，速度最快
+> 一个轻量级的ReACT框架实现，适合学习和参考
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## ✨ 特性
 
-- 🚀 **极致性能** - 比LangChain快2-3倍
-- ⚡ **异步并发** - 工具调用可并发执行
-- 💾 **智能缓存** - LRU缓存自动管理
-- 🌊 **流式响应** - 降低首字延迟
-- 📦 **零抽象层** - 直接控制每个细节
-- 🛠️ **完全手搓** - 代码清晰，易于定制
-- 🔌 **易于扩展** - 插件式工具系统
+- 📚 **学习友好** - 代码简洁清晰，适合理解ReACT原理
+- ⚡ **异步支持** - 基于asyncio，支持并发工具调用
+- 💾 **内置缓存** - LRU缓存减少重复计算
+- 🌊 **流式响应** - 支持流式输出
+- 🛠️ **易于扩展** - 插件式工具系统
+- 📦 **轻量级** - 核心代码不到600行
 
-## 📊 性能对比
+## 🎯 项目定位
 
-| 框架 | 响应时间 | 吞吐量 | 内存占用 | 相对性能 |
-|------|---------|--------|---------|---------|
-| **FastReAct** | **3.2s** | **最高** | **45MB** | **⭐⭐⭐⭐⭐** |
-| AgentScope | 4.1s | 高 | 68MB | ⭐⭐⭐⭐ |
-| LangGraph | 5.1s | 中 | 95MB | ⭐⭐⭐ |
-| LangChain | 6.8s | 低 | 120MB | ⭐⭐ |
+这是一个**学习项目**，旨在展示如何从零实现一个ReACT框架。代码力求简洁清晰，方便理解ReACT的工作原理。
 
-**FastReAct比LangChain快112%！**
+**适用场景：**
+- 学习ReACT原理
+- 理解Agent框架设计
+- 作为项目参考实现
+- 轻量级应用原型
+
+**不推荐场景：**
+- 企业级生产环境（缺少完善的错误处理和监控）
+- 需要丰富工具生态的场景（工具库较少）
+- 需要可视化和调试的场景（暂无）
 
 ## 🚀 快速开始
 
@@ -32,11 +35,14 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/yourusername/FastReAct.git
+git clone https://github.com/atom32/FastReAct.git
 cd FastReAct
 
 # 安装依赖
 pip install -r requirements.txt
+
+# 或以可编辑模式安装
+pip install -e .
 ```
 
 ### 基础使用
@@ -114,11 +120,10 @@ python examples/05_custom_tools.py
 
 ## 📖 文档
 
-- [快速入门](docs/getting_started.md)
-- [高级用法](docs/advanced.md)
-- [API参考](docs/api.md)
-- [性能优化](docs/performance.md)
-- [工具开发](docs/tools.md)
+- [快速入门](docs/01_getting_started.md) - 如何快速开始
+- [示例代码](examples/) - 参考示例了解用法
+
+> 注意：文档正在完善中，欢迎贡献！
 
 ## 🧪 运行测试
 
@@ -133,39 +138,30 @@ pytest tests/benchmark.py -v
 pytest tests/ --cov=fastreact --cov-report=html
 ```
 
-## 🎯 核心优势
+## 🔧 技术特性
 
-### 1. 极致性能
-
-```python
-# FastReAct: 3.2s
-# LangChain: 6.8s
-# 性能提升: 112%
-```
-
-### 2. 异步并发
+### 1. 异步支持
 
 ```python
-# 自动并发执行多个工具
+# 基于asyncio实现异步工具调用
 tools = [search_tool, calculator, weather_tool]
-# 所有工具并发执行，不是串行
+# 可以并发执行多个工具
 ```
 
-### 3. 智能缓存
+### 2. 内置缓存
 
 ```python
-# 相同输入自动返回缓存结果
-# 缓存命中率可达30-50%
-result = react.run("搜索AI技术")  # 首次调用
-result = react.run("搜索AI技术")  # 从缓存读取
+# 使用LRU缓存减少重复调用
+react = FastReAct(tools=[...], enable_cache=True)
+# 相同输入会返回缓存结果
 ```
 
-### 4. 流式响应
+### 3. 流式输出
 
 ```python
-# 实时输出，降低首字延迟50%
+# 支持流式响应，实时返回结果
 await react.run_async(
-    query="分析市场趋势",
+    query="分析数据",
     stream_callback=lambda chunk: print(chunk, end="")
 )
 ```
@@ -175,10 +171,9 @@ await react.run_async(
 - `SearchTool` - 搜索工具
 - `CalculatorTool` - 计算器
 - `WeatherTool` - 天气查询
-- `DatabaseTool` - 数据库查询
 - `HTTPTOol` - HTTP请求
 
-详见 [内置工具文档](docs/tools.md)
+你可以轻松扩展自定义工具，详见示例代码。
 
 ## 📁 项目结构
 
@@ -209,7 +204,12 @@ FastReAct/
 
 ## 🤝 贡献
 
-欢迎贡献！请查看 [贡献指南](CONTRIBUTING.md)
+欢迎贡献！特别是：
+
+- 添加测试用例
+- 完善文档
+- 报告bug
+- 提出改进建议
 
 ## 📄 许可证
 
@@ -218,16 +218,14 @@ MIT License - 详见 [LICENSE](LICENSE)
 ## 🙏 致谢
 
 本项目从以下项目中获得灵感：
-- MiroFish - 高性能ReACT实现参考
+- MiroFish - ReACT实现参考
 - LangChain - Agent框架设计思路
 - AgentScope - 异步并发优化
 
 ## 📮 联系方式
 
-- 作者: Your Name
-- 邮箱: your.email@example.com
-- GitHub: https://github.com/yourusername/FastReAct
+- GitHub: https://github.com/atom32/FastReAct
 
 ---
 
-**Made with ❤️ for performance**
+**一个简洁的ReACT框架实现，适合学习和参考**

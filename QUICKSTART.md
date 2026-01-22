@@ -58,10 +58,10 @@ python examples/01_basic.py
 
 ## ✨ 核心特性
 
-### 1. 极致性能
-- 比LangChain快 **2-3倍**
-- 异步并发工具调用
-- 智能LRU缓存
+### 1. 轻量级
+- 核心代码不到600行
+- 依赖少，易于理解
+- 适合学习ReACT原理
 
 ### 2. 易于使用
 
@@ -121,7 +121,7 @@ python examples/03_custom_tools.py
 ### 1. 了解API
 阅读 `docs/01_getting_started.md` 了解详细API
 
-### 2. 性能优化
+### 2. 优化建议
 - 启用缓存: `enable_cache=True`
 - 调整并发: `max_concurrent_tools=5`
 - 使用流式: `enable_streaming=True`
@@ -142,20 +142,11 @@ react = FastReAct(
 result = await react.run_async(query)
 ```
 
-## 📊 性能对比
-
-| 框架 | 耗时 | 性能 |
-|------|------|------|
-| **FastReAct** | **3.2s** | ⭐⭐⭐⭐⭐ |
-| LangChain | 6.8s | ⭐⭐ |
-
-**FastReAct比LangChain快112%！**
-
 ## 🔗 相关链接
 
 - [完整文档](docs/01_getting_started.md)
 - [项目概览](PROJECT_OVERVIEW.md)
-- [GitHub Repository](https://github.com/yourusername/FastReAct)
+- [GitHub Repository](https://github.com/atom32/FastReAct)
 
 ## 💡 常见问题
 
@@ -181,4 +172,4 @@ react.clear_cache()
 
 ---
 
-**开始构建你的高性能ReACT应用吧！** 🎉
+**开始学习ReACT框架的实现吧！** 🎉

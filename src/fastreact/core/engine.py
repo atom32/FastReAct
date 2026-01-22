@@ -20,19 +20,14 @@ from ..core.cache import LRUCache
 
 class FastReAct:
     """
-    超高性能ReACT引擎
+    轻量级ReACT引擎
 
-    核心优化：
+    核心特性：
     1. 异步HTTP请求（并发工具调用）
-    2. 流式响应（减少首字延迟）
+    2. 流式响应（实时输出）
     3. 连接池复用（httpx.AsyncClient）
-    4. 智能LRU缓存
-    5. 最小化序列化开销
-
-    性能对比（5次迭代ReACT循环）：
-    - FastReAct: 3.2s
-    - LangChain: 6.8s
-    - 提升: 112%
+    4. LRU缓存（减少重复计算）
+    5. 简洁清晰的实现
     """
 
     def __init__(

@@ -2,25 +2,15 @@
 
 ## 🎯 项目简介
 
-FastReAct是一个超高性能的ReACT（Reasoning + Acting）框架，完全手搓实现，零依赖抽象层。
+FastReAct是一个轻量级的ReACT（Reasoning + Acting）框架实现，代码简洁清晰，适合学习和参考。
 
 ### 核心特性
 
-- 🚀 **极致性能** - 比LangChain快2-3倍
-- ⚡ **异步并发** - 工具调用可并发执行
-- 💾 **智能缓存** - LRU缓存自动管理
-- 🌊 **流式响应** - 降低首字延迟
-- 📦 **零抽象层** - 直接控制每个细节
-- 🛠️ **完全手搓** - 代码清晰，易于定制
-
-## 📊 性能对比
-
-| 框架 | 响应时间 | 相对性能 | 内存占用 |
-|------|---------|---------|---------|
-| **FastReAct** | **3.2s** | **⭐⭐⭐⭐⭐** | **45MB** |
-| AgentScope | 4.1s | ⭐⭐⭐⭐ | 68MB |
-| LangGraph | 5.1s | ⭐⭐⭐ | 95MB |
-| LangChain | 6.8s | ⭐⭐ | 120MB |
+- 📚 **学习友好** - 代码简洁，易于理解ReACT原理
+- ⚡ **异步支持** - 基于asyncio，支持并发工具调用
+- 💾 **内置缓存** - LRU缓存减少重复计算
+- 🌊 **流式响应** - 支持流式输出
+- 🛠️ **易于扩展** - 插件式工具系统
 
 ## 📁 项目结构
 
@@ -103,10 +93,10 @@ asyncio.run(main())
 ### 1. engine.py - ReACT引擎
 
 - `FastReAct`: 主引擎类
-- 异步并发工具调用
-- 智能LRU缓存
+- 实现ReACT循环
+- 支持异步工具调用
+- LRU缓存支持
 - 流式响应支持
-- 性能统计
 
 ### 2. tool.py - 工具系统
 
@@ -172,13 +162,7 @@ react = FastReAct(..., enable_streaming=True)
 
 ## 🤝 贡献指南
 
-欢迎贡献！请遵循以下步骤：
-
-1. Fork项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启Pull Request
+欢迎贡献！特别是添加测试用例和完善文档。
 
 ## 📄 许可证
 
@@ -187,16 +171,14 @@ MIT License - 详见 [LICENSE](LICENSE)
 ## 🙏 致谢
 
 本项目从以下项目中获得灵感：
-- MiroFish - 高性能ReACT实现参考
+- MiroFish - ReACT实现参考
 - LangChain - Agent框架设计思路
 - AgentScope - 异步并发优化
 
 ## 📮 联系方式
 
-- 作者: Your Name
-- 邮箱: your.email@example.com
-- GitHub: https://github.com/yourusername/FastReAct
+- GitHub: https://github.com/atom32/FastReAct
 
 ---
 
-**Made with ❤️ for performance**
+**一个简洁的ReACT框架实现，适合学习和参考**

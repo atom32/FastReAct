@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fastreact"
 version = "0.1.0"
-description = "超高性能ReACT框架 - 完全手搓，零依赖，速度最快"
+description = "一个轻量级的ReACT框架实现，适合学习和参考"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
