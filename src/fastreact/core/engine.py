@@ -16,6 +16,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ..core.tool import Tool, ToolCall, ToolResult
 from ..core.cache import LRUCache
+from ..utils.logger import get_logger
+
+# 获取logger
+logger = get_logger("fastreact.engine")
 
 
 class FastReAct:
@@ -525,21 +529,29 @@ Final Answer: 北京今天是晴天，温度15-25摄氏度。
             self.cache.clear()
 
     async def close(self) -> None:
-        """关闭连接池"""
+        """
+        关闭连接池和清理资源
+
+        注意：建议使用 async with FastReAct(...) 自动管理资源
+        """
         if self._http_client:
             await self._http_client.aclose()
             self._http_client = None
             self._client = None
 
-    def __del__(self):
-        """析构函数"""
-        if self._http_client:
-            # 尝试关闭（可能已经关闭）
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self.close())
-                else:
-                    loop.run_until_complete(self.close())
-            except:
-                pass
+    async def __aenter__(self):
+        """
+        异步上下文管理器入口
+
+        示例:
+            async with FastReAct(...) as agent:
+                result = await agent.run_async(...)
+        """
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """
+        异步上下文管理器退出，自动清理资源
+        """
+        await self.close()
+        return False

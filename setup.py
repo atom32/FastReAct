@@ -27,7 +27,7 @@ setup(
         "Programming Language :: Python :: 3.12",
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
-    python_requires=">=3.11",
+    python_requires=">=3.10",
     install_requires=[
         "openai>=1.0.0",
         "httpx>=0.25.0",

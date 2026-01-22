@@ -7,9 +7,37 @@ from fastreact.tools.search import SearchTool
 from fastreact.tools.weather import WeatherTool
 from fastreact.tools.http import HTTPTool
 
+# GraphRAG工具
+from fastreact.tools.graph_rag_tools import (
+    query_graph_rag,
+    analyze_relationships,
+    multi_hop_reasoning,
+    knowledge_extraction,
+    check_graph_rag_config,
+)
+
+# Python工具
+from fastreact.tools.python_tools import run_python_code, calculate_expression
+
+# MCP适配器
+from fastreact.tools.mcp_adapter import export_tools_to_fastreact, get_global_registry
+
 __all__ = [
+    # 原有FastReAct工具
     "CalculatorTool",
     "SearchTool",
     "WeatherTool",
     "HTTPTool",
+    # GraphRAG工具（MCP格式）
+    "query_graph_rag",
+    "analyze_relationships",
+    "multi_hop_reasoning",
+    "knowledge_extraction",
+    "check_graph_rag_config",
+    # Python工具（MCP格式）
+    "run_python_code",
+    "calculate_expression",
+    # MCP适配器
+    "export_tools_to_fastreact",
+    "get_global_registry",
 ]

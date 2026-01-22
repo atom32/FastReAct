@@ -7,7 +7,7 @@ name = "fastreact"
 version = "0.1.0"
 description = "一个轻量级的ReACT框架实现，适合学习和参考"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Your Name", email = "your.email@example.com"}

@@ -2,7 +2,7 @@
 
 > 一个轻量级的ReACT框架实现，适合学习和参考
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## ✨ 特性
@@ -11,8 +11,9 @@
 - ⚡ **异步支持** - 基于asyncio，支持并发工具调用
 - 💾 **内置缓存** - LRU缓存减少重复计算
 - 🌊 **流式响应** - 支持流式输出
-- 🛠️ **易于扩展** - 插件式工具系统
+- 🛠️ **易于扩展** - 插件式工具系统，支持MCP工具
 - 📦 **轻量级** - 核心代码不到600行
+- 🔥 **GraphRAG集成** - 内置5个GraphRAG工具，支持知识图谱查询和推理
 
 ## 🎯 项目定位
 
@@ -116,7 +117,68 @@ python examples/04_streaming.py
 
 # 示例5: 自定义工具
 python examples/05_custom_tools.py
+
+# 🔥 示例6: GraphRAG知识图谱查询（NEW）
+python examples/graphrag_query_demo.py
 ```
+
+## 🔥 GraphRAG集成
+
+FastReAct现在完全支持GraphRAG！使用真正的ReAct循环查询和推理知识图谱。
+
+### 快速开始
+
+```bash
+# 1. 配置环境变量
+cp .env.example .env
+# 编辑.env，设置OPENAI_API_KEY和HIPPO_RAG_URL
+
+# 2. 运行GraphRAG查询示例
+python examples/graphrag_query_demo.py
+```
+
+### GraphRAG工具
+
+| 工具 | 功能 | 参数 |
+|------|------|------|
+| `query_graph_rag` | 自然语言查询知识图谱 | query, max_results, reasoning_depth |
+| `analyze_relationships` | 分析实体间关系 | entities[], relationship_types[] |
+| `multi_hop_reasoning` | 多跳推理找路径 | start_entity, end_entity, max_hops |
+| `knowledge_extraction` | 从文本提取知识 | text, extract_relationships |
+| `check_graph_rag_config` | 检查GraphRAG配置 | 无 |
+
+### 使用示例
+
+```python
+from fastreact.core.engine import FastReAct
+from fastreact.tools import export_tools_to_fastreact
+
+# 创建引擎
+agent = FastReAct(
+    api_key="your-openai-api-key",
+    model="gpt-4",
+)
+
+# 注册GraphRAG工具
+for tool in export_tools_to_fastreact():
+    agent.register_tool(tool)
+
+# 查询知识图谱
+result = await agent.run_async(
+    query="Alice和Bob有什么共同兴趣？",
+    step_callback=lambda step: print(f"💭 {step['thought']}")
+)
+
+# 输出:
+# 💭 我需要查询Alice的兴趣
+# 👀 Alice喜欢Python、AI和音乐
+# 💭 现在查询Bob的兴趣
+# 👀 Bob喜欢Python、AI和游戏
+# 💭 我可以分析共同兴趣了
+# 🎯 Alice和Bob的共同兴趣是Python和AI
+```
+
+**完整文档**: [GraphRAG集成指南](docs/GRAPHrag_INTEGRATION.md) | [快速开始](docs/QUICKSTART.md)
 
 ## 📖 文档
 
@@ -168,12 +230,30 @@ await react.run_async(
 
 ## 🛠️ 内置工具
 
+### FastReAct原生工具
 - `SearchTool` - 搜索工具
 - `CalculatorTool` - 计算器
 - `WeatherTool` - 天气查询
-- `HTTPTOol` - HTTP请求
+- `HTTPTool` - HTTP请求
 
-你可以轻松扩展自定义工具，详见示例代码。
+### GraphRAG工具（MCP格式）
+- `query_graph_rag` - 自然语言查询知识图谱
+- `analyze_relationships` - 分析实体间关系
+- `multi_hop_reasoning` - 多跳推理找路径
+- `knowledge_extraction` - 从文本提取知识
+- `check_graph_rag_config` - 检查GraphRAG配置
+
+### Python工具（MCP格式）
+- `run_python_code` - 执行Python代码
+- `calculate_expression` - 计算数学表达式
+
+**总计11个工具，支持MCP格式扩展！**
+
+你可以轻松扩展自定义工具：
+- 使用`@register_mcp_tool`装饰器（MCP格式）
+- 继承`Tool`基类（FastReAct原生格式）
+
+详见示例代码和文档。
 
 ## 📁 项目结构
 
