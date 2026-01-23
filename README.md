@@ -14,6 +14,7 @@
 - 🛠️ **易于扩展** - 插件式工具系统，支持MCP工具
 - 📦 **轻量级** - 核心代码不到600行
 - 🔥 **GraphRAG集成** - 内置5个GraphRAG工具，支持知识图谱查询和推理
+- 🌐 **MCP Client** - 支持连接外部MCP Servers，访问50+工具生态
 
 ## 🎯 项目定位
 
@@ -247,11 +248,86 @@ await react.run_async(
 - `run_python_code` - 执行Python代码
 - `calculate_expression` - 计算数学表达式
 
-**总计11个工具，支持MCP格式扩展！**
+**总计11个内置工具！**
 
 你可以轻松扩展自定义工具：
 - 使用`@register_mcp_tool`装饰器（MCP格式）
 - 继承`Tool`基类（FastReAct原生格式）
+
+## 🌐 MCP Client - 连接外部工具生态
+
+FastReAct 现在支持 **MCP (Model Context Protocol)** Client 功能，可以连接和使用外部 MCP Servers 提供的 50+ 工具！
+
+### 支持的 MCP Servers
+
+- **Filesystem Server** - 文件系统操作
+- **GitHub Server** - GitHub 仓库管理
+- **Postgres Server** - PostgreSQL 数据库查询
+- **Slack Server** - Slack 消息发送
+- **Brave Search Server** - 网络搜索
+- **Memory Server** - 持久化上下文记忆
+- **Puppeteer Server** - 浏览器自动化
+- **Fetch Server** - HTTP 请求
+- ... 以及 50+ 更多社区服务器
+
+### 快速使用
+
+```python
+import asyncio
+from fastreact import FastReAct
+from fastreact.tools import MCPClientManager
+
+async def main():
+    # 1. 创建 MCP Manager
+    mcp_manager = MCPClientManager("mcp_servers.json")
+    await mcp_manager.connect_all()
+
+    # 2. 获取 MCP 工具
+    mcp_tools = await mcp_manager.get_all_tools()
+
+    # 3. 创建 FastReAct 引擎（包含 MCP 工具）
+    engine = FastReAct(
+        api_key="your-openai-api-key",
+        tools=mcp_tools,
+    )
+
+    # 4. 运行
+    response = await engine.run(
+        "请读取 examples 目录下的文件，"
+        "然后在 GitHub 上创建一个 issue"
+    )
+
+    print(response)
+
+    # 5. 清理
+    await mcp_manager.disconnect_all()
+
+asyncio.run(main())
+```
+
+### 配置文件示例 (mcp_servers.json)
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./project"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {"GITHUB_TOKEN": "your_token"}
+    }
+  }
+}
+```
+
+### 完整文档
+
+详见 [MCP Client 集成指南](docs/MCP_CLIENT_GUIDE.md)
+
+---
 
 详见示例代码和文档。
 

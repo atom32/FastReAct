@@ -22,6 +22,13 @@ from fastreact.tools.python_tools import run_python_code, calculate_expression
 # MCP适配器
 from fastreact.tools.mcp_adapter import export_tools_to_fastreact, get_global_registry
 
+# MCP客户端管理器
+from fastreact.tools.mcp_client_manager import (
+    MCPClientManager,
+    MCPServerConnection,
+    MCPToolWrapperExternal,
+)
+
 __all__ = [
     # 原有FastReAct工具
     "CalculatorTool",
@@ -40,4 +47,8 @@ __all__ = [
     # MCP适配器
     "export_tools_to_fastreact",
     "get_global_registry",
+    # MCP客户端
+    "MCPClientManager",
+    "MCPServerConnection",
+    "MCPToolWrapperExternal",
 ]
