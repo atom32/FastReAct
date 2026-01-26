@@ -231,6 +231,7 @@ class FastReAct:
         支持格式：
         1. [TOOL_CALL]{"name": "...", "parameters": {...}}
         2. <tool>{"name": "...", "parameters": {...}}</tool>
+        3. 代码块内的工具调用
 
         Args:
             response: LLM响应文本
@@ -240,9 +241,14 @@ class FastReAct:
         """
         tool_calls = []
 
+        # 先移除markdown代码块标记
+        response_cleaned = response
+        response_cleaned = re.sub(r'```[\w]*\n?', '', response_cleaned)
+
         # 格式1: [TOOL_CALL]{"name": "...", "parameters": {...}}
-        pattern1 = r"\[TOOL_CALL\]\s*(\{.*?\})"
-        for match in re.finditer(pattern1, response, re.DOTALL):
+        # 改进：使用更健壮的正则，匹配完整的JSON对象
+        pattern1 = r"\[TOOL_CALL\]\s*(\{(?:[^{}]|(?:\{[^{}]*\}))*\})"
+        for match in re.finditer(pattern1, response_cleaned, re.DOTALL):
             try:
                 data = json.loads(match.group(1))
                 tool_calls.append(
@@ -256,8 +262,8 @@ class FastReAct:
                 continue
 
         # 格式2: <tool>...</tool>
-        pattern2 = r"<tool>\s*(\{.*?\})\s*</tool>"
-        for match in re.finditer(pattern2, response, re.DOTALL):
+        pattern2 = r"<tool>\s*(\{(?:[^{}]|(?:\{[^{}]*\}))*\})\s*</tool>"
+        for match in re.finditer(pattern2, response_cleaned, re.DOTALL):
             try:
                 data = json.loads(match.group(1))
                 tool_calls.append(
@@ -270,6 +276,7 @@ class FastReAct:
             except json.JSONDecodeError:
                 continue
 
+        logger.debug(f"Parsed {len(tool_calls)} tool calls from response")
         return tool_calls
 
     def _build_system_prompt(self) -> str:

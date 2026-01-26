@@ -17,7 +17,12 @@
       "Bash(ls:*)",
       "Bash(git pull:*)",
       "Bash(find:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(tree:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(dir:*)",
+      "Bash(git rm:*)"
     ]
   }
 }

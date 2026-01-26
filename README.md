@@ -18,7 +18,7 @@
 - ✅ **代码规范** - 所有示例更新为最佳实践
 - ✅ **测试通过** - 14/14测试通过，0个回归
 
-详见 [CHANGELOG.md](CHANGELOG.md) | [修复总结](docs/P0_FIXES_SUMMARY.md)
+详见 [CHANGELOG.md](CHANGELOG.md) | [修复总结](docs/archive/P0_FIXES_SUMMARY.md)
 
 ---
 
@@ -125,10 +125,57 @@ async def main():
 asyncio.run(main())
 ```
 
+### 配置API
+
+FastReAct 支持两种配置方式，**推荐使用 `config.json`**。
+
+#### 方式1：config.json（推荐）
+
+1. **复制示例配置**：
+```bash
+cp config.json.example config.json
+```
+
+2. **编辑配置文件**（支持SiliconFlow、OpenAI、Ollama等）：
+```bash
+vim config.json
+```
+
+3. **填入你的API密钥**：
+```json
+{
+  "llm": {
+    "providers": {
+      "siliconflow": {
+        "api_key": "你的真实API密钥"
+      }
+    }
+  }
+}
+```
+
+#### 方式2：.env（备选）
+
+适用于容器部署或传统环境变量方式：
+
+```bash
+cp .env.example .env
+vim .env
+```
+
+> 📖 **详细配置说明**: [CONFIG.md](CONFIG.md)
+> 🔐 **安全提示**: `config.json` 和 `.env` 都已在 `.gitignore` 中，不会被提交。详见 [SECURITY.md](SECURITY.md)
+
 ### 运行示例
 
 ```bash
-# 示例1: 基础ReACT
+# 完整演示（推荐新手）
+python example_react_demo.py
+
+# 调试模式（查看详细过程）
+python example_react_debug.py
+
+# 或运行旧示例
 python examples/01_basic.py
 
 # 示例2: 异步并发
@@ -208,10 +255,18 @@ result = await agent.run_async(
 ## 📖 文档
 
 ### 核心文档
+- **[示例说明](EXAMPLES.md)** - 快速开始指南
 - **[更新日志](CHANGELOG.md)** - 版本历史和变更记录
 - **[快速入门](docs/QUICKSTART.md)** - 5分钟快速开始指南
+- **[MCP客户端指南](docs/MCP_CLIENT_GUIDE.md)** - 连接50+外部工具
 - **[GraphRAG集成](docs/GRAPHrag_INTEGRATION.md)** - 完整集成文档
-- **[P0修复总结](docs/P0_FIXES_SUMMARY.md)** - 问题修复详情
+- **[文档索引](docs/INDEX.md)** - 所有文档目录
+
+### 参考文档
+- **[v0.2.0修复总结](docs/archive/P0_FIXES_SUMMARY.md)** - P0问题修复详情
+- **[Agent架构设计](docs/agent_architecture.md)** - 架构设计文档
+- **[从Biro迁移](docs/FROM_BIRO_TO_FASTREACT.md)** - 迁移指南
+- **[历史归档](docs/archive/)** - 历史会话记录
 
 ### 项目文档
 - [示例代码](examples/) - 参考示例了解用法

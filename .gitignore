@@ -47,3 +47,9 @@ Thumbs.db
 .env
 *.log
 *.db
+
+# Sensitive configuration
+config.json
+config.*.json
+!.env.example
+!.config.example.json

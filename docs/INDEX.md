@@ -1,68 +1,102 @@
 # FastReAct 文档索引
 
-## 📚 文档结构
-
-### 📄 根目录
-- **[README.md](../README.md)** - 项目说明和使用指南
-
-### 📁 docs/ 目录
-
-#### 核心设计文档
-1. **[agent_architecture.md](./agent_architecture.md)**
-   - 完善智能体的核心能力设计
-   - 推理引擎、记忆系统、工具系统架构
-   - 多智能体协作机制
-
-#### 实施指南
-2. **[implementation_roadmap.md](./implementation_roadmap.md)**
-   - 8周功能完整版实现路线图
-   - 详细的每周任务和代码示例
-   - 验收标准和交付物清单
-
-3. **[gantt_chart.md](./gantt_chart.md)**
-   - 可视化甘特图
-   - 任务依赖关系
-   - 分周目标和快速启动指南
-
-#### 参考文档
-4. **[mirofish_analysis.md](./mirofish_analysis.md)**
-   - FastReAct vs MiroFish 对比分析
-   - MiroFish的8大核心优势
-   - 可借鉴的设计模式
+> **项目定位**: 一个轻量级的ReACT框架实现，支持连接50+ MCP Servers工具生态
 
 ---
 
-## 🎯 快速导航
+## 📚 核心文档
 
-### 我想了解...
-- **项目概况** → [README.md](../README.md)
-- **如何实现完善智能体** → [agent_architecture.md](./agent_architecture.md)
-- **8周实施计划** → [implementation_roadmap.md](./implementation_roadmap.md)
-- **每周任务安排** → [gantt_chart.md](./gantt_chart.md)
-- **MiroFish有什么可学的** → [mirofish_analysis.md](./mirofish_analysis.md)
+### 🚀 快速开始
+1. **[README.md](../README.md)** - 项目说明和主要功能介绍
+2. **[QUICKSTART.md](./QUICKSTART.md)** - 5分钟快速上手指南
+3. **[CHANGELOG.md](../CHANGELOG.md)** - 版本变更记录
+
+### 🛠️ 功能集成文档
+4. **[GraphRAG集成指南](./GRAPHrag_INTEGRATION.md)**
+   - GraphRAG工具详细介绍
+   - 知识图谱查询和推理
+   - 完整代码示例
+
+5. **[MCP客户端指南](./MCP_CLIENT_GUIDE.md)**
+   - MCP协议介绍
+   - 连接外部MCP Servers
+   - 50+工具生态使用
+
+### 📐 架构与设计
+6. **[智能体架构设计](./agent_architecture.md)** - 完善智能体的核心能力设计
+7. **[从Biro到FastReAct](./FROM_BIRO_TO_FASTREACT.md)** - 项目演进历史
+
+### 📖 参考文档
+8. **[MiroFish对比分析](./mirofish_analysis.md)** - FastReAct vs MiroFish 对比分析
+9. **[8周实施路线图](./implementation_roadmap.md)** - 功能完整版实现计划（未来规划）
+10. **[甘特图](./gantt_chart.md)** - 可视化时间线
+
+### 📦 历史归档
+11. **[归档文档](./archive/)** - 历史会话记录和项目总结
 
 ---
 
-## 📖 阅读顺序建议
+## 🎯 按场景查找文档
 
-### 初次接触
-1. [README.md](../README.md) - 了解项目
-2. [mirofish_analysis.md](./mirofish_analysis.md) - 理解差距
-3. [agent_architecture.md](./agent_architecture.md) - 学习架构
+### 我想...
 
-### 准备实施
-1. [gantt_chart.md](./gantt_chart.md) - 总览计划
-2. [implementation_roadmap.md](./implementation_roadmap.md) - 详细实施
+| 场景 | 推荐文档 |
+|------|----------|
+| **快速了解项目** | [README.md](../README.md) |
+| **立即开始使用** | [QUICKSTART.md](./QUICKSTART.md) |
+| **使用GraphRAG** | [GraphRAG集成指南](./GRAPHrag_INTEGRATION.md) |
+| **连接MCP工具** | [MCP客户端指南](./MCP_CLIENT_GUIDE.md) |
+| **了解项目架构** | [智能体架构设计](./agent_architecture.md) |
+| **对比其他框架** | [MiroFish对比分析](./mirofish_analysis.md) |
+| **查看版本更新** | [CHANGELOG.md](../CHANGELOG.md) |
+| **未来功能规划** | [8周实施路线图](./implementation_roadmap.md) |
 
-### 实施过程中
-- 按 [gantt_chart.md](./gantt_chart.md) 的周次推进
-- 参考 [implementation_roadmap.md](./implementation_roadmap.md) 的代码示例
+---
+
+## 📂 文档分类
+
+### 用户文档
+- [README.md](../README.md) - 项目概览
+- [QUICKSTART.md](./QUICKSTART.md) - 快速开始
+- [MCP客户端指南](./MCP_CLIENT_GUIDE.md) - MCP工具使用
+- [GraphRAG集成指南](./GRAPHrag_INTEGRATION.md) - GraphRAG使用
+
+### 开发文档
+- [智能体架构设计](./agent_architecture.md) - 架构设计
+- [从Biro到FastReAct](./FROM_BIRO_TO_FASTREACT.md) - 项目演进
+- [8周实施路线图](./implementation_roadmap.md) - 实施计划
+- [甘特图](./gantt_chart.md) - 时间规划
+
+### 参考文档
+- [MiroFish对比分析](./mirofish_analysis.md) - 竞品对比
+- [CHANGELOG.md](../CHANGELOG.md) - 版本历史
+- [归档文档](./archive/) - 历史记录
 
 ---
 
 ## 🔄 文档更新日志
 
-- **2025-01-22**: 清理老旧文档，创建索引
-- **2025-01-22**: 添加8周实施路线图
-- **2025-01-22: 完善智能体架构设计**
-- **2025-01-22**: MiroFish对比分析
+- **2026-01-26**: 重组文档结构，归档历史文档
+- **2026-01-23**: 添加MCP客户端集成文档
+- **2026-01-22**: 添加P0修复总结和版本更新
+- **2026-01-22**: 创建文档索引，整理结构
+
+---
+
+## 📌 文档阅读建议
+
+### 新手入门（按顺序阅读）
+1. [README.md](../README.md) - 了解项目概况
+2. [QUICKSTART.md](./QUICKSTART.md) - 快速上手
+3. [MCP客户端指南](./MCP_CLIENT_GUIDE.md) - 连接外部工具（可选）
+4. [GraphRAG集成指南](./GRAPHrag_INTEGRATION.md) - 使用知识图谱（可选）
+
+### 开发者进阶
+1. [智能体架构设计](./agent_architecture.md) - 理解架构
+2. [MiroFish对比分析](./mirofish_analysis.md) - 了解竞品
+3. [从Biro到FastReAct](./FROM_BIRO_TO_FASTREACT.md) - 项目演进
+4. [8周实施路线图](./implementation_roadmap.md) - 参与未来开发
+
+---
+
+**文档维护**: 如需更新文档，请保持清晰的分类和索引。
