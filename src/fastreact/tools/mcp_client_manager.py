@@ -32,7 +32,7 @@ from contextlib import asynccontextmanager
 
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
-from mcp.client.streamable_http import streamable_http_client
+from mcp.client.streamable_http import streamablehttp_client as streamable_http_client
 from mcp.types import Tool, CallToolResult
 
 from fastreact.core.tool import Tool
