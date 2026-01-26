@@ -9,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="fastreact",
-    version="0.1.0",
+    version="0.2.0",
     author="Your Name",
     author_email="your.email@example.com",
     description="超高性能ReACT框架 - 完全手搓，零依赖，速度最快",
