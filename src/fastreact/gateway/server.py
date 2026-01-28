@@ -10,8 +10,12 @@ from typing import Dict, Optional, Callable
 from datetime import datetime
 import uuid
 import json
+import logging
 
 from fastreact import FastReAct
+from ..storage import SessionStorage, SQLiteSessionStorage
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -33,19 +37,42 @@ app.add_middleware(
 class GatewayServer:
     """WebSocket 网关服务器"""
 
-    def __init__(self, agent: FastReAct):
+    def __init__(
+        self,
+        agent: FastReAct,
+        storage: Optional[SessionStorage] = None,
+        storage_path: str = "./data/sessions.db",
+        auto_save: bool = True
+    ):
         """
         初始化网关
 
         Args:
             agent: FastReAct 实例
+            storage: 会话存储后端（默认使用 SQLite）
+            storage_path: SQLite 数据库文件路径
+            auto_save: 是否自动保存会话（默认 True）
         """
         self.agent = agent
-        self.sessions: Dict[str, Dict] = {}
+        self.storage = storage or SQLiteSessionStorage(storage_path)
+        self.auto_save = auto_save
+        self.sessions: Dict[str, Dict] = {}  # 内存缓存
         self.app = app
+        self._initialized = False
 
         # 注册路由
         self._register_routes()
+
+    async def startup(self):
+        """启动网关，初始化存储"""
+        if not self._initialized:
+            try:
+                await self.storage.initialize()
+                self._initialized = True
+                logger.info(f"Gateway storage initialized: {self.storage.__class__.__name__}")
+            except Exception as e:
+                logger.error(f"Failed to initialize storage: {e}")
+                raise
 
     def _register_routes(self):
         """注册路由"""
@@ -53,58 +80,81 @@ class GatewayServer:
         @app.get("/health")
         async def health_check():
             """健康检查"""
+            storage_healthy = self._initialized and await self.storage.health_check()
+
             return {
-                "status": "healthy",
+                "status": "healthy" if storage_healthy else "degraded",
                 "timestamp": datetime.now().isoformat(),
-                "active_sessions": len(self.sessions)
+                "active_sessions": len(self.sessions),
+                "storage": {
+                    "type": self.storage.__class__.__name__,
+                    "healthy": storage_healthy
+                }
             }
 
         @app.get("/sessions")
-        async def list_sessions():
+        async def list_sessions(limit: int = 50, offset: int = 0):
             """列出所有会话"""
-            return {
-                "sessions": [
-                    {
-                        "session_id": session_id,
-                        "message_count": len(session["messages"]),
-                        "created_at": session["metadata"].get("created_at"),
-                        "last_active": session["metadata"].get("last_active")
-                    }
-                    for session_id, session in self.sessions.items()
-                ],
-                "total": len(self.sessions)
-            }
+            # 从存储获取所有会话
+            try:
+                stored_sessions = await self.storage.list_sessions(limit=limit, offset=offset)
+                return {
+                    "sessions": stored_sessions,
+                    "total": len(stored_sessions),
+                    "active_in_memory": len(self.sessions)
+                }
+            except Exception as e:
+                logger.error(f"Failed to list sessions: {e}")
+                # 降级到内存中的会话
+                return {
+                    "sessions": [
+                        {
+                            "session_id": session_id,
+                            "message_count": len(session["messages"]),
+                            "created_at": session["metadata"].get("created_at"),
+                            "last_active": session["metadata"].get("last_active")
+                        }
+                        for session_id, session in self.sessions.items()
+                    ],
+                    "total": len(self.sessions),
+                    "note": "Showing in-memory sessions only"
+                }
 
         @app.websocket("/ws/{session_id}")
         async def websocket_endpoint(websocket: WebSocket, session_id: str):
             """WebSocket 端点"""
             await websocket.accept()
 
+            # 尝试从存储加载会话
+            stored_session = None
+            if self._initialized:
+                try:
+                    stored_session = await self.storage.load_session(session_id)
+                    logger.info(f"Loaded session {session_id} from storage")
+                except Exception as e:
+                    logger.warning(f"Failed to load session {session_id} from storage: {e}")
+
             # 初始化或恢复会话
-            if session_id not in self.sessions:
+            if stored_session:
+                # 从存储恢复的会话
                 self.sessions[session_id] = {
-                    "messages": [],
+                    "messages": stored_session.get("messages", []),
                     "context": {},
                     "metadata": {
-                        "created_at": datetime.now().isoformat(),
-                        "last_active": datetime.now().isoformat(),
+                        "created_at": stored_session.get("created_at"),
+                        "last_active": stored_session.get("last_active"),
+                        "title": stored_session.get("title", "恢复的会话"),
                         "websocket": websocket
                     }
                 }
-                # 发送欢迎消息
-                await websocket.send_json({
-                    "type": "system",
-                    "message": f"会话已创建: {session_id}",
-                    "session_id": session_id
-                })
-            else:
-                # 恢复现有会话
                 session = self.sessions[session_id]
-                session["metadata"]["websocket"] = websocket
+
+                # 发送恢复消息
                 await websocket.send_json({
                     "type": "system",
                     "message": f"会话已恢复: {session_id}",
-                    "session_id": session_id
+                    "session_id": session_id,
+                    "messages_count": len(session["messages"])
                 })
 
                 # 发送历史消息（最近 20 条）
@@ -114,6 +164,35 @@ class GatewayServer:
                         "type": "history",
                         "message": msg
                     })
+            elif session_id not in self.sessions:
+                # 新会话
+                self.sessions[session_id] = {
+                    "messages": [],
+                    "context": {},
+                    "metadata": {
+                        "created_at": datetime.now().isoformat(),
+                        "last_active": datetime.now().isoformat(),
+                        "title": "新对话",
+                        "websocket": websocket
+                    }
+                }
+                session = self.sessions[session_id]
+
+                # 发送欢迎消息
+                await websocket.send_json({
+                    "type": "system",
+                    "message": f"会话已创建: {session_id}",
+                    "session_id": session_id
+                })
+            else:
+                # 内存中的会话
+                session = self.sessions[session_id]
+                session["metadata"]["websocket"] = websocket
+                await websocket.send_json({
+                    "type": "system",
+                    "message": f"会话已恢复: {session_id}",
+                    "session_id": session_id
+                })
 
             session = self.sessions[session_id]
 
@@ -139,6 +218,13 @@ class GatewayServer:
                     }
                     session["messages"].append(user_message)
                     session["metadata"]["last_active"] = datetime.now().isoformat()
+
+                    # 自动保存到存储
+                    if self.auto_save and self._initialized:
+                        try:
+                            await self.storage.add_message(session_id, user_message)
+                        except Exception as e:
+                            logger.warning(f"Failed to save user message: {e}")
 
                     # 发送"思考中"状态
                     await websocket.send_json({
@@ -201,6 +287,13 @@ class GatewayServer:
                         }
                         session["messages"].append(assistant_message)
 
+                        # 自动保存到存储
+                        if self.auto_save and self._initialized:
+                            try:
+                                await self.storage.add_message(session_id, assistant_message)
+                            except Exception as e:
+                                logger.warning(f"Failed to save assistant message: {e}")
+
                         # 发送最终答案
                         await websocket.send_json({
                             "type": "answer",
@@ -225,10 +318,26 @@ class GatewayServer:
                         })
 
             except WebSocketDisconnect:
-                print(f"Session {session_id} disconnected")
-                # 清理 websocket 引用
+                logger.info(f"Session {session_id} disconnected")
+                # 清理 websocket 引用并保存会话
                 if session_id in self.sessions:
                     self.sessions[session_id]["metadata"].pop("websocket", None)
+
+                    # 保存会话到存储
+                    if self.auto_save and self._initialized:
+                        try:
+                            session = self.sessions[session_id]
+                            await self.storage.save_session(session_id, {
+                                "title": session["metadata"].get("title", "对话"),
+                                "messages": session["messages"],
+                                "metadata": {
+                                    "created_at": session["metadata"].get("created_at"),
+                                    "last_active": session["metadata"].get("last_active")
+                                }
+                            })
+                            logger.info(f"Saved session {session_id} to storage")
+                        except Exception as e:
+                            logger.warning(f"Failed to save session on disconnect: {e}")
 
             except Exception as e:
                 print(f"Session {session_id} error: {e}")
