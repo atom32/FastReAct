@@ -23,7 +23,8 @@
       "Bash(pip install:*)",
       "Bash(dir:*)",
       "Bash(git rm:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(chcp:*)"
     ]
   }
 }

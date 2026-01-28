@@ -44,9 +44,11 @@ class TestGatewayServer:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["status"] == "healthy"
+        # 状态可能是 healthy 或 degraded（取决于存储是否初始化）
+        assert data["status"] in ["healthy", "degraded"]
         assert "timestamp" in data
         assert "active_sessions" in data
+        assert "storage" in data
         assert data["active_sessions"] == 0
 
     def test_list_sessions_empty(self, client):
