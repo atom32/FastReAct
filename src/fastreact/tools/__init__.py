@@ -29,6 +29,14 @@ from fastreact.tools.mcp_client_manager import (
     MCPToolWrapperExternal,
 )
 
+# 沙箱工具
+from fastreact.tools.sandbox import (
+    ExecuteCodeTool,
+    CreateSandboxTool,
+    ExecuteInSandboxTool,
+    DestroySandboxTool,
+)
+
 __all__ = [
     # 原有FastReAct工具
     "CalculatorTool",
@@ -51,4 +59,9 @@ __all__ = [
     "MCPClientManager",
     "MCPServerConnection",
     "MCPToolWrapperExternal",
+    # 沙箱工具
+    "ExecuteCodeTool",
+    "CreateSandboxTool",
+    "ExecuteInSandboxTool",
+    "DestroySandboxTool",
 ]
