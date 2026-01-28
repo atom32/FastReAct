@@ -53,3 +53,7 @@ config.json
 config.*.json
 !.env.example
 !.config.example.json
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/settings.*.json
