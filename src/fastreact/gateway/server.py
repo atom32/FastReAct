@@ -4,7 +4,7 @@ WebSocket Gateway Server
 提供实时双向通信接口，支持会话管理和进度追踪。
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Optional, Callable
 from datetime import datetime
@@ -14,6 +14,9 @@ import logging
 
 from fastreact import FastReAct
 from ..storage import SessionStorage, SQLiteSessionStorage
+from .auth import GatewayAuth
+from .protocol import ProtocolValidator, MessageBuilder, ErrorCode
+from .dedup import DedupCache
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,10 @@ class GatewayServer:
         agent: FastReAct,
         storage: Optional[SessionStorage] = None,
         storage_path: str = "./data/sessions.db",
-        auto_save: bool = True
+        auto_save: bool = True,
+        auth: Optional[GatewayAuth] = None,
+        enable_protocol_validation: bool = True,
+        dedup_ttl: int = 300
     ):
         """
         初始化网关
@@ -52,6 +58,9 @@ class GatewayServer:
             storage: 会话存储后端（默认使用 SQLite）
             storage_path: SQLite 数据库文件路径
             auto_save: 是否自动保存会话（默认 True）
+            auth: 认证系统实例（默认 None，开发模式）
+            enable_protocol_validation: 是否启用协议验证（默认 True）
+            dedup_ttl: 去重缓存TTL（秒，默认 5 分钟）
         """
         self.agent = agent
         self.storage = storage or SQLiteSessionStorage(storage_path)
@@ -59,6 +68,20 @@ class GatewayServer:
         self.sessions: Dict[str, Dict] = {}  # 内存缓存
         self.app = app
         self._initialized = False
+
+        # 认证系统
+        self.auth = auth or GatewayAuth()
+
+        # 协议验证器
+        self.validator = ProtocolValidator() if enable_protocol_validation else None
+        self.builder = MessageBuilder()
+
+        # 去重缓存
+        self.dedup = DedupCache(ttl=dedup_ttl)
+
+        # 事件序列号
+        self._event_seq = 0
+        self._state_version = 0
 
         # 注册路由
         self._register_routes()
@@ -81,6 +104,7 @@ class GatewayServer:
         async def health_check():
             """健康检查"""
             storage_healthy = self._initialized and await self.storage.health_check()
+            auth_stats = self.auth.get_stats()
 
             return {
                 "status": "healthy" if storage_healthy else "degraded",
@@ -89,7 +113,9 @@ class GatewayServer:
                 "storage": {
                     "type": self.storage.__class__.__name__,
                     "healthy": storage_healthy
-                }
+                },
+                "auth": auth_stats,
+                "dedup": self.dedup.get_stats()
             }
 
         @app.get("/sessions")
@@ -121,9 +147,56 @@ class GatewayServer:
                 }
 
         @app.websocket("/ws/{session_id}")
-        async def websocket_endpoint(websocket: WebSocket, session_id: str):
-            """WebSocket 端点"""
+        async def websocket_endpoint(
+            websocket: WebSocket,
+            session_id: str,
+            token: Optional[str] = Query(None),
+            password: Optional[str] = Query(None),
+            api_key: Optional[str] = Query(None)
+        ):
+            """WebSocket 端点
+
+            Args:
+                websocket: WebSocket 连接
+                session_id: 会话ID
+                token: 认证令牌（Query 参数）
+                password: 密码（Query 参数）
+                api_key: API 密钥（Query 参数）
+            """
+            # 认证检查
+            authenticated, user_id, auth_metadata = self.auth.authenticate_websocket(
+                websocket,
+                token=token,
+                password=password,
+                api_key=api_key
+            )
+
+            if not authenticated:
+                logger.warning(f"Failed authentication attempt for session {session_id}")
+                await self.auth.close_unauthorized(websocket)
+                return
+
+            # 认证成功，记录日志
+            logger.info(f"Session {session_id} authenticated: user={user_id}, mode={auth_metadata.get('mode')}")
+
+            # 接受连接
             await websocket.accept()
+
+            # 发送认证成功事件
+            self._event_seq += 1
+            self._state_version += 1
+            auth_event = self.builder.create_event(
+                event_type="presence",
+                payload={
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "authenticated": True,
+                    "auth_mode": auth_metadata.get("mode")
+                },
+                seq=self._event_seq,
+                state_version=self._state_version
+            )
+            await websocket.send_json(auth_event)
 
             # 尝试从存储加载会话
             stored_session = None
@@ -201,14 +274,72 @@ class GatewayServer:
                     # 接收消息
                     data = await websocket.receive_json()
 
-                    if "query" not in data:
-                        await websocket.send_json({
-                            "type": "error",
-                            "error": "Missing 'query' field"
-                        })
-                        continue
+                    # 初始化变量
+                    request_id = None
+                    idempotency_key = None
 
-                    query = data["query"]
+                    # 协议验证（如果启用）
+                    if self.validator:
+                        try:
+                            # 尝试验证为请求消息
+                            if data.get("type") == "req":
+                                validated_msg = self.validator.validate_request(data)
+
+                                # 检查幂等性
+                                if "idempotency_key" in validated_msg.dict():
+                                    idempotency_key = validated_msg.idempotency_key
+                                    is_dup, cached_response = await self.dedup.check_and_store(
+                                        idempotency_key
+                                    )
+
+                                    if is_dup and cached_response:
+                                        # 返回缓存响应
+                                        await websocket.send_json(cached_response)
+                                        logger.info(f"Returned cached response for idempotency key: {idempotency_key}")
+                                        continue
+
+                                # 提取查询参数
+                                query = validated_msg.params.get("query") or validated_msg.params.get("task")
+                                request_id = validated_msg.id
+                                idempotency_key = validated_msg.idempotency_key
+
+                            else:
+                                # 旧格式兼容（直接 query）
+                                if "query" not in data:
+                                    error_response = self.builder.create_error_response(
+                                        request_id=data.get("id", "unknown"),
+                                        error_code=ErrorCode.MISSING_REQUIRED_FIELD,
+                                        error_message="Missing 'query' field or invalid message format"
+                                    )
+                                    await websocket.send_json(error_response)
+                                    continue
+
+                                query = data["query"]
+                                request_id = data.get("id", str(uuid.uuid4()))
+                                idempotency_key = data.get("idempotency_key")
+
+                        except ValueError as e:
+                            # 验证失败
+                            error_response = self.builder.create_error_response(
+                                request_id=data.get("id", "unknown"),
+                                error_code=ErrorCode.VALIDATION_ERROR,
+                                error_message=str(e)
+                            )
+                            await websocket.send_json(error_response)
+                            logger.warning(f"Message validation failed: {e}")
+                            continue
+                    else:
+                        # 验证禁用，使用旧格式
+                        if "query" not in data:
+                            await websocket.send_json({
+                                "type": "error",
+                                "error": "Missing 'query' field"
+                            })
+                            continue
+
+                        query = data["query"]
+                        request_id = str(uuid.uuid4())
+                        idempotency_key = data.get("idempotency_key")
 
                     # 记录用户消息
                     user_message = {
@@ -295,20 +426,36 @@ class GatewayServer:
                                 logger.warning(f"Failed to save assistant message: {e}")
 
                         # 发送最终答案
-                        await websocket.send_json({
-                            "type": "answer",
-                            "answer": result["answer"],
-                            "stats": result.get("stats", {}),
-                            "iteration": result.get("iteration", 0)
-                        })
+                        response = self.builder.create_success_response(
+                            request_id=request_id,
+                            payload={
+                                "type": "answer",
+                                "answer": result["answer"],
+                                "stats": result.get("stats", {}),
+                                "iteration": result.get("iteration", 0)
+                            }
+                        )
+
+                        # 如果有幂等性密钥，缓存响应
+                        if idempotency_key:
+                            await self.dedup.set(idempotency_key, response)
+
+                        await websocket.send_json(response)
 
                     except Exception as e:
                         # 执行出错
-                        await websocket.send_json({
-                            "type": "error",
-                            "error": str(e),
-                            "details": type(e).__name__
-                        })
+                        error_response = self.builder.create_error_response(
+                            request_id=request_id,
+                            error_code=ErrorCode.AGENT_EXECUTION_FAILED,
+                            error_message=str(e),
+                            details={"exception_type": type(e).__name__}
+                        )
+
+                        # 如果有幂等性密钥，缓存错误响应
+                        if idempotency_key:
+                            await self.dedup.set(idempotency_key, error_response)
+
+                        await websocket.send_json(error_response)
 
                         # 记录错误消息
                         session["messages"].append({
