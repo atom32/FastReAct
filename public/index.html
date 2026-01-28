@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastReAct Gateway - 实时对话</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .status-bar {
+            padding: 10px 20px;
+            background: #f7f7f7;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ccc;
+            transition: background 0.3s;
+        }
+
+        .status-dot.connected {
+            background: #4caf50;
+        }
+
+        .status-dot.disconnected {
+            background: #f44336;
+        }
+
+        .status-dot.thinking {
+            background: #ff9800;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .message.system {
+            align-self: center;
+            background: #fff3cd;
+            color: #856404;
+            font-size: 12px;
+            max-width: 90%;
+        }
+
+        .message.thought {
+            align-self: flex-start;
+            background: #e3f2fd;
+            color: #1976d2;
+            font-size: 13px;
+            border-left: 3px solid #1976d2;
+            padding-left: 12px;
+        }
+
+        .message.action {
+            align-self: flex-start;
+            background: #f3e5f5;
+            color: #7b1fa2;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .message.observation {
+            align-self: flex-start;
+            background: #e8f5e9;
+            color: #388e3c;
+            font-size: 12px;
+        }
+
+        .message.error {
+            align-self: center;
+            background: #ffebee;
+            color: #c62828;
+            font-size: 13px;
+            border-left: 3px solid #c62828;
+        }
+
+        .input-area {
+            padding: 20px;
+            background: #f7f7f7;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-area input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .input-area input:focus {
+            border-color: #667eea;
+        }
+
+        .input-area button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .input-area button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .input-area button:active {
+            transform: translateY(0);
+        }
+
+        .input-area button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .stats {
+            padding: 10px 20px;
+            background: #f7f7f7;
+            border-top: 1px solid #e0e0e0;
+            font-size: 12px;
+            color: #666;
+            display: flex;
+            gap: 20px;
+        }
+
+        .stats span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .stats span strong {
+            color: #333;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .timestamp {
+            font-size: 10px;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 FastReAct Gateway</h1>
+            <p>实时 AI 对话 - 基于 ReACT 框架</p>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">连接中...</span>
+            </div>
+            <div>
+                会话 ID: <code id="sessionId">生成中...</code>
+            </div>
+        </div>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="stats" id="stats" style="display: none;">
+            <span>工具调用: <strong id="toolCalls">0</strong></span>
+            <span>迭代次数: <strong id="iterations">0</strong></span>
+            <span>耗时: <strong id="duration">0s</strong></span>
+        </div>
+
+        <div class="input-area">
+            <input
+                type="text"
+                id="query"
+                placeholder="输入你的问题..."
+                autofocus
+                onkeypress="if(event.key === 'Enter') send()"
+            >
+            <button onclick="send()" id="sendBtn">发送</button>
+        </div>
+    </div>
+
+    <script>
+        // 生成会话 ID
+        const sessionId = crypto.randomUUID();
+        document.getElementById('sessionId').textContent = sessionId.slice(0, 8) + '...';
+
+        // 连接 WebSocket
+        const ws = new WebSocket(`ws://localhost:8080/ws/${sessionId}`);
+        const messagesDiv = document.getElementById('messages');
+        const queryInput = document.getElementById('query');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const statsDiv = document.getElementById('stats');
+        const startTime = Date.now();
+
+        // WebSocket 连接状态
+        ws.onopen = () => {
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = '已连接';
+            sendBtn.disabled = false;
+        };
+
+        ws.onclose = () => {
+            statusDot.className = 'status-dot disconnected';
+            statusText.textContent = '连接已断开';
+            sendBtn.disabled = true;
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            statusDot.className = 'status-dot disconnected';
+            statusText.textContent = '连接错误';
+        };
+
+        // 接收消息
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            handleWebSocketMessage(data);
+        };
+
+        // 处理 WebSocket 消息
+        function handleWebSocketMessage(data) {
+            switch (data.type) {
+                case 'system':
+                    addMessage(data.message, 'system');
+                    break;
+
+                case 'history':
+                    addMessage(data.message.content, data.message.role, data.message.timestamp);
+                    break;
+
+                case 'status':
+                    statusDot.className = 'status-dot thinking';
+                    statusText.textContent = data.message || '思考中...';
+                    break;
+
+                case 'thought':
+                    addMessage(`💭 步骤 ${data.iteration}: ${data.content}`, 'thought');
+                    break;
+
+                case 'action':
+                    const tools = data.tool_calls.map(tc =>
+                        `🔧 ${tc.name}(${JSON.stringify(tc.parameters)})`
+                    ).join('\n');
+                    addMessage(tools, 'action');
+                    break;
+
+                case 'observation':
+                    addMessage(`📊 ${data.content}`, 'observation');
+                    break;
+
+                case 'answer':
+                    statusDot.className = 'status-dot connected';
+                    statusText.textContent = '已连接';
+                    addMessage(data.answer, 'assistant');
+
+                    // 显示统计
+                    if (data.stats) {
+                        statsDiv.style.display = 'flex';
+                        document.getElementById('toolCalls').textContent = data.stats.tool_calls || 0;
+                        document.getElementById('iterations').textContent = data.iteration || 0;
+                        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+                        document.getElementById('duration').textContent = duration + 's';
+                    }
+                    break;
+
+                case 'error':
+                    statusDot.className = 'status-dot connected';
+                    statusText.textContent = '已连接';
+                    addMessage(`❌ 错误: ${data.error}`, 'error');
+                    break;
+
+                default:
+                    console.log('Unknown message type:', data.type);
+            }
+        }
+
+        // 添加消息到界面
+        function addMessage(content, type, timestamp) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+
+            // 处理多行内容
+            if (content.includes('\n')) {
+                messageDiv.innerHTML = content.replace(/\n/g, '<br>');
+            } else {
+                messageDiv.textContent = content;
+            }
+
+            // 添加时间戳
+            if (timestamp) {
+                const timeDiv = document.createElement('div');
+                timeDiv.className = 'timestamp';
+                timeDiv.textContent = new Date(timestamp).toLocaleTimeString();
+                messageDiv.appendChild(timeDiv);
+            }
+
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // 发送消息
+        function send() {
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            // 添加用户消息到界面
+            addMessage(query, 'user');
+
+            // 发送到服务器
+            ws.send(JSON.stringify({ query }));
+
+            // 清空输入框
+            queryInput.value = '';
+            sendBtn.disabled = true;
+            setTimeout(() => sendBtn.disabled = false, 500);
+        }
+
+        // 欢迎消息
+        setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                addMessage('👋 你好！我是 FastReAct AI 助手，我可以帮你:', 'system');
+                addMessage('• 回答问题\n• 搜索信息\n• 执行工具\n• 分析数据\n\n试试问我任何问题！', 'system');
+            }
+        }, 500);
+    </script>
+</body>
+</html>
