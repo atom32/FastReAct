@@ -203,7 +203,7 @@ class TestMCPServerConnection:
         """测试无效配置"""
         from fastreact.tools.mcp_client_manager import MCPServerConnection
 
-        with pytest.raises(ValueError, match="Invalid server config"):
+        with pytest.raises(RuntimeError, match="Failed to connect.*Invalid server config"):
             conn = MCPServerConnection("test", {"invalid": "config"})
             await conn.connect()
 

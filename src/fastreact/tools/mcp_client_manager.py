@@ -69,6 +69,7 @@ class MCPServerConnection:
         self._read_stream = None
         self._write_stream = None
         self._client_context = None
+        self._http_client_context = None  # HTTP 客户端上下文
         self._is_connected = False
 
     @property
@@ -89,11 +90,27 @@ class MCPServerConnection:
         try:
             # 判断传输方式
             if "url" in self.config:
-                # HTTP 传输
+                # HTTP 传输 - 使用 async context manager
                 url = self.config["url"]
                 headers = self.config.get("headers", {})
 
-                self._client_context = streamable_http_client(url, headers=headers)
+                # 创建 HTTP 客户端上下文
+                self._http_client_context = streamable_http_client(url, headers=headers)
+
+                # 进入上下文获取 streams
+                streams = await self._http_client_context.__aenter__()
+
+                # streamable_http_client 返回 (read_stream, write_stream, get_session_id)
+                if isinstance(streams, tuple):
+                    if len(streams) >= 2:
+                        self._read_stream = streams[0]
+                        self._write_stream = streams[1]
+                        # 第三个元素是 get_session_id 方法，暂时不需要
+                    elif len(streams) == 1:
+                        self._read_stream = self._write_stream = streams[0]
+                else:
+                    # 如果不是 tuple，可能是单个 stream 对象
+                    self._read_stream = self._write_stream = streams
 
             elif "command" in self.config:
                 # stdio 传输
@@ -108,12 +125,10 @@ class MCPServerConnection:
                 )
 
                 self._client_context = stdio_client(server_params)
+                self._read_stream, self._write_stream = await self._client_context.__aenter__()
 
             else:
                 raise ValueError(f"Invalid server config for {self.name}: must have 'url' or 'command'")
-
-            # 进入客户端上下文
-            self._read_stream, self._write_stream = await self._client_context.__aenter__()
 
             # 创建会话
             self._session = ClientSession(self._read_stream, self._write_stream)
@@ -139,9 +154,19 @@ class MCPServerConnection:
             if self._session:
                 await self._session.aclose()
 
-            # 再关闭客户端上下文
+            # 关闭 HTTP 客户端上下文（如果有）
+            if self._http_client_context:
+                try:
+                    await self._http_client_context.__aexit__(None, None, None)
+                except Exception as e:
+                    print(f"Warning: Error closing HTTP client context for '{self.name}': {str(e)}")
+
+            # 关闭 stdio 客户端上下文（如果有）
             if self._client_context:
-                await self._client_context.__aexit__(None, None, None)
+                try:
+                    await self._client_context.__aexit__(None, None, None)
+                except Exception as e:
+                    print(f"Warning: Error closing stdio client context for '{self.name}': {str(e)}")
 
         except Exception as e:
             print(f"Warning: Error disconnecting from '{self.name}': {str(e)}")
@@ -152,6 +177,7 @@ class MCPServerConnection:
             self._read_stream = None
             self._write_stream = None
             self._client_context = None
+            self._http_client_context = None
 
     async def list_tools(self) -> List[Tool]:
         """列出所有可用工具"""
@@ -372,7 +398,7 @@ class MCPClientManager:
     管理多个 MCP 服务器连接，提供统一的工具访问接口
     """
 
-    def __init__(self, config_path: Optional[str] = None, timeout: float = 30.0):
+    def __init__(self, config_path: Optional[str] = None, timeout: float = 60.0):
         """
         初始化 MCP 客户端管理器
 
@@ -560,6 +586,21 @@ class MCPClientManager:
             服务器名称列表
         """
         return list(self._connections.keys())
+
+    async def close_all(self) -> None:
+        """
+        关闭所有服务器连接
+
+        清理所有 MCP 服务器连接资源
+        """
+        for name, connection in self._connections.items():
+            if connection.is_connected:
+                try:
+                    await connection.disconnect()
+                except Exception as e:
+                    print(f"Warning: Error closing connection to '{name}': {str(e)}")
+
+        self._connections.clear()
 
     def get_server_status(self) -> Dict[str, bool]:
         """

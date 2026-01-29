@@ -24,7 +24,15 @@
       "Bash(dir:*)",
       "Bash(git rm:*)",
       "Bash(grep:*)",
-      "Bash(chcp:*)"
+      "Bash(chcp:*)",
+      "Bash(echo.)",
+      "Bash(echo:*)",
+      "Bash(findstr:*)",
+      "Bash(pytest:*)",
+      "Bash(powershell:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git clone:*)",
+      "Bash(cd:*)"
     ]
   }
 }

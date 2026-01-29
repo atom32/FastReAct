@@ -1,34 +1,63 @@
 # FastReAct 待办事项
 
-> 上次更新: 2026-01-27
+> 上次更新: 2026-01-29 (今日)
 
 ---
 
-## ✅ 今日完成 (2026-01-27)
+## ✅ 今日完成 (2026-01-29)
 
-### 核心功能
-- [x] 配置管理系统 (`config.py` + `config.json`)
-- [x] 多LLM提供商支持 (SiliconFlow, OpenAI, Ollama)
-- [x] 修复工具调用解析bug (处理markdown代码块)
-- [x] ReACT循环真实测试成功
+### 代码更新
+- [x] 从远程拉取最新代码（Phase 2 P1完成）
+- [x] 项目现在包含：
+  - 多智能体系统 (agents/)
+  - WebSocket网关 (gateway/)
+  - 多平台集成 (channels/ - Telegram, Slack)
+  - Docker沙箱 (sandbox/)
+  - 持久化存储 (storage/)
 
-### 文档完善
-- [x] CONFIG.md - 完整配置指南
-- [x] EXAMPLES.md - 示例使用说明
-- [x] SECURITY.md - 安全指南
-- [x] SECURITY_AUDIT.md - 安全审计报告
-- [x] REACT_FRAMEWORK_TESTING_GUIDE.md - 测试完整指南
+### 演示验证
+- [x] 确认**无硬编码API密钥**（安全检查通过）
+- [x] 创建演示脚本 `demo_clean.py`
+- [x] 成功运行ReAct循环演示
+- [x] 结果保存到 `demo_output.txt`（避免乱码）
 
-### 项目整理
-- [x] 清理过时文件 (GOOD_MORNING.txt等)
-- [x] 归档历史文档到 `docs/archive/`
-- [x] 统一配置方式 (config.json为主，.env为辅)
-- [x] 安全审计 (无API密钥泄露)
+### 问题修复
+- [x] 修复Docker导入问题（sandbox工具改为可选依赖）
+- [x] 修改 `src/fastreact/tools/__init__.py`，使用try-except处理导入
 
-### 测试文件
-- [x] example_react_demo.py - 完整演示
-- [x] example_react_debug.py - 调试模式
-- [x] 删除mock测试 (只保留真实API测试)
+### 演示结果
+```
+任务1: 计算 (15 + 25) * 2 - 10 = 70 ✓
+任务2: 多步计算 = 126.67 ✓
+配置: SiliconFlow (DeepSeek-V3) ✓
+工具调用: 成功 ✓
+```
+
+---
+
+## 📊 项目当前状态
+
+### 最新代码 (091e24a)
+- **Phase 0**: 核心 ReAct 引擎 (100%)
+- **Phase 1**: 持久化 + 多智能体 (100%)
+- **Phase 2 P0**: Gateway 认证 + 协议 (100%)
+- **Phase 2 P1**: 多通道 + Docker 沙箱 (100%)
+
+### 核心模块
+```
+src/fastreact/
+├── agents/          # 多智能体系统 ✓
+├── channels/        # Telegram, Slack ✓
+├── gateway/         # WebSocket, 认证, 去重 ✓
+├── sandbox/         # Docker沙箱 ✓
+├── storage/         # SQLite持久化 ✓
+└── tools/           # 工具集（含sandbox）✓
+```
+
+### 已修复问题
+- ✅ Docker依赖问题（sandbox工具可选导入）
+- ✅ Windows控制台乱码（输出到文件）
+- ✅ 硬编码检查（确认无硬编码）
 
 ---
 
@@ -36,46 +65,50 @@
 
 ### P0 - 高优先级
 
-#### 1. Function Calling API
-- [ ] 替换正则表达式解析为OpenAI Function Calling
-- [ ] 目标：工具调用准确率 70% → 95%
-- [ ] 文件：`src/fastreact/core/engine.py`
+#### 1. 运行完整测试
+- [ ] 运行项目测试套件
+- [ ] 验证Phase 2所有功能
+- [ ] 检查测试覆盖率
+```bash
+pytest tests/ -v
+```
 
-#### 2. 测试覆盖率
-- [ ] 运行所有单元测试
-- [ ] 目标：覆盖率 60%+
-- [ ] 补充缺失的测试用例
+#### 2. 安装可选依赖
+- [ ] Docker（如果需要沙箱功能）
+- [ ] Telegram/Slack SDK（如果需要通道集成）
+```bash
+pip install docker python-telegram-bot slack-bolt
+```
+
+#### 3. 尝试新功能
+- [ ] 测试多智能体系统 `scripts/demo_multi_agent.py`
+- [ ] 测试会话持久化 `scripts/demo_persistence.py`
+- [ ] 启动WebSocket网关 `scripts/run_gateway.py`
 
 ### P1 - 中优先级
 
-#### 3. 记忆系统
-- [ ] 短期记忆（滑动窗口）
-- [ ] 长期记忆（ChromaDB）
-- [ ] 工作记忆（实体跟踪）
+#### 4. 理解新架构
+- [ ] 阅读 Phase 2 文档
+- [ ] 了解多智能体系统设计
+- [ ] 学习Gateway协议
 
-#### 4. RAG能力
-- [ ] 向量数据库集成
-- [ ] 知识分块和索引
-- [ ] 语义搜索
-
-#### 5. 任务规划器
-- [ ] Plan-and-Execute模式
-- [ ] 任务分解
+#### 5. 集成测试
+- [ ] 端到端测试 `scripts/test_persistence_e2e.py`
+- [ ] Gateway测试 `tests/test_gateway*.py`
 
 ### P2 - 低优先级
 
-#### 6. 反思机制
-- [ ] Self-Reflection
-- [ ] Error Correction
-- [ ] Critic Mode
+#### 6. 实际部署
+- [ ] 配置Telegram Bot
+- [ ] 配置Slack App
+- [ ] 部署Gateway服务
 
-#### 7. 多智能体协作
-- [ ] AutoGen集成
-- [ ] MetaGPT集成
-
-#### 8. Web UI
-- [ ] 简单的可视化界面
-- [ ] 实时显示ReAct过程
+#### 7. Phase 3 规划
+根据 `docs/PROJECT_REVIEW_PLANNER.md`:
+- [ ] Planner - 任务分解
+- [ ] Orchestrator - 编排
+- [ ] Memory System - 长期记忆
+- [ ] Reflexion - 自我反思
 
 ---
 
@@ -84,38 +117,51 @@
 ### 下次开始时运行
 
 ```bash
-# 1. 拉取最新代码
-cd D:\FastReAct
-git pull
+# 1. 查看本次记录
+type TODO.md
 
-# 2. 查看待办
-cat TODO.md
+# 2. 查看演示结果
+type demo_output.txt
 
 # 3. 运行测试（验证环境）
-python example_react_demo.py
+pytest tests/ -v
 
-# 4. 开始下一个任务
-# 建议：实现 Function Calling API
+# 4. 尝试新功能
+# 选项A: 多智能体演示
+python scripts/demo_multi_agent.py
+
+# 选项B: 持久化演示
+python scripts/demo_persistence.py
+
+# 选项C: 启动Gateway
+python scripts/run_gateway.py
 ```
 
 ### 当前配置
 
 - **LLM**: SiliconFlow (DeepSeek-V3)
 - **API**: 在 `config.json` 中配置
-- **Python**: 3.10+
-- **依赖**: 已安装 (`requirements.txt`)
+- **Python**: 3.14
+- **已安装**: fastreact-0.2.0 (editable mode)
 
-### 重要文件
+### 演示文件
 
 ```
 FastReAct/
-├── config.json              # LLM配置（不要提交）
-├── example_react_demo.py    # 运行测试
-├── src/fastreact/core/
-│   └── engine.py            # 核心引擎（待优化）
-└── docs/
-    ├── REACT_FRAMEWORK_TESTING_GUIDE.md  # 测试指南
-    └── archive/             # 历史记录
+├── config.json              # LLM配置 ✓
+├── demo_clean.py            # 演示脚本 ✓
+├── demo_output.txt          # 演示结果 ✓
+├── demo_live.py             # 旧版演示（乱码）
+├── scripts/
+│   ├── demo_multi_agent.py  # 多智能体演示
+│   ├── demo_persistence.py  # 持久化演示
+│   └── run_gateway.py       # Gateway服务器
+└── src/fastreact/
+    ├── agents/              # 多智能体
+    ├── channels/            # 多平台集成
+    ├── gateway/             # WebSocket网关
+    ├── sandbox/             # Docker沙箱
+    └── storage/             # 持久化存储
 ```
 
 ---
@@ -124,60 +170,92 @@ FastReAct/
 
 ### 已知问题
 
-1. **工具调用准确率**：依赖正则解析，约70%
-   - 解决方案：实现 Function Calling API
-   - 优先级：P0
+1. **Windows控制台乱码** ✓ 已解决
+   - 解决方案：输出到文件 `demo_output.txt`
 
-2. **测试覆盖不足**：约30%
-   - 解决方案：补充测试用例
-   - 优先级：P0
+2. **Docker依赖缺失** (可选)
+   - 影响：无法使用沙箱功能
+   - 解决：`pip install docker`
 
-3. **无记忆系统**：每次都是全新对话
-   - 解决方案：实现记忆机制
-   - 优先级：P1
+3. **Telegram/Slack SDK缺失** (可选)
+   - 影响：无法使用通道功能
+   - 解决：`pip install python-telegram-bot slack-bolt`
 
----
+### 下次会话建议
 
-## 💡 技术债务
+**如果想快速体验新功能**：
+```bash
+# 1. 运行多智能体演示（不需要额外依赖）
+python scripts/demo_multi_agent.py
 
-### 代码质量
-- [ ] 添加类型提示（typing）
-- [ ] 完善docstrings
-- [ ] 代码格式化（black/ruff）
+# 2. 运行持久化演示（不需要额外依赖）
+python scripts/demo_persistence.py
+```
 
-### 性能优化
-- [ ] 实现连接池复用
-- [ ] 优化缓存策略
-- [ ] 添加性能监控
+**如果想使用完整功能**：
+```bash
+# 安装所有依赖
+pip install docker python-telegram-bot slack-bolt
 
-### 错误处理
-- [ ] 统一异常处理
-- [ ] 添加重试机制
-- [ ] 超时控制
+# 然后可以：
+# - 使用沙箱工具
+# - 集成Telegram/Slack
+# - 启动Gateway服务
+```
 
 ---
 
 ## 📈 项目统计
 
-- **提交数**: 最新 `968a344`
+- **最新提交**: 091e24a (2026-01-29)
 - **版本**: v0.2.0
-- **核心代码**: ~1800行
-- **工具数量**: 11个内置 + 50+ MCP
-- **测试覆盖**: 30% (待提升)
+- **文件数**: 61个文件变更
+- **代码行数**: +19,029行（本次更新）
+- **核心模块**: 6个（agents, channels, gateway, sandbox, storage, tools）
+- **测试文件**: 14个
+- **文档**: 15+个设计文档
 
 ---
 
 ## 🎯 下次目标
 
 **建议优先级**：
-1. ⭐ Function Calling API (P0)
-2. ⭐ 提升测试覆盖率 (P0)
-3. 记忆系统 (P1)
+1. ⭐ 运行测试套件，验证所有功能
+2. ⭐ 体验多智能体系统
+3. ⭐ 了解Gateway和通道集成
 
-**预计时间**：Function Calling API 需要2-3小时
+**预计时间**：测试和体验需要1-2小时
+
+---
+
+## 💤 本次会话总结
+
+### 完成的工作
+1. ✅ 从git更新最新代码（Phase 2完成）
+2. ✅ 确认无硬编码API密钥
+3. ✅ 修复Docker导入问题
+4. ✅ 成功运行ReAct演示
+5. ✅ 演示结果保存到文件
+
+### 项目亮点
+- 🚀 从简单ReAct引擎演变为完整Agent平台
+- 🤖 多智能体协作系统
+- 🌐 多平台集成（Telegram, Slack）
+- 🔒 安全的Docker沙箱
+- 💾 完整的持久化方案
+- 🔌 WebSocket网关
+
+### 技术栈
+- **核心**: FastReAct (ReAct循环引擎)
+- **存储**: SQLite
+- **通信**: WebSocket + HTTP
+- **容器**: Docker
+- **平台**: Telegram Bot API, Slack API
 
 ---
 
 **项目地址**: https://github.com/atom32/FastReAct
-**最后更新**: 2026-01-27
-**下次会话**: 参考 TODO.md
+**最后更新**: 2026-01-29 01:30
+**下次会话**: 参考 TODO.md，优先运行测试套件
+
+**晚安！** 🌙

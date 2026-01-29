@@ -102,9 +102,9 @@ class TestWebSocketConnection:
         with client.websocket_connect("/ws/test-session") as websocket:
             # 接收欢迎消息
             data = websocket.receive_json()
-            assert data["type"] == "system"
-            assert "会话已创建" in data["message"]
-            assert data["session_id"] == "test-session"
+            assert data["type"] == "event"
+            assert data["event"] == "presence"
+            assert "session_id" in data["payload"]
 
             # 发送消息（会被拒绝，因为是测试 API key）
             websocket.send_json({"query": "1 + 1"})

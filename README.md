@@ -175,6 +175,15 @@ python example_react_demo.py
 # 调试模式（查看详细过程）
 python example_react_debug.py
 
+# 交互式演示（5种模式）
+python demo.py
+
+# 自动演示
+python demo_auto.py
+
+# 简单聊天
+python demos/simple_chat.py
+
 # 或运行旧示例
 python examples/01_basic.py
 

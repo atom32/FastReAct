@@ -57,3 +57,20 @@ config.*.json
 # Claude Code local settings
 .claude/settings.local.json
 .claude/settings.*.json
+
+# Temporary test files
+test_*.py
+test_*.json
+verify_*.py
+
+# Temporary MCP configs
+mcp_config*.json
+*_mcp_config*.json
+
+# Temporary demo outputs
+demo_output.txt
+demo_live.py
+demo_clean.py
+
+# Windows temporary files
+nul
