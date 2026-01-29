@@ -59,6 +59,8 @@ class FastReAct:
         enable_tool_retry: bool = True,
         enable_deduplication: bool = True,
         dedup_window_seconds: float = 10.0,
+        enable_bootstrap: bool = True,
+        workspace: Optional[str] = None,
     ):
         """
         初始化FastReAct引擎
@@ -79,6 +81,8 @@ class FastReAct:
             enable_tool_retry: 是否启用智能重试（默认True）
             enable_deduplication: 是否启用请求去重（默认True）
             dedup_window_seconds: 去重时间窗口（秒，默认10）
+            enable_bootstrap: 是否启用Bootstrap配置系统（默认True）
+            workspace: Bootstrap工作区路径（默认~/.fastreact）
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -93,6 +97,18 @@ class FastReAct:
         self.enable_tool_retry = enable_tool_retry
         self.enable_deduplication = enable_deduplication
         self.dedup_window_seconds = dedup_window_seconds
+        self.enable_bootstrap = enable_bootstrap
+        self.workspace = workspace
+
+        # Bootstrap 配置系统
+        self._bootstrap_loader = None
+        if enable_bootstrap:
+            try:
+                from ..bootstrap.loader import BootstrapLoader
+                self._bootstrap_loader = BootstrapLoader(workspace=workspace)
+                logger.info(f"Bootstrap enabled: {self._bootstrap_loader.workspace}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Bootstrap: {e}")
 
         # 工具注册表
         self.tools: Dict[str, Tool] = {}
@@ -548,16 +564,22 @@ class FastReAct:
 
     def _build_system_prompt(self) -> str:
         """
-        构建系统提示（简化版，因为使用 Function Calling API）
+        构建系统提示（集成 Bootstrap 配置）
+
+        优先级：
+        1. Bootstrap 文件内容（AGENTS.md, SOUL.md, TOOLS.md）
+        2. 基础系统提示
+        3. 工具描述
 
         注意：工具调用由 Function Calling API 自动处理，不需要格式说明
         """
+        # 构建基础系统提示
         tools_desc = "\n\n".join([
             f"### {name}\n{tool.description}\n**参数**: {json.dumps(tool.parameters, ensure_ascii=False)}"
             for name, tool in self.tools.items()
         ]) if self.tools else "暂无工具"
 
-        return f"""你是一个智能助手，可以帮助用户完成各种任务。
+        base_prompt = f"""你是一个智能助手，可以帮助用户完成各种任务。
 
 ## 可用工具
 
@@ -591,6 +613,20 @@ Observation: 北京今天晴，温度15-25℃
 Thought: 已获取天气信息，可以回答了
 Final Answer: 北京今天是晴天，温度15-25摄氏度。
 """
+
+        # 如果启用 Bootstrap，注入配置文件
+        if self._bootstrap_loader:
+            try:
+                enhanced_prompt = self._bootstrap_loader.build_system_prompt(
+                    base_prompt=base_prompt,
+                    inject_position="after"  # Bootstrap 内容追加到基础提示后
+                )
+                logger.debug("Bootstrap configuration injected into system prompt")
+                return enhanced_prompt
+            except Exception as e:
+                logger.warning(f"Failed to inject Bootstrap: {e}")
+
+        return base_prompt
 
     def _build_tools_schema(self) -> List[Dict[str, Any]]:
         """
