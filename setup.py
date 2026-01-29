@@ -32,6 +32,7 @@ setup(
         "openai>=1.0.0",
         "httpx>=0.25.0",
         "pydantic>=2.0.0",
+        "click>=8.0.0",
     ],
     extras_require={
         "dev": [
@@ -45,7 +46,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "fastreact=fastreact.cli:main",
+            "fastreact=fastreact.cli.main:main",
         ],
     },
 )
