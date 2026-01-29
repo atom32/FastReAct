@@ -25,6 +25,14 @@ from ..core.exceptions import (
     get_suggested_retry_delay,
 )
 from ..utils.logger import get_logger
+from ..observability.events import (
+    LifecycleEvent,
+    AssistantEvent,
+    ToolEvent,
+    AgentEvent,
+    EventManager,
+)
+from ..utils.resilience import RetryExecutor, RetryPolicy
 
 # 获取logger
 logger = get_logger("fastreact.engine")
@@ -61,6 +69,8 @@ class FastReAct:
         dedup_window_seconds: float = 10.0,
         enable_bootstrap: bool = True,
         workspace: Optional[str] = None,
+        enable_event_stream: bool = True,
+        event_callback: Optional[Callable] = None,
     ):
         """
         初始化FastReAct引擎
@@ -83,6 +93,8 @@ class FastReAct:
             dedup_window_seconds: 去重时间窗口（秒，默认10）
             enable_bootstrap: 是否启用Bootstrap配置系统（默认True）
             workspace: Bootstrap工作区路径（默认~/.fastreact）
+            enable_event_stream: 是否启用事件流（默认True）
+            event_callback: 事件回调函数（异步）
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -99,6 +111,18 @@ class FastReAct:
         self.dedup_window_seconds = dedup_window_seconds
         self.enable_bootstrap = enable_bootstrap
         self.workspace = workspace
+        self.enable_event_stream = enable_event_stream
+        self.event_callback = event_callback
+
+        # 事件管理器
+        self._event_manager = EventManager()
+        if event_callback:
+            self._event_manager.on_event(event_callback)
+
+        # 重试执行器
+        self._retry_executor = RetryExecutor(RetryPolicy(
+            max_attempts=max_tool_retries
+        ))
 
         # Bootstrap 配置系统
         self._bootstrap_loader = None
@@ -142,6 +166,82 @@ class FastReAct:
     def register_tool(self, tool: Tool) -> None:
         """注册工具"""
         self.tools[tool.name] = tool
+
+    async def _emit_event(self, event: AgentEvent) -> None:
+        """
+        发送事件到回调
+
+        Args:
+            event: 事件对象
+        """
+        if self.enable_event_stream and self._event_manager:
+            await self._event_manager.emit(event)
+
+    async def _emit_lifecycle(self, phase: str, error: str = None) -> None:
+        """发送生命周期事件"""
+        import uuid
+        run_id = getattr(self, '_run_id', f"run_{uuid.uuid4().hex[:12]}")
+
+        await self._emit_event(LifecycleEvent(
+            type="lifecycle",
+            phase=phase,
+            run_id=run_id,
+            error=error
+        ))
+
+    async def _emit_assistant_delta(self, delta: str) -> None:
+        """发送助手输出事件"""
+        import uuid
+        run_id = getattr(self, '_run_id', f"run_{uuid.uuid4().hex[:12]}")
+
+        await self._emit_event(AssistantEvent(
+            type="assistant",
+            run_id=run_id,
+            delta=delta
+        ))
+
+    async def _emit_tool_start(self, tool_name: str, tool_call_id: str, args: dict) -> None:
+        """发送工具开始事件"""
+        import uuid
+        run_id = getattr(self, '_run_id', f"run_{uuid.uuid4().hex[:12]}")
+
+        await self._emit_event(ToolEvent(
+            type="tool",
+            phase="start",
+            run_id=run_id,
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            args=args
+        ))
+
+    async def _emit_tool_result(self, tool_name: str, tool_call_id: str, result: Any, duration_ms: float) -> None:
+        """发送工具结果事件"""
+        import uuid
+        run_id = getattr(self, '_run_id', f"run_{uuid.uuid4().hex[:12]}")
+
+        await self._emit_event(ToolEvent(
+            type="tool",
+            phase="result",
+            run_id=run_id,
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            result=str(result)[:500] if result else None,
+            duration_ms=duration_ms
+        ))
+
+    async def _emit_tool_error(self, tool_name: str, tool_call_id: str, error: str) -> None:
+        """发送工具错误事件"""
+        import uuid
+        run_id = getattr(self, '_run_id', f"run_{uuid.uuid4().hex[:12]}")
+
+        await self._emit_event(ToolEvent(
+            type="tool",
+            phase="error",
+            run_id=run_id,
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            error=error
+        ))
 
     def _get_client(self):
         """获取或创建异步客户端"""
@@ -457,6 +557,93 @@ class FastReAct:
         tasks = [self._execute_tool_async(call) for call in calls_to_execute]
 
         # 并发执行
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 处理异常
+        final_results = []
+        for i, r in enumerate(results):
+            if isinstance(r, Exception):
+                final_results.append(
+                    ToolResult(
+                        tool_name=tool_calls[i].name, result=None, error=str(r)
+                    )
+                )
+            else:
+                final_results.append(r)
+
+        return final_results
+
+    async def _execute_tools_concurrent_with_events(
+        self, tool_calls: List[ToolCall]
+    ) -> List[ToolResult]:
+        """
+        并发执行多个工具（带事件流和重试）
+
+        Args:
+            tool_calls: 工具调用列表
+
+        Returns:
+            工具执行结果列表
+        """
+        # 限制并发数量
+        calls_to_execute = tool_calls[:self.max_concurrent_tools]
+
+        # 为每个工具调用创建异步任务
+        async def execute_with_events(call: ToolCall) -> ToolResult:
+            tool_call_id = getattr(call, 'call_id', f"tool_{id(call)}")
+
+            try:
+                # 发送工具开始事件
+                await self._emit_tool_start(
+                    tool_name=call.name,
+                    tool_call_id=tool_call_id,
+                    args=call.parameters
+                )
+
+                # 执行工具（带重试）
+                start_time = time.time()
+
+                # 使用重试执行器
+                result = await self._retry_executor.execute(
+                    call.tool.execute_async,
+                    **call.parameters
+                )
+
+                execution_time = time.time() - start_time
+                duration_ms = execution_time * 1000
+
+                # 发送工具结果事件
+                await self._emit_tool_result(
+                    tool_name=call.name,
+                    tool_call_id=tool_call_id,
+                    result=result,
+                    duration_ms=duration_ms
+                )
+
+                return ToolResult(
+                    tool_name=call.name,
+                    result=result,
+                    execution_time=execution_time,
+                )
+
+            except Exception as e:
+                # 发送工具错误事件
+                await self._emit_tool_error(
+                    tool_name=call.name,
+                    tool_call_id=tool_call_id,
+                    error=str(e)
+                )
+
+                # 返回错误结果
+                return ToolResult(
+                    tool_name=call.name,
+                    result=None,
+                    error=str(e),
+                    execution_time=0
+                )
+
+        # 并发执行所有工具
+        tasks = [execute_with_events(call) for call in calls_to_execute]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 处理异常
@@ -812,106 +999,129 @@ Final Answer: 北京今天是晴天，温度15-25摄氏度。
         start_time = time.time()
         self.stats["total_calls"] += 1
 
-        messages = [
-            {"role": "system", "content": self._build_system_prompt()},
-            {"role": "user", "content": query},
-        ]
+        # 生成 run_id
+        import uuid
+        self._run_id = f"run_{uuid.uuid4().hex[:12]}"
 
-        # 如果有会话上下文，添加历史消息
-        if session_context and "history" in session_context:
-            # 只添加最近的历史消息（避免 token 过多）
-            history = session_context["history"][-10:]  # 最近 10 条
-            for msg in history:
-                messages.insert(-1, {
-                    "role": msg.get("role", "user"),
-                    "content": msg.get("content", "")
-                })
+        # 发送生命周期开始事件
+        await self._emit_lifecycle("start")
 
-        steps = []
+        try:
+            messages = [
+                {"role": "system", "content": self._build_system_prompt()},
+                {"role": "user", "content": query},
+            ]
 
-        for iteration in range(self.max_iterations):
-            # 调用LLM
-            if self.enable_streaming:
-                llm_response = await self._chat_with_streaming(messages, stream_callback)
-            else:
-                llm_response = await self._chat(messages)
+            # 如果有会话上下文，添加历史消息
+            if session_context and "history" in session_context:
+                # 只添加最近的历史消息（避免 token 过多）
+                history = session_context["history"][-10:]  # 最近 10 条
+                for msg in history:
+                    messages.insert(-1, {
+                        "role": msg.get("role", "user"),
+                        "content": msg.get("content", "")
+                    })
 
-            # 提取响应内容和工具调用
-            response_content = llm_response.get("content", "")
+            steps = []
 
-            # 记录步骤
-            step = {
-                "iteration": iteration,
-                "thought": response_content,
-            }
+            for iteration in range(self.max_iterations):
+                # 调用LLM
+                if self.enable_streaming:
+                    llm_response = await self._chat_with_streaming(messages, stream_callback)
+                else:
+                    llm_response = await self._chat(messages)
 
-            # 解析工具调用（优先使用结构化的 tool_calls）
-            tool_calls = self._parse_tool_calls(llm_response, fallback_text=response_content)
+                # 提取响应内容和工具调用
+                response_content = llm_response.get("content", "")
 
-            if not tool_calls:
-                # 没有工具调用，说明是最终答案
-                step["is_final"] = True
-                step["answer"] = self._extract_final_answer(response_content)
+                # 发送助手输出事件
+                if response_content:
+                    await self._emit_assistant_delta(f"Thought: {response_content[:100]}...")
+
+                # 记录步骤
+                step = {
+                    "iteration": iteration,
+                    "thought": response_content,
+                }
+
+                # 解析工具调用（优先使用结构化的 tool_calls）
+                tool_calls = self._parse_tool_calls(llm_response, fallback_text=response_content)
+
+                if not tool_calls:
+                    # 没有工具调用，说明是最终答案
+                    step["is_final"] = True
+                    step["answer"] = self._extract_final_answer(response_content)
+
+                    if step_callback:
+                        step_callback(step)
+                    steps.append(step)
+
+                    # 更新统计
+                    elapsed = time.time() - start_time
+                    self.stats["total_time"] += elapsed
+
+                    # 发送生命周期结束事件
+                    await self._emit_lifecycle("end")
+
+                    return {
+                        "answer": step["answer"],
+                        "steps": steps,
+                        "stats": self.get_stats(),
+                    }
+
+                # 执行工具调用
+                step["tool_calls"] = [
+                    {"name": tc.name, "parameters": tc.parameters} for tc in tool_calls
+                ]
 
                 if step_callback:
                     step_callback(step)
                 steps.append(step)
 
-                # 更新统计
-                elapsed = time.time() - start_time
-                self.stats["total_time"] += elapsed
+                # 并发执行工具（带事件和重试）
+                results = await self._execute_tools_concurrent_with_events(tool_calls)
 
-                return {
-                    "answer": step["answer"],
-                    "steps": steps,
-                    "stats": self.get_stats(),
-                }
+                # 构建观察结果
+                observations = []
+                for result in results:
+                    if result.error:
+                        obs = f"[ERROR] {result.error}"
+                    else:
+                        obs = f"[OK] {result.result}"
+                    observations.append(f"**{result.tool_name}**: {obs}")
 
-            # 执行工具调用
-            step["tool_calls"] = [
-                {"name": tc.name, "parameters": tc.parameters} for tc in tool_calls
-            ]
+                observation_text = "\n\n".join(observations)
+                step["observation"] = observation_text
 
-            if step_callback:
-                step_callback(step)
-            steps.append(step)
+                if step_callback:
+                    step_callback(step)
 
-            # 并发执行工具
-            results = await self._execute_tools_concurrent(tool_calls)
+                # 添加到消息历史
+                messages.append({"role": "assistant", "content": response_content})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"工具返回结果:\n\n{observation_text}\n\n请基于这些信息继续思考或给出最终答案。",
+                    }
+                )
 
-            # 构建观察结果
-            observations = []
-            for result in results:
-                if result.error:
-                    obs = f"❌ 错误: {result.error}"
-                else:
-                    obs = f"✅ {result.result}"
-                observations.append(f"**{result.tool_name}**: {obs}")
+            # 达到最大迭代次数
+            elapsed = time.time() - start_time
+            self.stats["total_time"] += elapsed
 
-            observation_text = "\n\n".join(observations)
-            step["observation"] = observation_text
+            # 发送生命周期结束事件（达到最大迭代次数）
+            await self._emit_lifecycle("end")
 
-            if step_callback:
-                step_callback(step)
+            return {
+                "answer": "达到最大迭代次数，未能完成",
+                "steps": steps,
+                "stats": self.get_stats(),
+            }
 
-            # 添加到消息历史
-            messages.append({"role": "assistant", "content": response_content})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"工具返回结果:\n\n{observation_text}\n\n请基于这些信息继续思考或给出最终答案。",
-                }
-            )
-
-        # 达到最大迭代次数
-        elapsed = time.time() - start_time
-        self.stats["total_time"] += elapsed
-
-        return {
-            "answer": "达到最大迭代次数，未能完成",
-            "steps": steps,
-            "stats": self.get_stats(),
-        }
+        except Exception as e:
+            # 发送错误事件
+            await self._emit_lifecycle("error", error=str(e))
+            raise
 
     def run(
         self,

@@ -147,6 +147,95 @@ result = await agent.run_async(
 )
 ```
 
+### 4. 事件流监听（新功能）
+
+FastReAct 现在支持细粒度的事件流，可以实时监听 Agent 的每个执行步骤。
+
+```python
+from fastreact import FastReAct
+from fastreact.observability.events import (
+    LifecycleEvent,
+    AssistantEvent,
+    ToolEvent,
+)
+
+async def event_callback(event):
+    """处理 Agent 执行事件"""
+    if event.type == "lifecycle":
+        # 生命周期事件：start, end, error
+        print(f"[生命周期] {event.phase.upper()}")
+    elif event.type == "assistant":
+        # 助手输出事件（LLM 推理过程）
+        print(f"[助手] {event.delta[:100]}...")
+    elif event.type == "tool":
+        # 工具执行事件
+        if event.phase == "start":
+            print(f"[工具] 开始: {event.tool_name}({event.args})")
+        elif event.phase == "result":
+            print(f"[工具] 完成: {event.duration_ms:.2f}ms")
+        elif event.phase == "error":
+            print(f"[工具] 错误: {event.error}")
+
+agent = FastReAct(
+    api_key="your-api-key",
+    enable_event_stream=True,  # 启用事件流
+    event_callback=event_callback,
+)
+
+result = await agent.run_async("What is 25 * 36?")
+
+# 查看统计信息
+print(result['stats'])
+# {'tool_calls': 1, 'cache_hits': 0, 'total_time': 2.3, ...}
+```
+
+### 5. 智能错误重试（新功能）
+
+FastReAct 提供强大的错误重试机制，自动处理临时性网络错误。
+
+```python
+from fastreact import FastReAct
+from fastreact.utils.resilience import RetryPolicy, RetryExecutor
+
+# 创建 Agent（启用重试）
+agent = FastReAct(
+    api_key="your-api-key",
+    enable_tool_retry=True,  # 启用智能重试
+    max_tool_retries=3,      # 最多重试 3 次
+)
+
+# 自定义重试策略
+custom_policy = RetryPolicy(
+    max_attempts=5,           # 最多尝试 5 次
+    base_delay=1.0,           # 基础延迟 1 秒
+    max_delay=60.0,           # 最大延迟 60 秒
+    exponential_base=2.0,     # 指数退避基数 2
+    jitter=True,              # 启用随机抖动（避免雷群效应）
+    retriable_errors=(        # 可重试的错误类型
+        ConnectionError,
+        TimeoutError,
+        OSError,
+    )
+)
+
+# 使用重试执行器
+executor = RetryExecutor(custom_policy)
+
+async def flaky_api():
+    """可能失败的 API 调用"""
+    # 模拟网络错误
+    raise ConnectionError("Network error")
+
+# 执行并自动重试
+result = await executor.execute(flaky_api)
+
+# 查看重试统计
+stats = executor.get_stats()
+print(f"总尝试次数: {stats.total_attempts}")
+print(f"成功次数: {stats.successful_attempts}")
+print(f"失败次数: {stats.failed_attempts}")
+```
+
 ---
 
 ## 🛠️ 可用工具
@@ -307,9 +396,17 @@ tests/test_graphrag_integration.py::TestToolExport::test_export_tools_to_fastrea
 ## 📚 下一步
 
 - 📖 详细文档：`docs/GRAPHrag_INTEGRATION.md`
-- 💡 示例代码：`examples/graphrag_query_demo.py`
-- 🧪 测试文件：`tests/test_graphrag_integration.py`
+- 💡 示例代码：
+  - `examples/graphrag_query_demo.py` - GraphRAG 查询示例
+  - `examples/04_events_and_retry.py` - 事件流和重试机制示例
+- 🧪 测试文件：
+  - `tests/test_graphrag_integration.py` - GraphRAG 集成测试
+  - `tests/test_events.py` - 事件系统单元测试
+  - `tests/test_retry.py` - 重试机制单元测试
+  - `tests/test_event_integration.py` - 真实 API 集成测试
 - 🔧 MCP适配器：`src/fastreact/tools/mcp_adapter.py`
+- 🎯 事件流系统：`src/fastreact/observability/events.py`
+- 🔄 重试机制：`src/fastreact/utils/resilience.py`
 
 ---
 
