@@ -32,7 +32,8 @@
       "Bash(powershell:*)",
       "WebFetch(domain:github.com)",
       "Bash(git clone:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(iconv:*)"
     ]
   }
 }

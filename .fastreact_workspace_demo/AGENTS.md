@@ -1,1 +1,0 @@
-# Updated Rules\n\n新规则：更简洁的回答。
