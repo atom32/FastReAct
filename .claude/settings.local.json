@@ -33,7 +33,8 @@
       "WebFetch(domain:github.com)",
       "Bash(git clone:*)",
       "Bash(cd:*)",
-      "Bash(iconv:*)"
+      "Bash(iconv:*)",
+      "Bash(fastreact init:*)"
     ]
   }
 }
