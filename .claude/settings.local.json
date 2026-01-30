@@ -34,7 +34,20 @@
       "Bash(git clone:*)",
       "Bash(cd:*)",
       "Bash(iconv:*)",
-      "Bash(fastreact init:*)"
+      "Bash(fastreact init:*)",
+      "Bash(wc:*)",
+      "Bash(npm install:*)",
+      "Bash(git reset:*)",
+      "Bash(cmd:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout:*)",
+      "Bash(taskkill:*)",
+      "Bash(ping:*)",
+      "Bash(npx next dev:*)",
+      "Bash(set:*)",
+      "Bash(netstat:*)",
+      "Bash(C:/Python313/python.exe:*)"
     ]
   }
 }
