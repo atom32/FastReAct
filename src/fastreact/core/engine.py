@@ -973,6 +973,30 @@ Final Answer: 北京今天是晴天，温度15-25摄氏度。
         # 否则返回整个响应
         return response.strip()
 
+    def _extract_thought(self, response: str) -> str:
+        """提取思考内容"""
+        # 如果包含Thought:标记，提取后面的内容
+        if "Thought:" in response:
+            thought = response.split("Thought:")[-1].strip()
+            # 去掉可能的Action:或Final Answer:部分
+            if "Action:" in thought:
+                thought = thought.split("Action:")[0].strip()
+            if "Final Answer:" in thought:
+                thought = thought.split("Final Answer:")[0].strip()
+            return thought
+
+        # 如果包含思考：标记
+        if "思考：" in response:
+            thought = response.split("思考：")[-1].strip()
+            if "Action:" in thought:
+                thought = thought.split("Action:")[0].strip()
+            if "Final Answer:" in thought:
+                thought = thought.split("Final Answer:")[0].strip()
+            return thought
+
+        # 否则返回整个响应（可能不包含Thought标记）
+        return response.strip()
+
     async def run_async(
         self,
         query: str,
@@ -1227,4 +1251,288 @@ Final Answer: 北京今天是晴天，温度15-25摄氏度。
         异步上下文管理器退出，自动清理资源
         """
         await self.close()
-        return False
+
+    # ==================== 实时控制功能 ====================
+
+    async def run_async_streaming(
+        self,
+        query: str,
+        callbacks: Optional['StreamingCallbacks'] = None,
+        session_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        运行 Agent（带实时控制）
+
+        这是 run_async 的增强版本，提供细粒度的事件回调，
+        支持实时监控和控制 Agent 执行过程。
+
+        Args:
+            query: 用户查询
+            callbacks: 回调管理器（StreamingCallbacks）
+            session_context: 会话上下文
+
+        Returns:
+            {
+                "answer": "最终答案",
+                "stats": {"iterations": 5, "total_time": 2.5},
+                "events": [事件列表]  # 如果 callbacks 是 CallbackRecorder
+            }
+
+        使用示例:
+            from fastreact.core.callbacks import ConsoleCallbacks
+
+            agent = FastReAct(api_key="xxx")
+
+            # 使用默认控制台回调
+            callbacks = ConsoleCallbacks(
+                show_thoughts=True,
+                show_actions=True,
+                show_observations=True
+            )
+
+            result = await agent.run_async_streaming(
+                "帮我查询天气并计算",
+                callbacks=callbacks
+            )
+        """
+        from .callbacks import StreamingCallbacks, StepEvent, Phase
+        import time
+
+        # 如果没有提供回调，使用默认的控制台输出
+        if callbacks is None:
+            from .callbacks import ConsoleCallbacks
+            callbacks = ConsoleCallbacks()
+
+        start_time = time.time()
+        self.stats["total_calls"] += 1
+
+        # 生成 run_id
+        import uuid
+        self._run_id = f"run_{uuid.uuid4().hex[:12]}"
+
+        try:
+            # 发送开始事件
+            await callbacks.emit_start(query, {"run_id": self._run_id})
+
+            # 发送生命周期开始事件
+            await self._emit_lifecycle("start")
+
+            # 构建消息
+            messages = [
+                {"role": "system", "content": self._build_system_prompt()},
+                {"role": "user", "content": query},
+            ]
+
+            # 如果有会话上下文，添加历史消息
+            if session_context and "history" in session_context:
+                history = session_context["history"][-10:]
+                for msg in history:
+                    messages.insert(-1, {
+                        "role": msg.get("role", "user"),
+                        "content": msg.get("content", "")
+                    })
+
+            steps = []
+            answer_parts = []  # 收集回答片段
+
+            for iteration in range(self.max_iterations):
+                # === 思考阶段 ===
+                if self.enable_streaming:
+                    # 使用流式 API
+                    response_content = ""
+                    async for chunk in await self._chat_with_streaming_direct(
+                        messages,
+                        lambda chunk: callbacks.emit(StepEvent(
+                            phase=Phase.ANSWER,
+                            content=chunk,
+                            metadata={"iteration": iteration + 1}
+                        ))
+                    ):
+                        # 收集流式输出
+                        response_content += chunk
+                else:
+                    # 非流式
+                    llm_response = await self._chat(messages)
+                    response_content = llm_response.get("content", "")
+
+                # 提取思考内容（去掉 Thought: 前缀）
+                thought = self._extract_thought(response_content)
+
+                # 发送思考事件
+                await callbacks.emit(StepEvent(
+                    phase=Phase.THINK,
+                    content=thought,
+                    metadata={"iteration": iteration + 1}
+                ))
+
+                # 解析工具调用
+                tool_calls = self._parse_tool_calls(
+                    llm_response,
+                    fallback_text=response_content
+                )
+
+                if not tool_calls:
+                    # 没有工具调用，说明是最终答案
+                    final_answer = self._extract_final_answer(response_content)
+
+                    await callbacks.emit(StepEvent(
+                        phase=Phase.ANSWER,
+                        content=final_answer,
+                        metadata={"is_final": True, "iteration": iteration + 1}
+                    ))
+
+                    steps.append({
+                        "iteration": iteration + 1,
+                        "thought": thought,
+                        "is_final": True,
+                        "answer": final_answer
+                    })
+
+                    # 计算统计
+                    elapsed = time.time() - start_time
+                    self.stats["total_time"] += elapsed
+                    self.stats["iterations"] = iteration + 1
+
+                    # 发送结束事件
+                    result = {
+                        "answer": final_answer,
+                        "steps": steps,
+                        "stats": self.get_stats(),
+                    }
+
+                    await callbacks.emit_end(result)
+                    await self._emit_lifecycle("end")
+
+                    return result
+
+                # === 行动阶段 ===
+                # 发送行动事件
+                await callbacks.emit(StepEvent(
+                    phase=Phase.ACTION,
+                    content=json.dumps({
+                        "tool_calls": [
+                            {"name": tc.name, "parameters": tc.parameters}
+                            for tc in tool_calls
+                        ]
+                    }),
+                    metadata={"iteration": iteration + 1}
+                ))
+
+                # === 工具执行阶段 ===
+                results = []
+
+                for tool_call in tool_calls:
+                    tool_name = tool_call.name
+                    params = tool_call.parameters
+
+                    # 发送工具开始事件
+                    await callbacks.emit(StepEvent(
+                        phase=Phase.TOOL_START,
+                        content=f"Executing {tool_name}",
+                        metadata={
+                            "tool_name": tool_name,
+                            "parameters": params
+                        }
+                    ))
+
+                    # 执行工具
+                    tool_start = time.time()
+
+                    try:
+                        # 执行工具
+                        tool_result = await self._execute_tool_async(tool_call)
+
+                        duration = time.time() - tool_start
+
+                        # 构建观察结果
+                        if tool_result.error:
+                            observation = f"[ERROR] {tool_result.error}"
+                        else:
+                            observation = f"[OK] {tool_result.result}"
+
+                        results.append(observation)
+
+                        # 发送工具结束事件
+                        await callbacks.emit(StepEvent(
+                            phase=Phase.TOOL_END,
+                            content=observation,
+                            metadata={
+                                "tool_name": tool_name,
+                                "duration": duration,
+                                "success": tool_result.is_success
+                            }
+                        ))
+
+                    except Exception as e:
+                        # 工具执行错误
+                        duration = time.time() - tool_start
+
+                        error_msg = f"工具执行失败: {e}"
+
+                        await callbacks.emit(StepEvent(
+                            phase=Phase.ERROR,
+                            content=error_msg,
+                            metadata={
+                                "tool_name": tool_name,
+                                "duration": duration,
+                                "error": str(e)
+                            }
+                        ))
+
+                        results.append(error_msg)
+
+                # 构建观察结果
+                observation_text = "\n\n".join([
+                    f"**{tool_call.name}**: {obs}"
+                    for tool_call, obs in zip(tool_calls, results)
+                ])
+
+                # 发送观察事件
+                await callbacks.emit(StepEvent(
+                    phase=Phase.OBSERVATION,
+                    content=observation_text,
+                    metadata={"iteration": iteration + 1}
+                ))
+
+                # 添加到消息历史
+                messages.append({"role": "assistant", "content": response_content})
+                messages.append({
+                    "role": "user",
+                    "content": f"工具返回结果:\n\n{observation_text}\n\n请基于这些信息继续思考或给出最终答案。",
+                })
+
+                steps.append({
+                    "iteration": iteration + 1,
+                    "thought": thought,
+                    "tool_calls": [
+                        {"name": tc.name, "parameters": tc.parameters}
+                        for tc in tool_calls
+                    ],
+                    "observation": observation_text
+                })
+
+            # 达到最大迭代次数
+            elapsed = time.time() - start_time
+            self.stats["total_time"] += elapsed
+            self.stats["iterations"] = self.max_iterations
+
+            result = {
+                "answer": "达到最大迭代次数，未能完成",
+                "steps": steps,
+                "stats": self.get_stats(),
+            }
+
+            await callbacks.emit_end(result)
+            await self._emit_lifecycle("end")
+
+            return result
+
+        except Exception as e:
+            # 发送错误事件
+            await callbacks.emit(StepEvent(
+                phase=Phase.ERROR,
+                content=str(e),
+                metadata={"error_type": type(e).__name__}
+            ))
+            await self._emit_lifecycle("error", error=str(e))
+            raise

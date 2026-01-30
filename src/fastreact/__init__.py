@@ -15,6 +15,13 @@ __author__ = "Your Name"
 from fastreact.core.engine import FastReAct
 from fastreact.core.tool import Tool, ToolCall, ToolResult
 from fastreact.core.cache import LRUCache
+from fastreact.core.callbacks import (
+    StreamingCallbacks,
+    ConsoleCallbacks,
+    CallbackRecorder,
+    Phase,
+    StepEvent
+)
 
 __all__ = [
     "FastReAct",
@@ -22,4 +29,10 @@ __all__ = [
     "ToolCall",
     "ToolResult",
     "LRUCache",
+    # Streaming callbacks
+    "StreamingCallbacks",
+    "ConsoleCallbacks",
+    "CallbackRecorder",
+    "Phase",
+    "StepEvent",
 ]
