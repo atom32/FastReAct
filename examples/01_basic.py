@@ -12,7 +12,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastreact import FastReAct
-from fastreact.tools import CalculatorTool
+from fastreact.tools import create_calculator_tool
 
 
 async def main():
@@ -26,7 +26,7 @@ async def main():
         api_key="your-api-key",  # 替换为你的API密钥
         base_url="https://api.openai.com/v1",
         model="gpt-4",
-        tools=[CalculatorTool()],
+        tools=[create_calculator_tool()],
         enable_cache=True,  # 启用缓存
         max_iterations=5,
     )

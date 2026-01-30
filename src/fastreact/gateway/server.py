@@ -304,17 +304,21 @@ class GatewayServer:
                                 idempotency_key = validated_msg.idempotency_key
 
                             else:
-                                # 旧格式兼容（直接 query）
-                                if "query" not in data:
+                                # 旧格式兼容（直接 query）或前端格式（type: "message"）
+                                if "query" in data:
+                                    query = data["query"]
+                                elif data.get("type") == "message" and "content" in data:
+                                    # 前端格式
+                                    query = data["content"]
+                                else:
                                     error_response = self.builder.create_error_response(
                                         request_id=data.get("id", "unknown"),
                                         error_code=ErrorCode.MISSING_REQUIRED_FIELD,
-                                        error_message="Missing 'query' field or invalid message format"
+                                        error_message="Missing 'query' or 'content' field"
                                     )
                                     await websocket.send_json(error_response)
                                     continue
 
-                                query = data["query"]
                                 request_id = data.get("id", str(uuid.uuid4()))
                                 idempotency_key = data.get("idempotency_key")
 
@@ -329,15 +333,19 @@ class GatewayServer:
                             logger.warning(f"Message validation failed: {e}")
                             continue
                     else:
-                        # 验证禁用，使用旧格式
-                        if "query" not in data:
+                        # 验证禁用，支持多种格式
+                        if "query" in data:
+                            query = data["query"]
+                        elif data.get("type") == "message" and "content" in data:
+                            # 前端格式
+                            query = data["content"]
+                        else:
                             await websocket.send_json({
                                 "type": "error",
-                                "error": "Missing 'query' field"
+                                "content": "Missing 'query' or 'content' field"
                             })
                             continue
 
-                        query = data["query"]
                         request_id = str(uuid.uuid4())
                         idempotency_key = data.get("idempotency_key")
 
@@ -364,50 +372,71 @@ class GatewayServer:
                         "message": "正在思考..."
                     })
 
+                    logger.info(f"[Session {session_id}] Processing query: {query[:100]}...")
+
                     # 定义步骤回调
                     async def step_callback(step):
                         """实时发送执行步骤"""
                         try:
+                            iteration = step.get('iteration', 0)
+                            step_keys = list(step.keys())
+                            logger.info(f"[Step {iteration}] Callback triggered: {step_keys}")
+
+                            # step 是一个字典，使用 .get() 访问
                             # 发送思考过程
-                            if hasattr(step, 'thought') and step.thought:
+                            thought = step.get('thought')
+                            if thought:
+                                logger.info(f"[Step {iteration}] Sending thought: {thought[:100]}...")
                                 await websocket.send_json({
                                     "type": "thought",
-                                    "iteration": getattr(step, 'iteration', 0),
-                                    "content": step.thought
+                                    "content": thought,
+                                    "metadata": {
+                                        "iteration": step.get('iteration', 0),
+                                        "timestamp": datetime.now().isoformat()
+                                    }
                                 })
 
-                            # 发送工具调用
-                            if hasattr(step, 'tool_calls') and step.tool_calls:
-                                await websocket.send_json({
-                                    "type": "action",
-                                    "iteration": getattr(step, 'iteration', 0),
-                                    "tool_calls": [
-                                        {
-                                            "name": tc.name,
-                                            "parameters": tc.parameters
+                            # 发送工具调用（只在第一次有 tool_calls 时发送）
+                            # 如果同时有 observation，说明是第二次调用，跳过 action
+                            tool_calls = step.get('tool_calls')
+                            observation = step.get('observation')
+                            if tool_calls and not observation:
+                                # 为每个工具调用发送一个事件
+                                for tc in tool_calls:
+                                    await websocket.send_json({
+                                        "type": "action",
+                                        "content": f"调用工具: {tc.get('name', 'unknown')}",
+                                        "metadata": {
+                                            "iteration": step.get('iteration', 0),
+                                            "tool_name": tc.get('name', 'unknown'),
+                                            "parameters": tc.get('parameters', {}),
+                                            "timestamp": datetime.now().isoformat()
                                         }
-                                        for tc in step.tool_calls
-                                    ]
-                                })
+                                    })
 
                             # 发送观察结果
-                            if hasattr(step, 'observation') and step.observation:
+                            if observation:
                                 await websocket.send_json({
                                     "type": "observation",
-                                    "iteration": getattr(step, 'iteration', 0),
-                                    "content": str(step.observation)[:500]  # 限制长度
+                                    "content": str(observation)[:500],  # 限制长度
+                                    "metadata": {
+                                        "iteration": step.get('iteration', 0),
+                                        "timestamp": datetime.now().isoformat()
+                                    }
                                 })
                         except Exception as e:
                             # 回调失败不影响主流程
-                            print(f"Step callback error: {e}")
+                            logger.error(f"Step callback error: {e}", exc_info=True)
 
                     # 执行查询（带会话上下文和步骤回调）
                     try:
+                        logger.info(f"[Session {session_id}] Starting agent execution...")
                         result = await self.agent.run_async(
                             query=query,
                             session_context=session.get("context", {}),
                             step_callback=step_callback
                         )
+                        logger.info(f"[Session {session_id}] Agent execution completed. Answer: {result.get('answer', '')[:50]}...")
 
                         # 保存助手回复
                         assistant_message = {
@@ -425,16 +454,17 @@ class GatewayServer:
                             except Exception as e:
                                 logger.warning(f"Failed to save assistant message: {e}")
 
-                        # 发送最终答案
-                        response = self.builder.create_success_response(
-                            request_id=request_id,
-                            payload={
-                                "type": "answer",
-                                "answer": result["answer"],
-                                "stats": result.get("stats", {}),
-                                "iteration": result.get("iteration", 0)
+                        # 发送最终答案（前端期望的格式）
+                        response = {
+                            "type": "answer",
+                            "content": result["answer"],
+                            "metadata": {
+                                "iteration": result.get("stats", {}).get("iterations", 0),
+                                "timestamp": datetime.now().isoformat()
                             }
-                        )
+                        }
+
+                        logger.info(f"[Session {session_id}] Sending answer event: {response['type']}, content length: {len(response['content'])}")
 
                         # 如果有幂等性密钥，缓存响应
                         if idempotency_key:
@@ -444,12 +474,15 @@ class GatewayServer:
 
                     except Exception as e:
                         # 执行出错
-                        error_response = self.builder.create_error_response(
-                            request_id=request_id,
-                            error_code=ErrorCode.AGENT_EXECUTION_FAILED,
-                            error_message=str(e),
-                            details={"exception_type": type(e).__name__}
-                        )
+                        logger.error(f"[Session {session_id}] Agent execution failed: {e}", exc_info=True)
+
+                        error_response = {
+                            "type": "error",
+                            "content": str(e),
+                            "metadata": {
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        }
 
                         # 如果有幂等性密钥，缓存错误响应
                         if idempotency_key:

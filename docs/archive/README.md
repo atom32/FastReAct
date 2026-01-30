@@ -48,3 +48,19 @@
 ---
 
 **归档时间**: 2026-01-26
+**最后更新**: 2026-01-30
+
+## 目录结构
+
+```
+archive/
+├── legacy/           # 旧版本文档
+│   └── INDEX_OLD.md  # 旧的索引文件
+├── summaries/        # 项目阶段总结
+│   ├── P0_FIXES_SUMMARY.md
+│   └── PROJECT_UPDATE_SUMMARY.md
+├── sessions/         # 会议和讨论记录
+│   ├── SESSION_SUMMARY.md
+│   └── NEXT_TIME.md
+└── README.md         # 本文件
+```

@@ -10,6 +10,7 @@ import logging
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -127,19 +128,26 @@ class DockerSandbox:
             # 获取环境变量
             env = self._get_environment(language)
 
-            # 运行容器
-            result = self.client.containers.run(
-                image,
-                command=command,
-                stdin_open=True if stdin else False,
-                environment=env,
-                **self.default_limits,
-                timeout=timeout,
-                remove=True,
-                stdout=True,
-                stderr=True,
-                detach=False
-            )
+            # 在线程池中运行同步的 Docker 命令，并设置超时
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        executor,
+                        lambda: self.client.containers.run(
+                            image,
+                            command=command,
+                            stdin_open=True if stdin else False,
+                            environment=env,
+                            **self.default_limits,
+                            remove=True,
+                            stdout=True,
+                            stderr=True,
+                            detach=False
+                        )
+                    ),
+                    timeout=timeout
+                )
 
             output = result.decode("utf-8") if isinstance(result, bytes) else result
 
@@ -150,6 +158,13 @@ class DockerSandbox:
                 "timestamp": datetime.utcnow().isoformat()
             }
 
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "error": f"Execution timed out after {timeout} seconds",
+                "language": language,
+                "timestamp": datetime.utcnow().isoformat()
+            }
         except docker.errors.ContainerError as e:
             return {
                 "success": False,

@@ -135,7 +135,7 @@ async def example_3_mixed_tools():
     print("示例 3: 混合使用 MCP 和原生工具")
     print("=" * 60)
 
-    from fastreact.tools import CalculatorTool
+    from fastreact.tools import create_calculator_tool
 
     try:
         # 创建 MCP Manager
@@ -157,8 +157,8 @@ async def example_3_mixed_tools():
         # MCP 工具
         mcp_tools = await mcp_manager.get_all_tools()
 
-        # 原生工具
-        native_tools = [CalculatorTool()]
+        # 原生工具 (using functional approach)
+        native_tools = [create_calculator_tool()]
 
         # 合并
         all_tools = native_tools + mcp_tools

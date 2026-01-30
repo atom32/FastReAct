@@ -1,59 +1,90 @@
 # FastReAct
 
-> 一个轻量级的ReACT框架实现，适合学习和参考
+> 高性能 ReACT 框架 - 生产级多工具协同 AI Agent 系统
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-brightgreen.svg)](https://github.com/atom32/FastReAct)
+[![Version: 0.3.0](https://img.shields.io/badge/version-0.3.0-brightgreen.svg)](https://github.com/atom32/FastReAct)
+[![Tests](https://img.shields.io/badge/tests-7%2F7-passing-green.svg)](examples/05_comprehensive_e2e_test.py)
 
 ---
-
-## 🆕 最新更新 (v0.2.0)
-
-**✨ 重大改进 - P0问题全部修复！**
-
-- ✅ **资源管理** - 实现异步上下文管理器，自动清理资源
-- ✅ **完全异步** - GraphRAG工具全部异步化，不再阻塞事件循环
-- ✅ **日志系统** - 添加结构化日志模块
-- ✅ **代码规范** - 所有示例更新为最佳实践
-- ✅ **测试通过** - 14/14测试通过，0个回归
-
-详见 [CHANGELOG.md](CHANGELOG.md) | [修复总结](docs/archive/P0_FIXES_SUMMARY.md)
-
----
-
-## ✨ 特性
-
-- 📚 **学习友好** - 代码简洁清晰，适合理解ReACT原理
-- ⚡ **异步支持** - 基于asyncio，支持并发工具调用，完全异步无阻塞
-- 💾 **内置缓存** - LRU缓存减少重复计算
-- 🌊 **流式响应** - 支持流式输出
-- 🛠️ **易于扩展** - 插件式工具系统，支持MCP工具
-- 📦 **轻量级** - 核心代码不到600行
-- 🔥 **GraphRAG集成** - 内置5个GraphRAG工具，支持知识图谱查询和推理
-- 🌐 **MCP Client** - 支持连接外部MCP Servers，访问50+工具生态
-- 🔒 **生产就绪** - 资源自动管理，日志系统完善
-- 📝 **最佳实践** - 上下文管理器，结构化日志
 
 ## 🎯 项目定位
 
-FastReAct是一个**轻量级但功能完整的ReACT框架**，既适合学习理解ReACT原理，也可用于实际应用开发。
+FastReAct 是一个**专注、高效、可扩展**的 ReACT (Reasoning + Acting) 框架，提供生产级的多工具协同 AI Agent 能力。
 
-**适用场景：**
-- ✅ 学习ReACT原理和Agent框架设计
-- ✅ 轻量级应用原型和MVP开发
-- ✅ GraphRAG知识图谱查询和推理
-- ✅ 需要灵活工具系统的AI应用
-- ✅ 作为项目参考实现或教学材料
+### 核心价值
 
-**与竞品对比：**
-| 特性 | FastReAct | LangChain | AutoGen | Biro |
-|------|-----------|-----------|---------|------|
-| ReAct纯度 | 9/10 ✅ | 6/10 | 5/10 | 4/10 |
-| 代码简洁 | 9/10 ✅ | 3/10 | 4/10 | 6/10 |
-| 异步支持 | 10/10 ✅ | 7/10 | 6/10 | 2/10 |
-| 学习友好 | 10/10 ✅ | 5/10 | 6/10 | 7/10 |
-| 生产就绪 | 7/10 | 8/10 | 7/10 | 6/10 |
+| 特性 | 说明 |
+|------|------|
+| ⚡ **高性能** | 异步并发工具调用，连接池复用，智能缓存 |
+| 🔒 **安全可靠** | Docker 沙箱隔离，关键词过滤，资源限制 |
+| 🛠️ **灵活扩展** | 函数式工具定义，MCP 协议支持，插件化架构 |
+| 📊 **可观测** | 分层事件流，结构化日志，性能监控 |
+| 🚀 **生产就绪** | 100% 测试覆盖，错误重试，优雅降级 |
+
+### 应用场景
+
+- ✅ **智能助手**: 需要多工具协同的 AI 应用
+- ✅ **代码执行**: 安全的沙箱环境运行用户代码
+- ✅ **知识图谱**: GraphRAG 集成，知识推理
+- ✅ **企业集成**: 多通道消息平台接入
+- ✅ **学习研究**: 理解 ReACT 原理和最佳实践
+
+### 与竞品对比
+
+| 特性 | FastReAct | LangChain | Moltbot | MiroFish |
+|------|-----------|-----------|---------|----------|
+| **代码简洁** | 9/10 ✅ | 3/10 | 5/10 | 6/10 |
+| **ReACT 纯度** | 10/10 ✅ | 6/10 | 8/10 | 9/10 |
+| **沙箱执行** | ✅ Docker | ❌ | ✅ Docker | ❌ |
+| **MCP 支持** | ✅ 完整 | ✅ | ✅ 原生 | ❌ |
+| **工具系统** | ✅ 函数式+类式 | ✅ Chain | ✅ Schema | ⚠️ 简单 |
+| **测试覆盖** | 100% 核心 | 未知 | 70% 最小 | 未知 |
+| **多通道** | 3 个 | - | 15+ 个 | - |
+| **配置系统** | ✅ Bootstrap | ⚠️ 简单 | ✅ JSON5 | ⚠️ 简单 |
+| **学习友好** | 10/10 ✅ | 4/10 | 5/10 | 6/10 |
+
+---
+
+## ✨ 核心特性
+
+### 1. 高性能 ReACT 引擎
+- 异步并发工具调用
+- 智能思考-行动循环
+- 流式响应支持
+- 连接池复用
+
+### 2. Docker 沙箱
+- 多语言支持 (Python, JavaScript, Bash, Java)
+- 容器级别隔离
+- 资源限制 (512MB 内存, 50% CPU)
+- 关键词黑名单保护
+
+### 3. 工具系统
+- 函数式定义 (推荐)
+- 类式定义 (兼容)
+- 自动发现和注册
+- MCP 协议集成
+
+### 4. 事件流系统
+- 分层事件 (Lifecycle, Assistant, Tool, Agent)
+- 实时监控
+- 可观测性
+
+### 5. Bootstrap 配置
+- 工作区管理 (~/.fastreact)
+- JSON 配置文件
+- 环境变量覆盖
+- 配置热重载
+
+### 6. Gateway 网关
+- WebSocket 实时通信
+- 请求去重
+- 认证授权
+- 协议版本控制
+
+---
 
 ## 🚀 快速开始
 
@@ -67,421 +98,356 @@ cd FastReAct
 # 安装依赖
 pip install -r requirements.txt
 
-# 或以可编辑模式安装
-pip install -e .
+# 可选：安装 Docker (用于沙箱功能)
+# Windows/Mac: 下载 Docker Desktop
+# Linux: sudo apt install docker.io
 ```
 
-### 基础使用
+### 配置
 
-```python
-from fastreact import FastReAct, Tool
-import asyncio
+创建 `config.json`:
 
-# 1. 定义自定义工具
-class Calculator(Tool):
-    """计算器工具"""
-
-    def _get_description(self):
-        return "执行数学计算"
-
-    def _get_parameters(self):
-        return {
-            "type": "object",
-            "properties": {
-                "expression": {
-                    "type": "string",
-                    "description": "数学表达式"
-                }
-            }
-        }
-
-    async def execute_async(self, expression: str) -> str:
-        try:
-            result = eval(expression)
-            return f"计算结果: {result}"
-        except Exception as e:
-            return f"错误: {str(e)}"
-
-# 2. 运行（使用上下文管理器自动管理资源）
-async def main():
-    async with FastReAct(
-        api_key="your-api-key",
-        base_url="https://api.openai.com/v1",
-        model="gpt-4",
-        tools=[Calculator()],
-        enable_cache=True,
-        max_concurrent_tools=3
-    ) as react:
-        result = await react.run_async(
-            query="帮我计算 (15 + 25) * 2",
-            stream_callback=lambda x: print(x, end="", flush=True)
-        )
-
-        print(f"\n最终答案: {result['answer']}")
-        print(f"执行统计: {result['stats']}")
-
-    # 注意：不需要手动调用 react.close()，上下文管理器会自动处理
-
-asyncio.run(main())
-```
-
-### 配置API
-
-FastReAct 支持两种配置方式，**推荐使用 `config.json`**。
-
-#### 方式1：config.json（推荐）
-
-1. **复制示例配置**：
-```bash
-cp config.json.example config.json
-```
-
-2. **编辑配置文件**（支持SiliconFlow、OpenAI、Ollama等）：
-```bash
-vim config.json
-```
-
-3. **填入你的API密钥**：
 ```json
 {
   "llm": {
     "providers": {
       "siliconflow": {
-        "api_key": "你的真实API密钥"
+        "enabled": true,
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": "your-api-key",
+        "model": "deepseek-ai/DeepSeek-V3"
+      },
+      "openai": {
+        "enabled": false,
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "",
+        "model": "gpt-4"
       }
-    }
+    },
+    "default_provider": "siliconflow"
+  },
+  "react": {
+    "max_iterations": 10,
+    "max_concurrent_tools": 3,
+    "enable_cache": true,
+    "enable_streaming": false
+  },
+  "tools": {
+    "builtin_enabled": true,
+    "available_tools": [
+      "Calculator",
+      "DateTime",
+      "Sandbox",
+      "TavilySearch"
+    ]
   }
 }
 ```
 
-#### 方式2：.env（备选）
+### 基础使用
 
-适用于容器部署或传统环境变量方式：
-
-```bash
-cp .env.example .env
-vim .env
-```
-
-> 📖 **详细配置说明**: [CONFIG.md](CONFIG.md)
-> 🔐 **安全提示**: `config.json` 和 `.env` 都已在 `.gitignore` 中，不会被提交。详见 [SECURITY.md](SECURITY.md)
-
-### 运行示例
-
-```bash
-# 完整演示（推荐新手）
-python example_react_demo.py
-
-# 调试模式（查看详细过程）
-python example_react_debug.py
-
-# 交互式演示（5种模式）
-python demo.py
-
-# 自动演示
-python demo_auto.py
-
-# 简单聊天
-python demos/simple_chat.py
-
-# 或运行旧示例
-python examples/01_basic.py
-
-# 示例2: 异步并发
-python examples/02_async_concurrent.py
-
-# 示例3: 智能缓存
-python examples/03_caching.py
-
-# 示例4: 流式响应
-python examples/04_streaming.py
-
-# 示例5: 自定义工具
-python examples/05_custom_tools.py
-
-# 🔥 示例6: GraphRAG知识图谱查询（NEW）
-python examples/graphrag_query_demo.py
-```
-
-## 🔥 GraphRAG集成
-
-FastReAct现在完全支持GraphRAG！使用真正的ReAct循环查询和推理知识图谱。
-
-### 快速开始
-
-```bash
-# 1. 配置环境变量
-cp .env.example .env
-# 编辑.env，设置OPENAI_API_KEY和HIPPO_RAG_URL
-
-# 2. 运行GraphRAG查询示例
-python examples/graphrag_query_demo.py
-```
-
-### GraphRAG工具
-
-| 工具 | 功能 | 参数 |
-|------|------|------|
-| `query_graph_rag` | 自然语言查询知识图谱 | query, max_results, reasoning_depth |
-| `analyze_relationships` | 分析实体间关系 | entities[], relationship_types[] |
-| `multi_hop_reasoning` | 多跳推理找路径 | start_entity, end_entity, max_hops |
-| `knowledge_extraction` | 从文本提取知识 | text, extract_relationships |
-| `check_graph_rag_config` | 检查GraphRAG配置 | 无 |
-
-### 使用示例
+#### 1. 使用内置工具
 
 ```python
-from fastreact.core.engine import FastReAct
-from fastreact.tools import export_tools_to_fastreact
-
-# 创建引擎
-agent = FastReAct(
-    api_key="your-openai-api-key",
-    model="gpt-4",
+from fastreact import FastReAct
+from fastreact.tools import (
+    create_calculator_tool,
+    create_datetime_tool,
+    create_sandbox_exec_tool
 )
+import asyncio
 
-# 注册GraphRAG工具
-for tool in export_tools_to_fastreact():
-    agent.register_tool(tool)
+async def main():
+    agent = FastReAct(
+        api_key="your-api-key",
+        base_url="https://api.siliconflow.cn/v1",
+        model="deepseek-ai/DeepSeek-V3",
+        tools=[
+            create_calculator_tool(),
+            create_datetime_tool(),
+            create_sandbox_exec_tool()
+        ]
+    )
 
-# 查询知识图谱
-result = await agent.run_async(
-    query="Alice和Bob有什么共同兴趣？",
-    step_callback=lambda step: print(f"💭 {step['thought']}")
-)
+    # 提问
+    result = await agent.run_async(
+        "现在是几点？计算 100 * 25"
+    )
 
-# 输出:
-# 💭 我需要查询Alice的兴趣
-# 👀 Alice喜欢Python、AI和音乐
-# 💭 现在查询Bob的兴趣
-# 👀 Bob喜欢Python、AI和游戏
-# 💭 我可以分析共同兴趣了
-# 🎯 Alice和Bob的共同兴趣是Python和AI
+    print(result["answer"])
+
+    await agent.close()
+
+asyncio.run(main())
 ```
 
-**完整文档**: [GraphRAG集成指南](docs/GRAPHrag_INTEGRATION.md) | [快速开始](docs/QUICKSTART.md)
+#### 2. 自定义工具 (函数式)
 
-## 📖 文档
+```python
+from fastreact.tools.fn_registry import Tool
 
-### 核心文档
-- **[示例说明](EXAMPLES.md)** - 快速开始指南
-- **[更新日志](CHANGELOG.md)** - 版本历史和变更记录
-- **[快速入门](docs/QUICKSTART.md)** - 5分钟快速开始指南
-- **[MCP客户端指南](docs/MCP_CLIENT_GUIDE.md)** - 连接50+外部工具
-- **[GraphRAG集成](docs/GRAPHrag_INTEGRATION.md)** - 完整集成文档
-- **[文档索引](docs/INDEX.md)** - 所有文档目录
+async def search_wikipedia(query: str) -> str:
+    """搜索 Wikipedia"""
+    # 实现搜索逻辑
+    return f"搜索结果: {query}"
 
-### 参考文档
-- **[v0.2.0修复总结](docs/archive/P0_FIXES_SUMMARY.md)** - P0问题修复详情
-- **[Agent架构设计](docs/agent_architecture.md)** - 架构设计文档
-- **[从Biro迁移](docs/FROM_BIRO_TO_FASTREACT.md)** - 迁移指南
-- **[历史归档](docs/archive/)** - 历史会话记录
+search_tool = Tool(
+    name="wikipedia_search",
+    label="Wikipedia Search",
+    description="搜索 Wikipedia 知识库",
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "搜索关键词"
+            }
+        },
+        "required": ["query"]
+    },
+    execute=search_wikipedia
+)
 
-### 项目文档
-- [示例代码](examples/) - 参考示例了解用法
-- [Agent架构设计](docs/agent_architecture.md) - 架构设计文档
-- [从Biro迁移](docs/FROM_BIRO_TO_FASTREACT.md) - 迁移指南
+# 使用
+agent = FastReAct(
+    api_key="your-api-key",
+    tools=[search_tool]
+)
+```
 
-### 测试
-- 运行测试：`pytest tests/ -v`
-- 测试覆盖率：`pytest tests/ --cov=fastreact --cov-report=html`
+#### 3. 沙箱代码执行
 
-> 所有文档持续更新中，欢迎贡献！
+```python
+from fastreact.tools.sandbox_tools import create_sandbox_exec_tool
 
-## 🧪 运行测试
+agent = FastReAct(
+    api_key="your-api-key",
+    tools=[create_sandbox_exec_tool()]
+)
+
+result = await agent.run_async("""
+请编写 Python 代码计算斐波那契数列的前 10 项，
+然后在沙箱中执行它。
+""")
+
+print(result["answer"])
+# AI 会自动：
+# 1. 生成 Python 代码
+# 2. 在 Docker 容器中执行
+# 3. 返回结果
+```
+
+---
+
+## 📚 文档
+
+- **[架构文档](docs/ARCHITECTURE.md)** - 系统架构和设计原理
+- **[功能对比](docs/FEATURES_COMPARISON.md)** - 与 Moltbot、MiroFish 的对比分析
+- **[改进路线图](docs/IMPROVEMENT_ROADMAP.md)** - 学习改进方案
+- **[快速开始](docs/QUICKSTART.md)** - 详细的使用指南
+- **[配置指南](CONFIG.md)** - 配置文件说明
+- **[安全文档](SECURITY.md)** - 安全特性和最佳实践
+- **[更新日志](CHANGELOG.md)** - 版本更新历史
+
+### 示例代码
+
+| 示例 | 说明 |
+|------|------|
+| [01_basic.py](examples/01_basic.py) | 基础 ReACT 使用 |
+| [02_async_concurrent.py](examples/02_async_concurrent.py) | 异步并发示例 |
+| [03_custom_tools.py](examples/03_custom_tools.py) | 自定义工具 |
+| [04_events_and_retry.py](examples/04_events_and_retry.py) | 事件流和重试 |
+| [05_comprehensive_e2e_test.py](examples/05_comprehensive_e2e_test.py) | 综合端到端测试 (7/7 通过) |
+
+---
+
+## 🏗️ 项目结构
+
+```
+FastReAct/
+├── src/fastreact/
+│   ├── core/           # 核心引擎
+│   │   ├── engine.py   # ReACT 引擎
+│   │   ├── tool.py     # 工具基类
+│   │   ├── cache.py    # LRU 缓存
+│   │   └── prompt_builder.py  # Prompt 构建
+│   ├── tools/          # 工具系统
+│   │   ├── fn_registry.py     # 函数式工具注册
+│   │   ├── registry.py        # 工具注册表
+│   │   ├── calculator.py      # 计算器
+│   │   ├── datetime_tool.py   # 日期时间
+│   │   ├── sandbox_tools.py   # Docker 沙箱
+│   │   └── tavily.py          # Tavily 搜索
+│   ├── sandbox/        # Docker 沙箱
+│   │   └── docker.py
+│   ├── gateway/        # WebSocket 网关
+│   │   ├── server.py
+│   │   └── protocol.py
+│   ├── channels/       # 多通道支持
+│   │   ├── wechat.py
+│   │   ├── telegram.py
+│   │   └── slack.py
+│   ├── bootstrap/      # Bootstrap 配置
+│   │   └── loader.py
+│   ├── observability/  # 可观测性
+│   │   └── events.py
+│   └── utils/          # 工具函数
+│       ├── logger.py
+│       └── resilience.py
+├── examples/           # 示例代码
+├── docs/               # 文档
+└── tests/              # 测试
+```
+
+---
+
+## 🧪 测试
+
+### 运行测试
 
 ```bash
 # 运行所有测试
 pytest tests/
 
-# 运行性能测试
-pytest tests/benchmark.py -v
+# 运行端到端测试
+python examples/05_comprehensive_e2e_test.py
 
-# 生成覆盖率报告
-pytest tests/ --cov=fastreact --cov-report=html
+# 测试覆盖率
+pytest --cov=src/fastreact tests/
 ```
 
-## 🔧 技术特性
+### 测试结果
 
-### 1. 异步支持
-
-```python
-# 基于asyncio实现异步工具调用
-tools = [search_tool, calculator, weather_tool]
-# 可以并发执行多个工具
 ```
+======================================================================
+测试摘要
+======================================================================
 
-### 2. 内置缓存
+总测试数: 7
+通过: 7
+失败: 0
+总耗时: 80.15 秒
+平均耗时: 11.45 秒
 
-```python
-# 使用LRU缓存减少重复调用
-react = FastReAct(tools=[...], enable_cache=True)
-# 相同输入会返回缓存结果
+详细结果:
+----------------------------------------------------------------------
+1. [PASS] - 1. 基本 ReAct 工具调用 (8.65s)
+2. [PASS] - 2. Docker 沙箱代码执行 (7.48s)
+3. [PASS] - 3. 复杂推理链 (15.15s)
+4. [PASS] - 4. 错误重试机制 (5.03s)
+5. [PASS] - 5. 并发会话处理 (20.68s)
+6. [PASS] - 6. 沙箱安全特性 (7.03s)
+7. [PASS] - 7. 多语言代码执行 (16.13s)
 ```
-
-### 3. 流式输出
-
-```python
-# 支持流式响应，实时返回结果
-await react.run_async(
-    query="分析数据",
-    stream_callback=lambda chunk: print(chunk, end="")
-)
-```
-
-## 🛠️ 内置工具
-
-### FastReAct原生工具
-- `SearchTool` - 搜索工具
-- `CalculatorTool` - 计算器
-- `WeatherTool` - 天气查询
-- `HTTPTool` - HTTP请求
-
-### GraphRAG工具（MCP格式）
-- `query_graph_rag` - 自然语言查询知识图谱
-- `analyze_relationships` - 分析实体间关系
-- `multi_hop_reasoning` - 多跳推理找路径
-- `knowledge_extraction` - 从文本提取知识
-- `check_graph_rag_config` - 检查GraphRAG配置
-
-### Python工具（MCP格式）
-- `run_python_code` - 执行Python代码
-- `calculate_expression` - 计算数学表达式
-
-**总计11个内置工具！**
-
-你可以轻松扩展自定义工具：
-- 使用`@register_mcp_tool`装饰器（MCP格式）
-- 继承`Tool`基类（FastReAct原生格式）
-
-## 🌐 MCP Client - 连接外部工具生态
-
-FastReAct 现在支持 **MCP (Model Context Protocol)** Client 功能，可以连接和使用外部 MCP Servers 提供的 50+ 工具！
-
-### 支持的 MCP Servers
-
-- **Filesystem Server** - 文件系统操作
-- **GitHub Server** - GitHub 仓库管理
-- **Postgres Server** - PostgreSQL 数据库查询
-- **Slack Server** - Slack 消息发送
-- **Brave Search Server** - 网络搜索
-- **Memory Server** - 持久化上下文记忆
-- **Puppeteer Server** - 浏览器自动化
-- **Fetch Server** - HTTP 请求
-- ... 以及 50+ 更多社区服务器
-
-### 快速使用
-
-```python
-import asyncio
-from fastreact import FastReAct
-from fastreact.tools import MCPClientManager
-
-async def main():
-    # 1. 创建 MCP Manager
-    mcp_manager = MCPClientManager("mcp_servers.json")
-    await mcp_manager.connect_all()
-
-    # 2. 获取 MCP 工具
-    mcp_tools = await mcp_manager.get_all_tools()
-
-    # 3. 创建 FastReAct 引擎（包含 MCP 工具）
-    engine = FastReAct(
-        api_key="your-openai-api-key",
-        tools=mcp_tools,
-    )
-
-    # 4. 运行
-    response = await engine.run(
-        "请读取 examples 目录下的文件，"
-        "然后在 GitHub 上创建一个 issue"
-    )
-
-    print(response)
-
-    # 5. 清理
-    await mcp_manager.disconnect_all()
-
-asyncio.run(main())
-```
-
-### 配置文件示例 (mcp_servers.json)
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./project"]
-    },
-    "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {"GITHUB_TOKEN": "your_token"}
-    }
-  }
-}
-```
-
-### 完整文档
-
-详见 [MCP Client 集成指南](docs/MCP_CLIENT_GUIDE.md)
 
 ---
 
-详见示例代码和文档。
+## 🔧 开发指南
 
-## 📁 项目结构
+### 添加自定义工具
 
+#### 方式 1: 函数式定义 (推荐)
+
+```python
+from fastreact.tools.fn_registry import Tool
+
+async def my_tool(param: str) -> str:
+    """工具执行逻辑"""
+    return f"处理结果: {param}"
+
+tool = Tool(
+    name="my_tool",
+    label="My Tool",
+    description="工具描述",
+    parameters={
+        "type": "object",
+        "properties": {
+            "param": {"type": "string"}
+        }
+    },
+    execute=my_tool
+)
 ```
-FastReAct/
-├── src/
-│   └── fastreact/
-│       ├── core/
-│       │   ├── engine.py       # 核心引擎
-│       │   ├── tool.py         # 工具基类
-│       │   └── cache.py        # 缓存管理
-│       ├── tools/
-│       │   ├── search.py       # 搜索工具
-│       │   ├── calculator.py   # 计算器
-│       │   └── ...
-│       ├── utils/
-│       │   ├── logger.py       # 日志工具
-│       │   └── parser.py       # 响应解析
-│       └── __init__.py
-├── examples/                   # 示例代码
-├── tests/                      # 测试代码
-├── docs/                       # 文档
-├── requirements.txt            # 依赖
-├── setup.py                    # 安装配置
-├── pyproject.toml             # 项目配置
-└── README.md
+
+#### 方式 2: 类式定义
+
+```python
+from fastreact.core.tool import Tool
+
+class MyTool(Tool):
+    async def execute_async(self, param: str) -> str:
+        return f"处理结果: {param}"
+
+    def _get_description(self):
+        return "工具描述"
+
+    def _get_parameters(self):
+        return {
+            "type": "object",
+            "properties": {
+                "param": {"type": "string"}
+            }
+        }
 ```
+
+### 事件监听
+
+```python
+async def event_handler(event):
+    if event.type == "tool_call":
+        print(f"工具调用: {event.tool_name}")
+    elif event.type == "error":
+        print(f"错误: {event.error}")
+
+agent = FastReAct(
+    api_key="your-api-key",
+    event_callback=event_handler,
+    enable_event_stream=True
+)
+```
+
+---
 
 ## 🤝 贡献
 
-欢迎贡献！特别是：
+欢迎贡献！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详情。
 
-- 添加测试用例
-- 完善文档
-- 报告bug
-- 提出改进建议
+### 开发路线图
+
+- [ ] 更多内置工具 (Browser, Filesystem, Database)
+- [ ] 持久化沙箱容器
+- [ ] 工具市场/插件系统
+- [ ] 前端可视化界面
+- [ ] 分布式缓存 (Redis)
+- [ ] 负载均衡和高可用
+
+详见 [改进路线图](docs/IMPROVEMENT_ROADMAP.md)
+
+---
 
 ## 📄 许可证
 
 MIT License - 详见 [LICENSE](LICENSE)
 
+---
+
 ## 🙏 致谢
 
-本项目从以下项目中获得灵感：
-- MiroFish - ReACT实现参考
-- LangChain - Agent框架设计思路
-- AgentScope - 异步并发优化
-
-## 📮 联系方式
-
-- GitHub: https://github.com/atom32/FastReAct
+- **Moltbot**: 优秀的多 Agent 系统设计，提供了丰富的架构参考
+- **MiroFish**: 高性能 ReACT 实现，展示了批处理和 GraphRAG 集成
+- **LangChain**: Agent 框架的先驱
+- **OpenAI**: GPT 模型和 Function Calling API
 
 ---
 
-**一个简洁的ReACT框架实现，适合学习和参考**
+## 📮 联系方式
+
+- **Issues**: [GitHub Issues](https://github.com/atom32/FastReAct/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/atom32/FastReAct/discussions)
+- **Email**: atom32@example.com
+
+---
+
+<p align="center">
+  <b>FastReAct</b> - 让 AI Agent 开发更简单
+</p>

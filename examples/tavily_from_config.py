@@ -5,6 +5,7 @@
 import asyncio
 import json
 from fastreact import FastReAct
+# Note: TavilySearchTool still uses class-based API
 from fastreact.tools import TavilySearchTool
 
 

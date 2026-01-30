@@ -4,6 +4,7 @@ Tavily 搜索演示 - 直接传入 API Key
 
 import asyncio
 from fastreact import FastReAct
+# Note: TavilySearchTool still uses class-based API
 from fastreact.tools import TavilySearchTool
 
 # 在这里填写你的 Tavily API Key

@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastreact import FastReAct
-from fastreact.tools import CalculatorTool
+from fastreact.tools import create_calculator_tool
 from fastreact.agents import (
     AgentRouter,
     create_agent_from_fastreact,
@@ -31,7 +31,7 @@ async def demo_multi_agent():
     fastreact = FastReAct(
         api_key="test-key",
         model="gpt-4",
-        tools=[CalculatorTool()],
+        tools=[create_calculator_tool()],
         max_iterations=2,
     )
     print("OK - FastReAct instance created")

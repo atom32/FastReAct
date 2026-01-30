@@ -2,6 +2,7 @@
 启动 FastReAct WebSocket Gateway
 
 运行此脚本启动 WebSocket 网关服务器，然后打开 public/index.html 进行测试。
+自动从 config.json 读取配置。
 """
 
 import os
@@ -13,25 +14,23 @@ import uvicorn
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fastreact import FastReAct
-from fastreact.tools import (
-    SearchTool,
-    CalculatorTool,
-    WeatherTool,
-    DateTimeTool,
-    CodeExecutorTool,
-)
+from fastreact.tools import create_all_tools
 from fastreact.gateway import GatewayServer
+from fastreact.utils.config import get_config
 
-# 从环境变量读取 API Key
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    print("❌ 错误: 请设置 OPENAI_API_KEY 环境变量")
-    print("例如: export OPENAI_API_KEY='your-api-key'")
+# 从 config.json 读取配置
+config = get_config()
+llm_config = config.get_llm_config()
+
+api_key = llm_config.get("api_key")
+if not api_key or api_key == "YOUR_API_KEY_HERE":
+    print("❌ 错误: 请在 config.json 中设置 api_key")
+    print("💡 编辑 config.json 文件，填入你的 API Key")
     sys.exit(1)
 
-# 读取配置（如果有）
-base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-model = os.getenv("OPENAI_MODEL", "gpt-4")
+base_url = llm_config.get("base_url", "https://api.openai.com/v1")
+model = llm_config.get("model", "gpt-4")
+provider_name = config.config.get("llm", {}).get("default_provider", "default")
 
 # 存储配置
 storage_path = os.getenv("STORAGE_PATH", "./data/sessions.db")
@@ -40,25 +39,27 @@ auto_save = os.getenv("AUTO_SAVE", "true").lower() == "true"
 print("=" * 60)
 print("🚀 FastReAct WebSocket Gateway")
 print("=" * 60)
-print(f"📡 API: {base_url}")
+print(f"📡 提供商: {provider_name}")
+print(f"🌐 API: {base_url}")
 print(f"🤖 模型: {model}")
-print(f"🔧 工具: 5 个内置工具")
+print(f"🔧 工具: 函数式自动加载")
 print(f"💾 存储: SQLite ({storage_path})")
 print(f"🔄 自动保存: {auto_save}")
+print(f"📄 配置: config.json")
 print("=" * 60)
 
-# 初始化 FastReAct
+# 🔥 函数式工具加载 - 类似 moltbot 的简洁方式
+print("\n📦 加载工具（包含扩展工具）...")
+tools = create_all_tools(config.config)
+print(f"✅ 成功加载 {len(tools)} 个工具:")
+for tool in tools:
+    print(f"   - {tool.name} ({tool.label})")
+
 agent = FastReAct(
     api_key=api_key,
     base_url=base_url,
     model=model,
-    tools=[
-        SearchTool(),           # 搜索工具
-        CalculatorTool(),       # 计算器
-        WeatherTool(),          # 天气查询
-        DateTimeTool(),         # 日期时间
-        CodeExecutorTool(),     # 代码执行
-    ],
+    tools=tools,
     max_iterations=10,
     enable_cache=True,
     enable_deduplication=True,

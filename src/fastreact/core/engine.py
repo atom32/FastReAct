@@ -61,8 +61,8 @@ class FastReAct:
         enable_streaming: bool = False,
         enable_cache: bool = True,
         cache_size: int = 1000,
-        temperature: float = 0.5,
-        max_tokens: int = 2048,
+        temperature: float = 0.3,  # 降低温度，增加思考确定性
+        max_tokens: int = 8192,
         max_tool_retries: int = 3,
         enable_tool_retry: bool = True,
         enable_deduplication: bool = True,
@@ -418,8 +418,17 @@ class FastReAct:
 
         for attempt in range(self.max_tool_retries + 1):
             try:
-                # 执行工具
-                result = await tool.execute_async(**params)
+                # 执行工具 - 兼容旧方式和新方式
+                if hasattr(tool, 'execute_async'):
+                    # 旧的 Tool 类（面向对象）
+                    result = await tool.execute_async(**params)
+                elif hasattr(tool, 'execute') and asyncio.iscoroutinefunction(tool.execute):
+                    # 新的函数式 Tool
+                    result = await tool.execute(**params)
+                else:
+                    # 同步函数式 Tool
+                    result = tool.execute(**params)
+
                 execution_time = time.time() - start_time
 
                 # 记录调用（用于去重）
@@ -603,9 +612,25 @@ class FastReAct:
                 # 执行工具（带重试）
                 start_time = time.time()
 
+                # 获取工具实例
+                tool = self.tools.get(call.name)
+                if not tool:
+                    raise ValueError(f"Tool not found: {call.name}")
+
+                # 兼容旧方式和新方式
+                if hasattr(tool, 'execute_async'):
+                    # 旧的 Tool 类（面向对象）
+                    execute_fn = tool.execute_async
+                elif hasattr(tool, 'execute') and asyncio.iscoroutinefunction(tool.execute):
+                    # 新的函数式 Tool
+                    execute_fn = tool.execute
+                else:
+                    # 同步函数式 Tool
+                    execute_fn = tool.execute
+
                 # 使用重试执行器
                 result = await self._retry_executor.execute(
-                    call.tool.execute_async,
+                    execute_fn,
                     **call.parameters
                 )
 
@@ -751,55 +776,45 @@ class FastReAct:
 
     def _build_system_prompt(self) -> str:
         """
-        构建系统提示（集成 Bootstrap 配置）
+        构建系统提示（使用模块化 PromptBuilder）
 
         优先级：
         1. Bootstrap 文件内容（AGENTS.md, SOUL.md, TOOLS.md）
-        2. 基础系统提示
+        2. PromptBuilder 构建的模块化提示
         3. 工具描述
 
         注意：工具调用由 Function Calling API 自动处理，不需要格式说明
         """
-        # 构建基础系统提示
-        tools_desc = "\n\n".join([
-            f"### {name}\n{tool.description}\n**参数**: {json.dumps(tool.parameters, ensure_ascii=False)}"
-            for name, tool in self.tools.items()
-        ]) if self.tools else "暂无工具"
+        # 使用模块化 Prompt 构建器（类似 moltbot）
+        from ..tools.fn_registry import Tool as FnTool
+        from ..core.prompt_builder import build_system_prompt, PromptConfig
 
-        base_prompt = f"""你是一个智能助手，可以帮助用户完成各种任务。
+        # 将 FastReAct 的 Tool 对象转换为函数式 Tool
+        tools_dict = {}
+        for name, tool in self.tools.items():
+            # 创建函数式 Tool 包装
+            tools_dict[name] = FnTool(
+                name=name,
+                description=tool.description,
+                parameters=tool.parameters,
+                execute=tool.execute,
+                label=getattr(tool, 'label', name),
+                category=getattr(tool, 'category', None)
+            )
 
-## 可用工具
+        # 构建 PromptConfig（可通过外部配置扩展）
+        config = PromptConfig(
+            temperature=self.temperature,
+            max_iterations=self.max_iterations,
+            prompt_mode="full",  # full/minimal/none
+            reasoning_level="off",  # 默认 off，让 LLM 自主决定
+            thinking_level="concise",  # silent/concise/verbose
+            workspace_dir=self.workspace if self.workspace else None,
+            enable_workspace_files=bool(self.workspace),
+        )
 
-{tools_desc}
-
-## 工作流程
-
-1. **Thought**: 思考需要什么信息来回答问题
-2. **Action**: 使用工具获取信息（系统会自动处理工具调用）
-3. **Observation**: 分析工具返回结果
-4. **循环**: 重复步骤1-3，直到收集到足够信息
-5. **Final Answer**: 基于工具结果给出最终答案
-
-## 重要提示
-
-- 可以一次调用多个工具来获取信息
-- 工具调用结果会给你提供更多信息
-- 最终答案必须基于工具返回的结果，不要编造
-- 如果信息足够，直接给出答案，不需要调用更多工具
-
-## 示例
-
-**用户**: 北京今天的天气怎么样？
-
-**助手**:
-Thought: 需要查询北京今天的天气信息
-（系统自动调用 weather 工具）
-
-Observation: 北京今天晴，温度15-25℃
-
-Thought: 已获取天气信息，可以回答了
-Final Answer: 北京今天是晴天，温度15-25摄氏度。
-"""
+        # 使用模块化构建器生成基础 prompt
+        base_prompt = build_system_prompt(tools_dict, config)
 
         # 如果启用 Bootstrap，注入配置文件
         if self._bootstrap_loader:
@@ -1053,7 +1068,10 @@ Final Answer: 北京今天是晴天，温度15-25摄氏度。
                     step["answer"] = self._extract_final_answer(response_content)
 
                     if step_callback:
-                        step_callback(step)
+                        if asyncio.iscoroutinefunction(step_callback):
+                            await step_callback(step)
+                        else:
+                            step_callback(step)
                     steps.append(step)
 
                     # 更新统计
@@ -1075,7 +1093,10 @@ Final Answer: 北京今天是晴天，温度15-25摄氏度。
                 ]
 
                 if step_callback:
-                    step_callback(step)
+                    if asyncio.iscoroutinefunction(step_callback):
+                        await step_callback(step)
+                    else:
+                        step_callback(step)
                 steps.append(step)
 
                 # 并发执行工具（带事件和重试）
@@ -1094,7 +1115,10 @@ Final Answer: 北京今天是晴天，温度15-25摄氏度。
                 step["observation"] = observation_text
 
                 if step_callback:
-                    step_callback(step)
+                    if asyncio.iscoroutinefunction(step_callback):
+                        await step_callback(step)
+                    else:
+                        step_callback(step)
 
                 # 添加到消息历史
                 messages.append({"role": "assistant", "content": response_content})

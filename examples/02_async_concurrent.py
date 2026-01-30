@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastreact import FastReAct
-from fastreact.tools import CalculatorTool, SearchTool, WeatherTool
+from fastreact.tools import create_calculator_tool, create_search_tool, create_weather_tool
 
 
 async def main():
@@ -25,7 +25,11 @@ async def main():
         api_key="your-api-key",
         base_url="https://api.openai.com/v1",
         model="gpt-4",
-        tools=[CalculatorTool(), SearchTool(), WeatherTool()],
+        tools=[
+            create_calculator_tool(),
+            create_search_tool(),
+            create_weather_tool()
+        ],
         max_concurrent_tools=3,  # 最多3个工具并发执行
         enable_cache=True,
     )
