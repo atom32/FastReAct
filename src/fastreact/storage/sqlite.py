@@ -99,40 +99,23 @@ class SQLiteSessionStorage(SessionStorage):
             data: 会话数据
         """
         async with aiosqlite.connect(self.db_path) as db:
-            # 检查会话是否存在
-            async with db.execute(
-                "SELECT session_id FROM sessions WHERE session_id = ?",
-                (session_id,)
-            ) as cursor:
-                exists = await cursor.fetchone() is not None
-
-            if exists:
-                # 更新现有会话
-                await db.execute("""
-                    UPDATE sessions
-                    SET user_id = ?,
-                        title = ?,
-                        metadata = ?,
-                        updated_at = CURRENT_TIMESTAMP,
-                        last_active = CURRENT_TIMESTAMP
-                    WHERE session_id = ?
-                """, (
-                    data.get("user_id"),
-                    data.get("title", "新对话"),
-                    json.dumps(data.get("metadata", {}), ensure_ascii=False),
-                    session_id
-                ))
-            else:
-                # 创建新会话
-                await db.execute("""
-                    INSERT INTO sessions (session_id, user_id, title, metadata)
-                    VALUES (?, ?, ?, ?)
-                """, (
-                    session_id,
-                    data.get("user_id"),
-                    data.get("title", "新对话"),
-                    json.dumps(data.get("metadata", {}), ensure_ascii=False)
-                ))
+            # 使用 UPSERT (INSERT ... ON CONFLICT) 来避免竞态条件
+            # 这是原子操作，不会在并发环境下产生 UNIQUE 约束冲突
+            await db.execute("""
+                INSERT INTO sessions (session_id, user_id, title, metadata, updated_at, last_active)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    user_id = excluded.user_id,
+                    title = excluded.title,
+                    metadata = excluded.metadata,
+                    updated_at = CURRENT_TIMESTAMP,
+                    last_active = CURRENT_TIMESTAMP
+            """, (
+                session_id,
+                data.get("user_id"),
+                data.get("title", "新对话"),
+                json.dumps(data.get("metadata", {}), ensure_ascii=False)
+            ))
 
             # 如果有消息，保存消息
             messages = data.get("messages", [])
