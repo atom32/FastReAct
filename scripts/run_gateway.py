@@ -9,6 +9,12 @@ import sys
 import asyncio
 import uvicorn
 
+# 设置 UTF-8 输出（Windows 兼容）
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -17,8 +23,7 @@ from fastreact.tools import (
     SearchTool,
     CalculatorTool,
     WeatherTool,
-    DateTimeTool,
-    CodeExecutorTool,
+    HTTPTool,
 )
 from fastreact.gateway import GatewayServer
 from fastreact.utils.config import get_config
@@ -61,7 +66,7 @@ print("=" * 60)
 print(f"📋 配置来源: {config_source}")
 print(f"📡 API: {base_url}")
 print(f"🤖 模型: {model}")
-print(f"🔧 工具: 5 个内置工具")
+print(f"🔧 工具: 4 个内置工具")
 print(f"💾 存储: SQLite ({storage_path})")
 print(f"🔄 自动保存: {auto_save}")
 print("=" * 60)
@@ -75,8 +80,7 @@ agent = FastReAct(
         SearchTool(),           # 搜索工具
         CalculatorTool(),       # 计算器
         WeatherTool(),          # 天气查询
-        DateTimeTool(),         # 日期时间
-        CodeExecutorTool(),     # 代码执行
+        HTTPTool(),             # HTTP 请求
     ],
     max_iterations=10,
     enable_cache=True,
