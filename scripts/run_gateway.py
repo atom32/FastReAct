@@ -21,17 +21,35 @@ from fastreact.tools import (
     CodeExecutorTool,
 )
 from fastreact.gateway import GatewayServer
+from fastreact.utils.config import get_config
 
-# 从环境变量读取 API Key
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    print("❌ 错误: 请设置 OPENAI_API_KEY 环境变量")
-    print("例如: export OPENAI_API_KEY='your-api-key'")
-    sys.exit(1)
+# 优先从 config.json 读取配置，否则使用环境变量
+try:
+    config = get_config()
+    llm_config = config.get_llm_config()
 
-# 读取配置（如果有）
-base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-model = os.getenv("OPENAI_MODEL", "gpt-4")
+    api_key = llm_config.get('api_key')
+    if not api_key:
+        raise ValueError("api_key not found in config")
+
+    base_url = llm_config.get('base_url', 'https://api.openai.com/v1')
+    model = llm_config.get('model', 'gpt-4')
+
+    config_source = "config.json"
+except Exception as e:
+    # 回退到环境变量
+    print(f"[WARN] 无法从 config.json 读取配置: {e}")
+    print("[INFO] 使用环境变量配置")
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print("❌ 错误: 请设置 OPENAI_API_KEY 环境变量或配置 config.json")
+        print("例如: export OPENAI_API_KEY='your-api-key'")
+        sys.exit(1)
+
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    model = os.getenv("OPENAI_MODEL", "gpt-4")
+    config_source = "环境变量"
 
 # 存储配置
 storage_path = os.getenv("STORAGE_PATH", "./data/sessions.db")
@@ -40,6 +58,7 @@ auto_save = os.getenv("AUTO_SAVE", "true").lower() == "true"
 print("=" * 60)
 print("🚀 FastReAct WebSocket Gateway")
 print("=" * 60)
+print(f"📋 配置来源: {config_source}")
 print(f"📡 API: {base_url}")
 print(f"🤖 模型: {model}")
 print(f"🔧 工具: 5 个内置工具")
