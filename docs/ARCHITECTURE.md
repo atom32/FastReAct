@@ -3,10 +3,109 @@
 > **Version**: v1.0.0
 > **Status**: Production Ready (100% Core Features Complete)
 > **Last Updated**: 2026-02-02
+> **Vision**: Enterprise-Grade Agent Framework - "Bring Your Own Model & Data"
+
+## 🎯 Project Vision
+
+**Strategic Position**: FastReAct is NOT a Claude Code clone. It's an **enterprise-grade Agent infrastructure framework** that enables organizations to build Claude Code-like intelligent agents for **any business domain**.
+
+**Core Value Proposition**:
+> "Use FastReAct to achieve 80% of Claude Code capabilities at 1/10th of the cost, on your private data, with your chosen models."
+
+**Key Differentiators**:
+- ✅ **Privacy First**: Fully offline, on-premise deployment (data never leaves your infrastructure)
+- ✅ **Model Flexibility**: Support any LLM (DeepSeek, GPT-4o-mini, local 7B/14B models)
+- ✅ **Cost Optimization**: Advanced token management, local embeddings, intelligent caching
+- ✅ **Customizable**: Define your own toolsets for specific business needs
+
+---
 
 ## Overview
 
 FastReAct is a high-performance ReACT (Reasoning + Acting) framework designed for multi-tool collaboration, context-aware intelligence, and enterprise-grade scalability. This document describes the complete system architecture and thinking flow.
+
+---
+
+## Strategic Roadmap
+
+### Phase 1: Technical Validation (Current - Q1 2026) 🎯
+**Goal**: Prove FastReAct can handle coding tasks
+
+| Component | Status | Note |
+|-----------|--------|------|
+| ReACT Loop | ✅ Complete | Core reasoning engine |
+| Memory Management | ✅ Complete | Token-aware, smart truncation |
+| Memory Retrieval | ✅ Complete | Vector + Hybrid search |
+| Progressive Compaction | ✅ Complete | 4-level compression |
+| Tool Result Pruning | ⬜ In Progress | Prevent context explosion |
+| Stateful Shell | ⬜ TODO | Persistent environment |
+| edit_file Tool | ⬜ TODO | Precise code editing |
+
+**Philosophy**: *If FastReAct can write code (the most complex task), it can do anything.*
+
+### Phase 2: Market Differentiation (Q2 2026) 🚀
+**Goal**: Headless Agent API for enterprise integration
+
+**Demo Applications**:
+1. **Coding Agent** (Technical Proof)
+   - Repo Map, Grep, Edit Files, Run Tests
+   - Target: Developers, technical teams
+
+2. **BI Analyst Agent** (Business Use Case)
+   - SQL access, auto-reporting
+   - Target: Data analysts, business teams
+
+3. **DevOps Bot** (Operations Use Case)
+   - K8s permissions, auto troubleshooting
+   - Target: SRE, DevOps teams
+
+**Positioning**: Not competing with IDE plugins (Cursor, Windsurf), but providing **backend infrastructure**.
+
+### Phase 3: Ecosystem Building (Q3-Q4 2026) 🌟
+**Goal**: "Bring Your Own Model & Data" platform
+
+**Capabilities**:
+- Custom Toolset Builder (visual or code-based)
+- Multi-Model Management (switch between models per task)
+- Enterprise Deployment (Docker, Kubernetes, On-Premise)
+- API Services (RESTful, WebSocket, gRPC)
+
+---
+
+## Why FastReAct Matters
+
+### Problem: Claude Code Limitations
+
+| Limitation | Impact | Enterprise Need |
+|------------|--------|-----------------|
+| **Black Box** | Cannot customize prompts or strategies | Need domain-specific optimization |
+| **Vendor Lock-in** | Must use Claude API | Want to use cheaper alternatives (DeepSeek, local models) |
+| **Cloud-Only** | Code uploaded to Anthropic servers | Require data privacy (banking, defense) |
+| **One-Size-Fits-All** | Generic coding assistant | Need specialized business agents |
+
+### FastReAct Solution
+
+| Enterprise Need | FastReAct Capability |
+|----------------|---------------------|
+| **Data Privacy** | Fully offline deployment, data never leaves infrastructure |
+| **Cost Control** | Local embeddings (free), model flexibility (1/10 cost) |
+| **Domain Adaptation** | Custom toolsets for any business domain |
+| **Integration** | API-first design, embeddable in existing systems |
+
+### The "Coding Agent → Business Agent" Mapping
+
+**Insight**: Coding is the "Turing Test" for AI Agents. If FastReAct can write code (most complex task), other business domains are trivial by comparison.
+
+| Coding Agent Capability | Business Agent Equivalent | Commercial Use Case |
+|----------------------|-------------------------|-------------------|
+| **Repo Map** (file tree) | **Knowledge Graph** | Customer Service: Product hierarchy & docs |
+| **Grep / Search** | **RAG Search** | Legal: Contract risk clause retrieval |
+| **Run Tests** | **Compliance Check** | Finance: Auto-balance verification |
+| **Edit File** | **CRUD Operations** | HR: Auto employee onboarding system setup |
+| **Bash Terminal** | **Internal Tools** | DevOps: AWS/Aliyun API auto-scaling |
+| **Error Healing** | **Exception Handling** | Procurement: API fallback logic |
+
+---
 
 ## System Thinking Flow
 
