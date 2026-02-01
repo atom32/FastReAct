@@ -322,6 +322,87 @@ class SQLiteSessionStorage(SessionStorage):
 
             await db.commit()
 
+    async def save_summary(
+        self,
+        session_id: str,
+        summary_metadata: Dict[str, Any],
+    ) -> None:
+        """保存对话总结到会话元数据
+
+        Args:
+            session_id: 会话 ID
+            summary_metadata: 总结元数据，包含：
+                - summary: 总结文本
+                - message_count: 原始消息数量
+                - original_tokens: 原始 tokens
+                - summary_tokens: 总结 tokens
+                - compression_ratio: 压缩比例
+                - flush_timestamp: 刷新时间戳
+                - flush_iteration: 刷新时的迭代次数
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            # 获取现有元数据
+            async with db.execute(
+                "SELECT metadata FROM sessions WHERE session_id = ?",
+                (session_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+
+            if row:
+                # 合并元数据
+                existing = json.loads(row[0]) if row[0] else {}
+                existing["summary"] = summary_metadata
+
+                # 更新
+                await db.execute("""
+                    UPDATE sessions
+                    SET metadata = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE session_id = ?
+                """, (
+                    json.dumps(existing, ensure_ascii=False),
+                    session_id
+                ))
+
+                await db.commit()
+
+    async def get_summary(
+        self,
+        session_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """获取会话的对话总结
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            总结元数据，如果不存在返回 None
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT metadata FROM sessions WHERE session_id = ?",
+                (session_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+
+            if not row:
+                return None
+
+            metadata = json.loads(row[0]) if row[0] else {}
+            return metadata.get("summary")
+
+    async def has_summary(self, session_id: str) -> bool:
+        """检查会话是否有总结
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            是否存在总结
+        """
+        summary = await self.get_summary(session_id)
+        return summary is not None and bool(summary.get("summary"))
+
     async def get_session_stats(self) -> Dict[str, Any]:
         """获取存储统计信息
 

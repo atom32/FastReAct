@@ -33,6 +33,7 @@ from ..observability.events import (
     EventManager,
 )
 from ..utils.resilience import RetryExecutor, RetryPolicy
+from ..context import ContextConfig, LLMProviderConfig, ContextBuilder, get_default_context_window
 
 # 获取logger
 logger = get_logger("fastreact.engine")
@@ -71,6 +72,7 @@ class FastReAct:
         workspace: Optional[str] = None,
         enable_event_stream: bool = True,
         event_callback: Optional[Callable] = None,
+        context_config: Optional[ContextConfig] = None,
     ):
         """
         初始化FastReAct引擎
@@ -95,6 +97,7 @@ class FastReAct:
             workspace: Bootstrap工作区路径（默认~/.fastreact）
             enable_event_stream: 是否启用事件流（默认True）
             event_callback: 事件回调函数（异步）
+            context_config: 上下文管理配置（可选，使用默认值）
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -134,6 +137,54 @@ class FastReAct:
             except Exception as e:
                 logger.warning(f"Failed to initialize Bootstrap: {e}")
 
+        # 上下文管理配置
+        self._context_config = context_config or ContextConfig()
+        self._llm_config = LLMProviderConfig(
+            name=model,
+            model=model,
+            max_tokens=max_tokens,
+            context_window=get_default_context_window(model),
+            temperature=temperature,
+            base_url=base_url,
+            api_key=api_key,
+        )
+        self._context_builder: Optional[ContextBuilder] = None
+
+        # Memory Flush (if enabled)
+        self._memory_flush = None
+        if context_config and context_config.memory_flush_enabled:
+            try:
+                from ..context import Summarizer, MemoryFlush
+
+                # Create summarizer
+                summarizer = Summarizer(
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=model,
+                    prompt=context_config.memory_flush_prompt,
+                    temperature=context_config.memory_flush_temperature,
+                )
+
+                # Create memory flush
+                self._memory_flush = MemoryFlush(
+                    summarizer=summarizer,
+                    context_config=context_config,
+                )
+                logger.info("Memory Flush enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Memory Flush: {e}")
+
+        # Memory Retriever (if enabled)
+        self._retriever = None
+        self._retrieval_config = context_config.retrieval if context_config else None
+        if self._retrieval_config and self._retrieval_config.enabled:
+            try:
+                self._setup_retriever()
+            except Exception as e:
+                logger.warning(f"Failed to initialize Memory Retriever: {e}")
+                self._retriever = None
+                self._retrieval_config = None
+
         # 工具注册表
         self.tools: Dict[str, Tool] = {}
         if tools:
@@ -166,6 +217,211 @@ class FastReAct:
     def register_tool(self, tool: Tool) -> None:
         """注册工具"""
         self.tools[tool.name] = tool
+
+    def _get_context_builder(self) -> ContextBuilder:
+        """获取或创建 ContextBuilder 实例
+
+        Returns:
+            ContextBuilder 实例
+        """
+        if self._context_builder is None:
+            self._context_builder = ContextBuilder(
+                context_config=self._context_config,
+                llm_config=self._llm_config,
+            )
+            logger.debug("ContextBuilder initialized")
+        return self._context_builder
+
+    def _setup_retriever(self) -> None:
+        """Setup memory retriever for semantic search
+
+        Initializes:
+        - Embedding generator (ModelScope/Qwen3)
+        - Vector store (SQLite-vec)
+        - Memory retriever
+        - BM25 retriever (if hybrid search enabled)
+
+        Raises:
+            ImportError: If required dependencies are missing
+            Exception: If initialization fails
+        """
+        from ..memory import MemoryRetriever, EmbeddingGenerator, VectorStoreBuilder
+
+        # Create embedding provider
+        provider = EmbeddingGenerator.create_provider(
+            provider_name=self._retrieval_config.provider,
+            model_id=self._retrieval_config.embedding_model,
+            device=self._retrieval_config.device,
+        )
+
+        # Create embedding generator with cache
+        generator = EmbeddingGenerator(
+            provider=provider,
+            enable_cache=True,
+            cache_size=10000,
+        )
+
+        # Create vector store
+        vector_store = VectorStoreBuilder.create(
+            backend=self._retrieval_config.vector_store,
+            db_path=self._retrieval_config.db_path,
+            embedding_dim=self._retrieval_config.embedding_dim,
+        )
+
+        # Get hybrid search config (if enabled)
+        hybrid_config = self._retrieval_config.hybrid_search
+
+        # Create retriever
+        self._retriever = MemoryRetriever(
+            vector_store=vector_store,
+            embedding_generator=generator,
+            chunk_size=self._retrieval_config.chunk_size,
+            chunk_overlap=self._retrieval_config.chunk_overlap,
+            top_k=self._retrieval_config.top_k,
+            min_similarity=self._retrieval_config.min_similarity,
+            hybrid_config=hybrid_config,  # NEW: Pass hybrid search config
+        )
+
+        # Log initialization info
+        hybrid_info = ""
+        if hybrid_config and hybrid_config.enabled:
+            hybrid_info = f", hybrid={hybrid_config.fusion_method}, alpha={hybrid_config.alpha}"
+
+        logger.info(
+            f"Memory Retriever initialized: "
+            f"model={self._retrieval_config.embedding_model}, "
+            f"device={self._retrieval_config.device}, "
+            f"top_k={self._retrieval_config.top_k}"
+            f"{hybrid_info}"
+        )
+
+    async def _build_messages_context(
+        self,
+        query: str,
+        session_context: Optional[Dict[str, Any]] = None,
+        iteration: int = 0,
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """构建带上下文的消息列表（替代硬编码的 [-10:]）
+
+        Args:
+            query: 用户查询
+            session_context: 可选的会话上下文，包含 history
+            iteration: 当前迭代次数（用于 Memory Flush）
+
+        Returns:
+            Tuple of (messages, metadata)
+            - messages: 消息列表
+            - metadata: 包含 token 使用情况的元数据
+        """
+        system_prompt = self._build_system_prompt()
+        history = list(session_context.get("history", [])) if session_context else None
+
+        # 检查是否需要 Memory Flush
+        if history and self._memory_flush:
+            # 计算当前 token 数
+            from ..context import TokenCounter
+            counter = TokenCounter(model=self.model)
+
+            history_tokens = counter.count_messages_tokens(history)
+            system_tokens = counter.count_system_prompt_tokens(system_prompt)
+            query_tokens = counter.count_tokens(query)
+            total_tokens = system_tokens + history_tokens + query_tokens
+
+            # 检查触发条件
+            if self._memory_flush.should_trigger(
+                current_tokens=total_tokens,
+                context_window=self._llm_config.context_window,
+                iteration=iteration,
+            ):
+                logger.info(f"Memory Flush triggered at iteration {iteration}")
+
+                # 执行 flush（这将更新 history）
+                try:
+                    session_id = session_context.get("session_id", "unknown") if session_context else "unknown"
+                    flush_metadata, updated_history = await self._memory_flush.flush_and_update_context(
+                        history=history,
+                        session_id=session_id,
+                        iteration=iteration,
+                    )
+
+                    # 更新 session_context 中的 history
+                    if session_context:
+                        session_context["history"] = updated_history
+
+                        # 存储总结到 metadata
+                        if "flush_metadata" not in session_context:
+                            session_context["flush_metadata"] = []
+                        session_context["flush_metadata"].append(flush_metadata)
+
+                    # 使用更新后的 history
+                    history = updated_history
+
+                    logger.info(
+                        f"Memory Flush complete: {flush_metadata['message_count']} -> "
+                        f"{len(updated_history)} messages"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Memory Flush failed, continuing with original history: {e}")
+
+        # ========== 记忆检索 ==========
+        retrieved_context = ""
+        if self._retriever and self._retrieval_config.enabled:
+            try:
+                # Lazy initialization of vector store
+                await self._retriever.initialize()
+                # 检索相关历史对话
+                results = await self._retriever.retrieve(
+                    query=query,
+                    session_id=session_context.get("session_id") if session_context else None,
+                    top_k=self._retrieval_config.top_k,
+                    min_similarity=self._retrieval_config.min_similarity,
+                )
+
+                if results:
+                    # 格式化检索结果
+                    context_chunks = []
+                    for i, result in enumerate(results[:self._retrieval_config.max_context_chunks]):
+                        chunk_text = result.get("content", "")[:500]  # 限制chunk长度
+                        similarity = result.get("similarity", 0)
+                        context_chunks.append(f"[{i+1}] {chunk_text}... (相似度: {similarity:.2f})")
+
+                    retrieved_context = self._retrieval_config.template.format(
+                        context="\n".join(context_chunks)
+                    )
+
+                    logger.debug(f"Retrieved {len(results)} chunks for query")
+
+            except Exception as e:
+                logger.error(f"Memory retrieval failed: {e}")
+
+        # 注入检索结果到系统提示
+        if retrieved_context and self._retrieval_config.inject_position == "system":
+            system_prompt = f"{retrieved_context}{system_prompt}"
+        # ========== 检索结束 ==========
+
+        # 使用 ContextBuilder 构建上下文
+        context_builder = self._get_context_builder()
+        messages, metadata = context_builder.build_context(
+            system_prompt=system_prompt,
+            user_query=query,
+            history=history,
+        )
+
+        logger.debug(
+            f"Context built: {metadata['history_messages_used']}/{metadata['history_messages_total']} messages, "
+            f"{metadata['total_tokens']} tokens total"
+        )
+
+        # 注入检索结果到 user position（如果配置）
+        if retrieved_context and self._retrieval_config.inject_position == "user":
+            # 在用户查询之前插入检索上下文
+            messages.insert(-1, {
+                "role": "system",
+                "content": retrieved_context
+            })
+
+        return messages, metadata
 
     async def _emit_event(self, event: AgentEvent) -> None:
         """
@@ -1046,20 +1302,13 @@ class FastReAct:
         await self._emit_lifecycle("start")
 
         try:
-            messages = [
-                {"role": "system", "content": self._build_system_prompt()},
-                {"role": "user", "content": query},
-            ]
-
-            # 如果有会话上下文，添加历史消息
-            if session_context and "history" in session_context:
-                # 只添加最近的历史消息（避免 token 过多）
-                history = session_context["history"][-10:]  # 最近 10 条
-                for msg in history:
-                    messages.insert(-1, {
-                        "role": msg.get("role", "user"),
-                        "content": msg.get("content", "")
-                    })
+            # 使用 ContextBuilder 构建消息上下文
+            # Memory Flush 检查在 iteration 0 执行
+            messages, context_metadata = await self._build_messages_context(
+                query,
+                session_context,
+                iteration=0,  # Initial context build
+            )
 
             steps = []
 
@@ -1170,6 +1419,33 @@ class FastReAct:
             # 发送错误事件
             await self._emit_lifecycle("error", error=str(e))
             raise
+
+        finally:
+            # ========== 自动索引对话到向量存储 ==========
+            # 在每次查询完成后索引对话（用于未来的检索）
+            if (
+                self._retriever
+                and self._retrieval_config.enabled
+                and self._retrieval_config.auto_index
+                and session_context
+                and len(steps) > self._retrieval_config.index_delay
+            ):
+                try:
+                    session_id = session_context.get("session_id", "unknown")
+                    history = list(session_context.get("history", []))
+
+                    if len(history) > 0:
+                        # 异步索引（不阻塞响应）
+                        await self._retriever.index_session(
+                            session_id=session_id,
+                            messages=history,
+                        )
+
+                        logger.debug(f"Indexed {len(history)} messages for session {session_id}")
+
+                except Exception as e:
+                    logger.error(f"Session indexing failed: {e}")
+            # ========== 索引结束 ==========
 
     def run(
         self,
@@ -1341,20 +1617,13 @@ class FastReAct:
             # 发送生命周期开始事件
             await self._emit_lifecycle("start")
 
-            # 构建消息
-            messages = [
-                {"role": "system", "content": self._build_system_prompt()},
-                {"role": "user", "content": query},
-            ]
-
-            # 如果有会话上下文，添加历史消息
-            if session_context and "history" in session_context:
-                history = session_context["history"][-10:]
-                for msg in history:
-                    messages.insert(-1, {
-                        "role": msg.get("role", "user"),
-                        "content": msg.get("content", "")
-                    })
+            # 使用 ContextBuilder 构建消息上下文
+            # Memory Flush 检查在 iteration 0 执行
+            messages, context_metadata = await self._build_messages_context(
+                query,
+                session_context,
+                iteration=0,  # Initial context build
+            )
 
             steps = []
             answer_parts = []  # 收集回答片段

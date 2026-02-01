@@ -9,6 +9,14 @@ pydantic>=2.0.0
 # Optional dependencies
 python-dotenv>=1.0.0
 
+# Context management dependencies
+tiktoken>=0.5.0  # For accurate token counting (optional, falls back to estimation)
+
+# Memory/Vector search dependencies
+sqlite-vec>=0.1.0  # Vector similarity search in SQLite (optional, for long-term memory)
+apsw>=3.51.0  # Windows-compatible SQLite wrapper (for sqlite-vec on Windows)
+sentence-transformers>=5.0.0  # Local embeddings (alternative to API-based)
+
 # Gateway dependencies
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
