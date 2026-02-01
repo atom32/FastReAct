@@ -7,6 +7,7 @@ Supports multiple embedding providers for vector search.
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional
+from collections import OrderedDict
 import httpx
 
 from ..utils.logger import get_logger
@@ -178,7 +179,10 @@ class OpenAIEmbedding(EmbeddingProvider):
 
 
 class EmbeddingCache:
-    """Simple in-memory cache for embeddings"""
+    """LRU cache for embeddings
+
+    Uses OrderedDict for efficient LRU (Least Recently Used) eviction.
+    """
 
     def __init__(self, max_size: int = 10000):
         """Initialize cache
@@ -186,7 +190,7 @@ class EmbeddingCache:
         Args:
             max_size: Maximum number of cached embeddings
         """
-        self.cache: Dict[str, List[float]] = {}
+        self.cache: OrderedDict[str, List[float]] = OrderedDict()
         self.max_size = max_size
         self.hits = 0
         self.misses = 0
@@ -202,6 +206,8 @@ class EmbeddingCache:
         """
         if text in self.cache:
             self.hits += 1
+            # Move to end (mark as recently used)
+            self.cache.move_to_end(text)
             return self.cache[text]
         self.misses += 1
         return None
@@ -213,12 +219,13 @@ class EmbeddingCache:
             text: Input text
             embedding: Embedding vector
         """
-        # Evict if cache is full
+        # Evict if cache is full (LRU: remove least recently used)
         if len(self.cache) >= self.max_size:
-            # Simple FIFO: remove first item
-            self.cache.pop(next(iter(self.cache)))
+            # Remove first item (least recently used)
+            self.cache.popitem(last=False)
 
         self.cache[text] = embedding
+        # New item is at the end (most recently used)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics
@@ -235,6 +242,7 @@ class EmbeddingCache:
             "hits": self.hits,
             "misses": self.misses,
             "hit_rate": hit_rate,
+            "eviction_policy": "LRU",  # Indicate LRU policy
         }
 
 
