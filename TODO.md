@@ -1,261 +1,268 @@
-# FastReAct 待办事项
+# FastReAct TODO 列表
 
-> 上次更新: 2026-01-29 (今日)
-
----
-
-## ✅ 今日完成 (2026-01-29)
-
-### 代码更新
-- [x] 从远程拉取最新代码（Phase 2 P1完成）
-- [x] 项目现在包含：
-  - 多智能体系统 (agents/)
-  - WebSocket网关 (gateway/)
-  - 多平台集成 (channels/ - Telegram, Slack)
-  - Docker沙箱 (sandbox/)
-  - 持久化存储 (storage/)
-
-### 演示验证
-- [x] 确认**无硬编码API密钥**（安全检查通过）
-- [x] 创建演示脚本 `demo_clean.py`
-- [x] 成功运行ReAct循环演示
-- [x] 结果保存到 `demo_output.txt`（避免乱码）
-
-### 问题修复
-- [x] 修复Docker导入问题（sandbox工具改为可选依赖）
-- [x] 修改 `src/fastreact/tools/__init__.py`，使用try-except处理导入
-
-### 演示结果
-```
-任务1: 计算 (15 + 25) * 2 - 10 = 70 ✓
-任务2: 多步计算 = 126.67 ✓
-配置: SiliconFlow (DeepSeek-V3) ✓
-工具调用: 成功 ✓
-```
+> 更新日期: 2026-02-02
+> 版本: v1.0.0
 
 ---
 
-## 📊 项目当前状态
+## 📋 任务概览
 
-### 最新代码 (091e24a)
-- **Phase 0**: 核心 ReAct 引擎 (100%)
-- **Phase 1**: 持久化 + 多智能体 (100%)
-- **Phase 2 P0**: Gateway 认证 + 协议 (100%)
-- **Phase 2 P1**: 多通道 + Docker 沙箱 (100%)
+### 已完成 (12/18)
 
-### 核心模块
-```
-src/fastreact/
-├── agents/          # 多智能体系统 ✓
-├── channels/        # Telegram, Slack ✓
-├── gateway/         # WebSocket, 认证, 去重 ✓
-├── sandbox/         # Docker沙箱 ✓
-├── storage/         # SQLite持久化 ✓
-└── tools/           # 工具集（含sandbox）✓
-```
+- ✅ #5 Test Qwen3-Embedding-0.6B model
+- ✅ #6 Implement Hybrid Search (BM25 + Semantic)
+- ✅ #7 Implement Stage 5: Progressive Compaction
+- ✅ #8 Performance optimization (分析完成)
+- ✅ #9 Commit and push hybrid search code
+- ✅ #10 Implement Progressive Compaction (Stage 5)
+- ✅ #11 Documentation cleanup and organization
+- ✅ #12 Performance optimization analysis
+- ✅ 阶段 1-5: 所有核心功能 (100%)
+- ✅ 混合搜索: BM25 + Semantic + RRF
+- ✅ Qwen3 模型支持
+- ✅ 文档整理和归档
 
-### 已修复问题
-- ✅ Docker依赖问题（sandbox工具可选导入）
-- ✅ Windows控制台乱码（输出到文件）
-- ✅ 硬编码检查（确认无硬编码）
+### 待办 (10/18)
+
+#### 性能优化 (P0-P2)
+- ⬜ #13 TokenCounter 实例复用 (1-2h, +20-30% 性能)
+- ⬜ #14 EmbeddingCache LRU 淘汰策略 (2-3h, +15-25% 命中率)
+- ⬜ #15 持久化 Embedding 缓存 (4-6h, 冷启动 +90%)
+- ⬜ #16 检索结果缓存 (3-4h, 重复查询 +95%)
+
+#### 文档更新
+- ⬜ #17 文档更新 - 修正过期状态标记 (30min-1h)
+
+#### 功能增强 (达到 Moltbot 水平)
+- ⬜ #18 Tool Policy 系统 (3-5天, ⭐⭐⭐⭐⭐)
+- ⬜ #19 Context Pruning (2-3天, ⭐⭐⭐⭐⭐)
+- ⬜ #20 Tool Result Pruning (1-2天, ⭐⭐⭐⭐)
+- ⬜ #21 Exec Approvals 执行审批 (2-3天, ⭐⭐⭐⭐)
+- ⬜ #22 Tool Display 用户友好显示 (2-3天, ⭐⭐⭐)
 
 ---
 
-## 🎯 待办事项
+## 🎯 优先级建议
 
-### P0 - 高优先级
+### 快速见效 (1 周内)
 
-#### 1. 运行完整测试
-- [ ] 运行项目测试套件
-- [ ] 验证Phase 2所有功能
-- [ ] 检查测试覆盖率
+**第 1 天**:
+- ✅ #17 修正文档过期状态 (30 分钟)
+
+**第 2-3 天**:
+- #13 TokenCounter 实例复用 (1-2 小时)
+- #14 EmbeddingCache LRU 淘汰 (2-3 小时)
+
+**第 4-6 天**:
+- #20 Tool Result Pruning (1-2 天)
+- #16 检索结果缓存 (3-4 小时)
+
+**预期提升**:
+- 性能提升 30-40%
+- Token 使用减少 20-30%
+- 总工作量: **3-4 天**
+
+### 关键功能 (2-3 周)
+
+**第 2 周**:
+- #18 Tool Policy 系统 (3-5 天) ⭐⭐⭐⭐⭐
+- #19 Context Pruning (2-3 天) ⭐⭐⭐⭐⭐
+
+**第 3 周**:
+- #21 Exec Approvals (2-3 天) ⭐⭐⭐⭐
+- #22 Tool Display (2-3 天) ⭐⭐⭐
+
+**预期提升**:
+- 达到 Moltbot 水平的 90%+
+- 生产环境安全性提升
+- 用户体验改善
+- 总工作量: **10-14 天**
+
+### 长期优化 (1 个月)
+
+**第 4 周**:
+- #15 持久化 Embedding 缓存 (4-6 小时)
+
+**后续优化**:
+- 数据库连接池
+- 异步任务队列
+- BM25 索引优化
+
+**预期提升**:
+- 冷启动加速 90%+
+- 生产环境稳定性
+- 总工作量: **15-20 天**
+
+---
+
+## 📊 进度跟踪
+
+### 当前状态
+
+| 类别 | 已完成 | 待办 | 总计 | 完成度 |
+|------|--------|------|------|--------|
+| 核心功能 | 5 | 0 | 5 | **100%** |
+| 性能优化 | 1 | 4 | 5 | **20%** |
+| 文档更新 | 1 | 1 | 2 | **50%** |
+| 功能增强 | 0 | 5 | 5 | **0%** |
+| **总计** | **7** | **10** | **17** | **41%** |
+
+### 目标设定
+
+| 里程碑 | 目标 | 截止日期 | 状态 |
+|--------|------|----------|------|
+| **M1: 快速优化** | 完成 #13-17 | 1 周 | ⬜ 待开始 |
+| **M2: 关键功能** | 完成 #18-22 | 3 周 | ⬜ 待开始 |
+| **M3: 生产就绪** | 所有任务完成 | 1 个月 | ⬜ 待开始 |
+
+---
+
+## 🚀 开始建议
+
+### 立即开始 (今天)
+
 ```bash
-pytest tests/ -v
+# 1. 修正文档过期状态
+Task #17: 修正 docs/ 中的"阶段4"标记
+
+# 2. 开始性能优化
+Task #13: TokenCounter 实例复用
+Task #14: EmbeddingCache LRU 淘汰
 ```
 
-#### 2. 安装可选依赖
-- [ ] Docker（如果需要沙箱功能）
-- [ ] Telegram/Slack SDK（如果需要通道集成）
-```bash
-pip install docker python-telegram-bot slack-bolt
-```
-
-#### 3. 尝试新功能
-- [ ] 测试多智能体系统 `scripts/demo_multi_agent.py`
-- [ ] 测试会话持久化 `scripts/demo_persistence.py`
-- [ ] 启动WebSocket网关 `scripts/run_gateway.py`
-
-### P1 - 中优先级
-
-#### 4. 理解新架构
-- [ ] 阅读 Phase 2 文档
-- [ ] 了解多智能体系统设计
-- [ ] 学习Gateway协议
-
-#### 5. 集成测试
-- [ ] 端到端测试 `scripts/test_persistence_e2e.py`
-- [ ] Gateway测试 `tests/test_gateway*.py`
-
-### P2 - 低优先级
-
-#### 6. 实际部署
-- [ ] 配置Telegram Bot
-- [ ] 配置Slack App
-- [ ] 部署Gateway服务
-
-#### 7. Phase 3 规划
-根据 `docs/PROJECT_REVIEW_PLANNER.md`:
-- [ ] Planner - 任务分解
-- [ ] Orchestrator - 编排
-- [ ] Memory System - 长期记忆
-- [ ] Reflexion - 自我反思
-
----
-
-## 📋 快速恢复
-
-### 下次开始时运行
+### 本周完成
 
 ```bash
-# 1. 查看本次记录
-type TODO.md
+# 文档更新
+✅ #17 修正文档 (30 分钟)
 
-# 2. 查看演示结果
-type demo_output.txt
-
-# 3. 运行测试（验证环境）
-pytest tests/ -v
-
-# 4. 尝试新功能
-# 选项A: 多智能体演示
-python scripts/demo_multi_agent.py
-
-# 选项B: 持久化演示
-python scripts/demo_persistence.py
-
-# 选项C: 启动Gateway
-python scripts/run_gateway.py
+# 快速优化
+✅ #13 TokenCounter 复用 (1-2 小时)
+✅ #14 LRU 淘汰 (2-3 小时)
+✅ #16 检索缓存 (3-4 小时)
+✅ #20 结果修剪 (1-2 天)
 ```
 
-### 当前配置
-
-- **LLM**: SiliconFlow (DeepSeek-V3)
-- **API**: 在 `config.json` 中配置
-- **Python**: 3.14
-- **已安装**: fastreact-0.2.0 (editable mode)
-
-### 演示文件
+### 本月目标
 
 ```
-FastReAct/
-├── config.json              # LLM配置 ✓
-├── demo_clean.py            # 演示脚本 ✓
-├── demo_output.txt          # 演示结果 ✓
-├── demo_live.py             # 旧版演示（乱码）
-├── scripts/
-│   ├── demo_multi_agent.py  # 多智能体演示
-│   ├── demo_persistence.py  # 持久化演示
-│   └── run_gateway.py       # Gateway服务器
-└── src/fastreact/
-    ├── agents/              # 多智能体
-    ├── channels/            # 多平台集成
-    ├── gateway/             # WebSocket网关
-    ├── sandbox/             # Docker沙箱
-    └── storage/             # 持久化存储
+Week 1: 快速优化 (#13-17) → 性能提升 30-40%
+Week 2-3: 关键功能 (#18-22) → 达到 Moltbot 90%+
+Week 4: 长期优化 (#15) → 冷启动 +90%
 ```
 
 ---
 
-## 🔧 当前问题
+## 💡 工作量估算
 
-### 已知问题
+| 任务 | 工作量 | 价值 | 优先级 |
+|------|--------|------|--------|
+| #17 文档更新 | 0.5-1h | 中 | P0 |
+| #13 TokenCounter | 1-2h | 高 | P0 |
+| #14 LRU 淘汰 | 2-3h | 高 | P0 |
+| #16 检索缓存 | 3-4h | 高 | P1 |
+| #20 结果修剪 | 1-2d | 高 | P1 |
+| #18 Tool Policy | 3-5d | **极高** | **P0** |
+| #19 Context Pruning | 2-3d | **极高** | **P0** |
+| #21 Exec Approvals | 2-3d | 高 | P1 |
+| #22 Tool Display | 2-3d | 中 | P2 |
+| #15 持久化缓存 | 4-6h | 中 | P2 |
 
-1. **Windows控制台乱码** ✓ 已解决
-   - 解决方案：输出到文件 `demo_output.txt`
-
-2. **Docker依赖缺失** (可选)
-   - 影响：无法使用沙箱功能
-   - 解决：`pip install docker`
-
-3. **Telegram/Slack SDK缺失** (可选)
-   - 影响：无法使用通道功能
-   - 解决：`pip install python-telegram-bot slack-bolt`
-
-### 下次会话建议
-
-**如果想快速体验新功能**：
-```bash
-# 1. 运行多智能体演示（不需要额外依赖）
-python scripts/demo_multi_agent.py
-
-# 2. 运行持久化演示（不需要额外依赖）
-python scripts/demo_persistence.py
-```
-
-**如果想使用完整功能**：
-```bash
-# 安装所有依赖
-pip install docker python-telegram-bot slack-bolt
-
-# 然后可以：
-# - 使用沙箱工具
-# - 集成Telegram/Slack
-# - 启动Gateway服务
-```
+**总计**: **15-20 人天** (约 3-4 周)
 
 ---
 
-## 📈 项目统计
+## 🎓 学习资源
 
-- **最新提交**: 091e24a (2026-01-29)
-- **版本**: v0.2.0
-- **文件数**: 61个文件变更
-- **代码行数**: +19,029行（本次更新）
-- **核心模块**: 6个（agents, channels, gateway, sandbox, storage, tools）
-- **测试文件**: 14个
-- **文档**: 15+个设计文档
+### Moltbot 参考
 
----
+- [Moltbot Skills 文档](D:\moltbot\docs\tools\skills.md)
+- [Tool Policy 实现](D:\moltbot\src\agents\tool-policy.ts)
+- [Context Pruning](D:\moltbot\src\agents\pi-extensions\context-pruning.ts)
+- [Tool Display](D:\moltbot\src\agents\tool-display.ts)
 
-## 🎯 下次目标
+### FastReAct 架构
 
-**建议优先级**：
-1. ⭐ 运行测试套件，验证所有功能
-2. ⭐ 体验多智能体系统
-3. ⭐ 了解Gateway和通道集成
-
-**预计时间**：测试和体验需要1-2小时
+- [架构对比分析](D:\FastReAct\docs\architecture-comparison-moltbot.md)
+- [项目完成报告](D:\FastReAct\docs\PROJECT_COMPLETION_REPORT.md)
+- [当前状态](D:\FastReAct\docs\current-status.md)
 
 ---
 
-## 💤 本次会话总结
+## 📞 协作建议
 
-### 完成的工作
-1. ✅ 从git更新最新代码（Phase 2完成）
-2. ✅ 确认无硬编码API密钥
-3. ✅ 修复Docker导入问题
-4. ✅ 成功运行ReAct演示
-5. ✅ 演示结果保存到文件
+### 推荐顺序
 
-### 项目亮点
-- 🚀 从简单ReAct引擎演变为完整Agent平台
-- 🤖 多智能体协作系统
-- 🌐 多平台集成（Telegram, Slack）
-- 🔒 安全的Docker沙箱
-- 💾 完整的持久化方案
-- 🔌 WebSocket网关
+**单人开发** (3-4 周):
+1. Week 1: #17 → #13 → #14 → #16
+2. Week 2-3: #18 → #19
+3. Week 4: #20 → #21 → #22 → #15
 
-### 技术栈
-- **核心**: FastReAct (ReAct循环引擎)
-- **存储**: SQLite
-- **通信**: WebSocket + HTTP
-- **容器**: Docker
-- **平台**: Telegram Bot API, Slack API
+**双人协作** (2 周):
+- **开发者 A**: #13-16 (性能优化)
+- **开发者 B**: #18-19 (关键功能)
+- 合并: #20-22 (用户体验)
+
+### 代码审查要点
+
+- [ ] 遵循 FastReAct 代码规范
+- [ ] 添加完整的类型注解
+- [ ] 编写单元测试
+- [ ] 更新相关文档
+- [ ] 性能基准测试
 
 ---
 
-**项目地址**: https://github.com/atom32/FastReAct
-**最后更新**: 2026-01-29 01:30
-**下次会话**: 参考 TODO.md，优先运行测试套件
+## 📝 详细任务说明
 
-**晚安！** 🌙
+### 性能优化任务
+
+#### #13: TokenCounter 实例复用
+**问题**: retriever.py:170 每次分块创建新实例
+**解决**: 使用成员变量缓存实例
+**收益**: 分块性能 +20-30%
+
+#### #14: EmbeddingCache LRU 淘汰
+**问题**: FIFO 淘汰效率低
+**解决**: 使用 OrderedDict 实现 LRU
+**收益**: 缓存命中率 +15-25%
+
+#### #15: 持久化 Embedding 缓存
+**问题**: 重启后缓存丢失
+**解决**: SQLite 持久化
+**收益**: 冷启动 +90%
+
+#### #16: 检索结果缓存
+**问题**: 每次重新检索
+**解决**: LRU 结果缓存
+**收益**: 重复查询 +95%
+
+### 功能增强任务
+
+#### #18: Tool Policy 系统
+**功能**: Allow/Deny/Profile
+**重要性**: ⭐⭐⭐⭐⭐ (安全关键)
+**参考**: Moltbot tool-policy.ts
+
+#### #19: Context Pruning
+**功能**: 智能剪枝，减少 40-60% token
+**重要性**: ⭐⭐⭐⭐⭐ (性能关键)
+**参考**: Moltbot context-pruning.ts
+
+#### #20: Tool Result Pruning
+**功能**: 优化工具结果，减少 50-70% token
+**重要性**: ⭐⭐⭐⭐
+
+#### #21: Exec Approvals
+**功能**: Deny/Allow/Ask 审批机制
+**重要性**: ⭐⭐⭐⭐ (安全关键)
+
+#### #22: Tool Display
+**功能**: 用户友好的工具调用显示
+**重要性**: ⭐⭐⭐ (体验提升)
+
+---
+
+**维护者**: FastReAct Team
+**最后更新**: 2026-02-02
+**状态**: ✅ 已创建 TODO 列表

@@ -70,6 +70,9 @@ class MemoryRetriever:
             )
             logger.info(f"Hybrid search enabled: {hybrid_config.fusion_method}, alpha={hybrid_config.alpha}")
 
+        # Initialize TokenCounter for reuse (performance optimization)
+        self._token_counter = TokenCounter(model="gpt-4")
+
     async def initialize(self) -> None:
         """Initialize the retriever"""
         await self.vector_store.initialize()
@@ -166,8 +169,8 @@ class MemoryRetriever:
         Returns:
             List of chunk dicts
         """
-        # Use TokenCounter to estimate chunk sizes
-        counter = TokenCounter(model="gpt-4")
+        # Use TokenCounter to estimate chunk sizes (reused instance for performance)
+        counter = self._token_counter
 
         chunks = []
         current_chunk = []
