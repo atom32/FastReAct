@@ -51,6 +51,8 @@ class ContextConfig:
 
     # Memory retrieval configuration (optional, created from dict)
     retrieval: Optional[RetrievalConfig] = None
+    compaction: Optional[CompactionConfig] = None
+    
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "ContextConfig":
@@ -71,6 +73,9 @@ class ContextConfig:
         # Extract retrieval config
         retrieval_config = RetrievalConfig.from_dict(context_cfg) if context_cfg.get("retrieval", {}).get("enabled", False) else None
 
+        # Extract compaction config
+        compaction_config = CompactionConfig.from_dict(context_cfg) if context_cfg.get('compaction', {}).get('enabled', False) else None
+
         return cls(
             max_history_messages=context_cfg.get("max_history_messages", 50),
             max_history_tokens=context_cfg.get("max_history_tokens", 4000),
@@ -85,6 +90,7 @@ class ContextConfig:
                 "请用简洁的语言总结以下对话，保留关键信息和决策。"),
             memory_flush_temperature=memory_flush_cfg.get("summarize_temperature", 0.3),
             retrieval=retrieval_config,
+            compaction=compaction_config,
         )
 
     def calculate_budget(self, context_window: int) -> int:
@@ -150,6 +156,49 @@ class HybridSearchConfig:
             min_score=hybrid_cfg.get("min_score", 0.3),
         )
 
+
+
+
+@dataclass
+class CompactionConfig:
+    """Progressive compaction configuration"""
+
+    # Enable/disable progressive compaction
+    enabled: bool = False
+
+    # Compression ratios
+    base_chunk_ratio: float = 0.4  # Base compression ratio
+    min_chunk_ratio: float = 0.15   # Minimum compression ratio
+    safety_margin: float = 1.2        # Safety margin for token budget
+
+    # Compression levels
+    summary_levels: int = 3           # Number of compression levels (1-3)
+
+    # Trigger thresholds
+    trigger_threshold_tokens: int = 50000  # Trigger compaction at this token level
+    auto_compact: bool = True              # Automatically compact when threshold reached
+
+    @classmethod
+    def from_dict(cls, config_dict: dict) -> "CompactionConfig":
+        """Create CompactionConfig from config.json section
+
+        Args:
+            config_dict: The 'compaction' section from context config
+
+        Returns:
+            CompactionConfig instance
+        """
+        compaction_cfg = config_dict.get("compaction", {})
+
+        return cls(
+            enabled=compaction_cfg.get("enabled", False),
+            base_chunk_ratio=compaction_cfg.get("base_chunk_ratio", 0.4),
+            min_chunk_ratio=compaction_cfg.get("min_chunk_ratio", 0.15),
+            safety_margin=compaction_cfg.get("safety_margin", 1.2),
+            summary_levels=compaction_cfg.get("summary_levels", 3),
+            trigger_threshold_tokens=compaction_cfg.get("trigger_threshold_tokens", 50000),
+            auto_compact=compaction_cfg.get("auto_compact", True),
+        )
 
 @dataclass
 class RetrievalConfig:

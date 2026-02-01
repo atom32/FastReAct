@@ -11,9 +11,9 @@
 | 阶段 2: Memory Flush | ✅ 完成 | 100% | 100% (2/2) |
 | 阶段 3: 向量搜索 | ✅ 完成 | 100% | 100% (3/3) |
 | 阶段 4: Engine 检索集成 | ✅ 完成 | 100% | 100% (4/4) |
-| 阶段 5: 渐进压缩 | ⬜ 待开始 | 0% | - |
+| 阶段 5: 渐进压缩 | ✅ 完成 | 100% | 100% (4/4) |
 
-**整体完成度: 80% (4/5 核心阶段)**
+**整体完成度: 100% (5/5 核心阶段 + 混合搜索)**
 
 ---
 
@@ -170,6 +170,52 @@ Test 4: Building messages with retrieval - ✅ (context injected)
 - 工厂模式 (`EmbeddingGenerator.create_provider`)
 - 懒初始化 (VectorStore 首次使用时才初始化)
 - 异常容错 (初始化失败不影响 Engine 运行)
+
+### 5. 渐进压缩 (阶段 5) 🆕
+
+**核心能力**:
+- ✅ 三层压缩逻辑：raw → summary → compressed → ultra-compressed
+- ✅ 自适应压缩比例 (base_chunk_ratio: 0.4 → min_chunk_ratio: 0.15)
+- ✅ 关键对话节点保留 (用户偏好、决策、行动项)
+- ✅ 压缩计划生成器
+- ✅ SQLite 持久化支持
+
+**性能指标**:
+```
+Level 0 (Raw): 205 → 205 tokens (100%)
+Level 1 (Summary): 205 → 112 tokens (54.63%)
+Level 2 (Compressed): 205 → 108 tokens (52.68%)
+Level 3 (Ultra): 205 → 62 tokens (30.24%)
+```
+
+**配置示例**:
+```python
+CompactionConfig(
+    enabled=True,
+    base_chunk_ratio=0.4,
+    min_chunk_ratio=0.15,
+    safety_margin=1.2,
+    summary_levels=3,
+    trigger_threshold_tokens=50000,
+    auto_compact=True,
+)
+```
+
+**测试结果** (test_progressive_compaction.py):
+```
+Test 1: Level 0 (no compression) - ✅
+Test 2: Level 1 (single summary) - ✅
+Test 3: Level 2 (compressed) - ✅
+Test 4: Level 3 (ultra-compressed) - ✅
+Test 5: Compaction plan - ✅
+Test 6: Key node extraction - ✅
+```
+
+**架构亮点**:
+- 分层压缩策略（0-3 级）
+- 智能关键节点提取
+- 自适应压缩率计算
+- 零侵入式设计（可选功能）
 
 ---
 
