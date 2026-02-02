@@ -5,6 +5,8 @@ Defines all configuration schemas and defaults for context management.
 No hardcoded values - all parameters come from configuration files.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Optional
 

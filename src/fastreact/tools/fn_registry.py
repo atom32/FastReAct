@@ -213,10 +213,12 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
     tools = []
 
     # 搜索工具（可能需要 API key）
+    # 支持两种配置方式: tavily_api_key 或 tavily.api_key
+    tavily_api_key = tools_config.get("tavily_api_key") or tools_config.get("tavily", {}).get("api_key")
     tavily_config = tools_config.get("tavily", {})
     if tavily_config.get("enabled", True):
         tools.append(create_search_tool(
-            api_key=tavily_config.get("api_key")
+            api_key=tavily_api_key
         ))
 
     # 基础工具

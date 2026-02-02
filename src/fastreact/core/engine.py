@@ -39,6 +39,52 @@ from ..context import ContextConfig, LLMProviderConfig, ContextBuilder, get_defa
 logger = get_logger("fastreact.engine")
 
 
+# ============================================================================
+# Tool Result Pruning - Smart Truncation for Context Management
+# ============================================================================
+
+def prune_tool_output(result: str, max_lines: int = 100) -> str:
+    """
+    Smart truncation for tool outputs to prevent context explosion.
+
+    Uses Head/Tail mode: keeps first 50 and last 50 lines when truncated.
+
+    Args:
+        result: The tool output string to potentially truncate
+        max_lines: Maximum number of lines to keep (default: 100)
+
+    Returns:
+        Original result if under limit, or truncated result with guidance message
+    """
+    if not result:
+        return result
+
+    lines = result.splitlines()
+
+    # If under limit, return as-is
+    if len(lines) <= max_lines:
+        return result
+
+    # Split into head and tail
+    head_size = max_lines // 2
+    tail_size = max_lines - head_size
+
+    head_lines = lines[:head_size]
+    tail_lines = lines[-tail_size:]
+    hidden_count = len(lines) - max_lines
+
+    # Build truncated output with guidance for LLM
+    truncated = (
+        f"Output (truncated, {len(lines)} total lines):\n"
+        f"{''.join(f'{line}\n' for line in head_lines)}"
+        f"... {hidden_count} lines hidden ...\n"
+        f"{''.join(f'{line}\n' for line in tail_lines)}\n"
+        f"[INFO] Output was truncated. Use grep or read specific line ranges to see missing parts."
+    )
+
+    return truncated
+
+
 class FastReAct:
     """
     轻量级ReACT引擎
@@ -1375,13 +1421,15 @@ class FastReAct:
                 # 并发执行工具（带事件和重试）
                 results = await self._execute_tools_concurrent_with_events(tool_calls)
 
-                # 构建观察结果
+                # 构建观察结果（应用智能截断）
                 observations = []
                 for result in results:
                     if result.error:
                         obs = f"[ERROR] {result.error}"
                     else:
-                        obs = f"[OK] {result.result}"
+                        # 应用智能截断 - 防止 Context 爆炸
+                        pruned_result = prune_tool_output(result.result)
+                        obs = f"[OK] {pruned_result}"
                     observations.append(f"**{result.tool_name}**: {obs}")
 
                 observation_text = "\n\n".join(observations)
