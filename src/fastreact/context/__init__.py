@@ -18,6 +18,13 @@ from .context_builder import ContextBuilder
 from .summarizer import Summarizer, SummarizerBuilder
 from .memory_flush import MemoryFlush, MemoryFlushBuilder
 from .compaction import ProgressiveCompaction, ProgressiveCompactionBuilder, CompactionResult
+from .repo_mapper import (
+    RepoMapper,
+    RepoMapConfig,
+    RepoMapEntry,
+    get_repo_mapper,
+    remove_session,
+)
 
 __all__ = [
     "ContextConfig",
@@ -37,4 +44,10 @@ __all__ = [
     "get_token_counter",
     "init_token_counter",
     "get_default_context_window",
+    # Repository Mapper
+    "RepoMapper",
+    "RepoMapConfig",
+    "RepoMapEntry",
+    "get_repo_mapper",
+    "remove_session",
 ]

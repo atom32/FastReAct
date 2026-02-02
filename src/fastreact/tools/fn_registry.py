@@ -228,6 +228,96 @@ def create_shell_tool(timeout: int = 30) -> Tool:
     )
 
 
+def create_ls_repo_tool() -> Tool:
+    """创建查看项目结构工具"""
+    async def execute(session_id: str = "default", force_refresh: bool = False) -> str:
+        from ..context.repo_mapper import get_repo_mapper
+
+        mapper = get_repo_mapper(session_id)
+        return mapper.generate_map(force_refresh=force_refresh)
+
+    return Tool(
+        name="ls_repo",
+        label="List Repository",
+        description="查看当前项目的文件结构。显示目录树，自动折叠无关目录（node_modules, .git 等）。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "会话 ID（通常自动传入）",
+                    "default": "default"
+                },
+                "force_refresh": {
+                    "type": "boolean",
+                    "description": "是否强制重新扫描目录",
+                    "default": False
+                }
+            },
+            "required": []
+        },
+        execute=execute,
+    )
+
+
+def create_cd_repo_tool() -> Tool:
+    """创建切换目录工具"""
+    async def execute(path: str, session_id: str = "default") -> str:
+        from ..context.repo_mapper import get_repo_mapper
+
+        mapper = get_repo_mapper(session_id)
+        return mapper.change_directory(path)
+
+    return Tool(
+        name="cd_repo",
+        label="Change Repository Directory",
+        description="切换项目目录并刷新文件结构。支持相对路径和绝对路径。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "目标目录路径（相对或绝对）"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "会话 ID（通常自动传入）",
+                    "default": "default"
+                }
+            },
+            "required": ["path"]
+        },
+        execute=execute,
+    )
+
+
+def create_refresh_repo_tool() -> Tool:
+    """创建重新扫描工具"""
+    async def execute(session_id: str = "default") -> str:
+        from ..context.repo_mapper import get_repo_mapper
+
+        mapper = get_repo_mapper(session_id)
+        return mapper.generate_map(force_refresh=True)
+
+    return Tool(
+        name="refresh_repo",
+        label="Refresh Repository",
+        description="强制重新扫描当前目录结构。当文件系统发生变化时使用。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "会话 ID（通常自动传入）",
+                    "default": "default"
+                }
+            },
+            "required": []
+        },
+        execute=execute,
+    )
+
+
 # ============================================================================
 # 工具收集器
 # ============================================================================
@@ -263,6 +353,13 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
         create_datetime_tool(),
         create_http_tool(),
         create_shell_tool(),  # Stateful Shell - P0 Coding Agent feature
+    ])
+
+    # Coding Agent 工具
+    tools.extend([
+        create_ls_repo_tool(),      # Repository Map - P1 Coding Agent feature
+        create_cd_repo_tool(),      # Change Directory
+        create_refresh_repo_tool(), # Refresh Map
     ])
 
     logger.info(f"Created {len(tools)} builtin tools")

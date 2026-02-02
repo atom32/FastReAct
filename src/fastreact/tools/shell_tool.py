@@ -67,6 +67,7 @@ class StatefulShellTool(Tool):
         # 因为 super().__init__() 会调用 _get_parameters()，需要 self.timeout
         self.timeout = timeout
         self.working_dir = working_dir or os.getcwd()
+        self._current_cwd: Optional[str] = None  # 追踪当前工作目录
         self._process: Optional[subprocess.Popen] = None
         self._read_thread: Optional[threading.Thread] = None
         self._output_queue: Queue = Queue()
@@ -81,6 +82,9 @@ class StatefulShellTool(Tool):
                 self.shell_path = os.environ.get("SHELL", "/bin/bash")
         else:
             self.shell_path = shell
+
+        # Repo Map 集成：目录变化回调
+        self._on_cwd_change: Optional[callable] = None
 
         # 现在调用父类初始化
         super().__init__()
@@ -293,22 +297,73 @@ class StatefulShellTool(Tool):
         if not success:
             return output
 
+        # 检测 cd 命令并更新 cwd
+        old_cwd = self._current_cwd
+        if command.strip().startswith("cd ") or command.strip() == "cd":
+            # 尝试获取新的 cwd
+            new_cwd = self._get_actual_cwd()
+            if new_cwd and new_cwd != old_cwd:
+                self._current_cwd = new_cwd
+                # 触发回调（通知 RepoMap 更新）
+                if self._on_cwd_change:
+                    try:
+                        if asyncio.iscoroutinefunction(self._on_cwd_change):
+                            asyncio.create_task(self._on_cwd_change(new_cwd))
+                        else:
+                            self._on_cwd_change(new_cwd)
+                    except Exception as e:
+                        logger.warning(f"CWD change callback failed: {e}")
+
         # 添加状态信息
-        cwd_indicator = self._get_cwd_indicator()
-        return f"""📁 {cwd_indicator}
+        cwd_display = self._current_cwd or self._get_cwd_indicator()
+        return f"""📁 {cwd_display}
 $ {command}
 
 {output}
 """
 
+    def _get_actual_cwd(self) -> Optional[str]:
+        """获取实际的工作目录"""
+        try:
+            # 执行 pwd 命令获取当前目录
+            if sys.platform == "win32":
+                # Windows: 使用 cd 命令
+                result, _ = self._execute_sync("cd", timeout=5)
+            else:
+                # Unix: 使用 pwd
+                result, _ = self._execute_sync("pwd", timeout=5)
+
+            # 解析结果（去除 ANSI 码和多余字符）
+            lines = result.strip().splitlines()
+            if lines:
+                # 取最后一行有效输出
+                for line in reversed(lines):
+                    line = line.strip()
+                    if line and not line.startswith("$") and not line.startswith("["):
+                        return line
+
+            return None
+        except Exception:
+            return None
+
+    def set_cwd_callback(self, callback: callable) -> None:
+        """
+        设置目录变化回调
+
+        Args:
+            callback: 当 cwd 变化时调用的函数，签名为 callback(new_cwd: str)
+        """
+        self._on_cwd_change = callback
+
+    @property
+    def current_cwd(self) -> Optional[str]:
+        """获取当前工作目录"""
+        return self._current_cwd or self.working_dir
+
     def _get_cwd_indicator(self) -> str:
         """获取当前工作目录指示器"""
-        # 对于简单的实现，我们返回一个通用指示器
-        # 实际应用中可以执行 pwd 命令获取真实路径
-        if sys.platform == "win32":
-            return ">"
-        else:
-            return "~"
+        # 返回实际 cwd 或通用指示器
+        return self._current_cwd or (">" if sys.platform == "win32" else "~")
 
     def _close_shell(self) -> None:
         """关闭当前的 Shell 进程"""
