@@ -15,6 +15,12 @@ from .config import (
 )
 from .token_counter import TokenCounter, get_token_counter, init_token_counter
 from .context_builder import ContextBuilder
+from .context_pruning import (
+    ContextPruner,
+    PruningConfig,
+    MessagePriority,
+    prune_messages,
+)
 from .summarizer import Summarizer, SummarizerBuilder
 from .memory_flush import MemoryFlush, MemoryFlushBuilder
 from .compaction import ProgressiveCompaction, ProgressiveCompactionBuilder, CompactionResult
@@ -34,6 +40,11 @@ __all__ = [
     "CompactionConfig",
     "TokenCounter",
     "ContextBuilder",
+    # Context Pruning
+    "ContextPruner",
+    "PruningConfig",
+    "MessagePriority",
+    "prune_messages",
     "Summarizer",
     "SummarizerBuilder",
     "MemoryFlush",

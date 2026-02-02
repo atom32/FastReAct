@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from .config import ContextConfig, LLMProviderConfig
 from .token_counter import TokenCounter
+from .context_pruning import ContextPruner, PruningConfig
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,8 @@ class ContextBuilder:
         self,
         context_config: ContextConfig,
         llm_config: LLMProviderConfig,
-        token_counter: Optional[TokenCounter] = None
+        token_counter: Optional[TokenCounter] = None,
+        pruning_config: Optional[PruningConfig] = None
     ):
         """Initialize context builder
 
@@ -31,12 +33,20 @@ class ContextBuilder:
             context_config: Context management configuration
             llm_config: LLM provider configuration
             token_counter: Token counter instance (optional)
+            pruning_config: Pruning configuration (optional)
         """
         self.config = context_config
         self.llm_config = llm_config
         self.token_counter = token_counter or TokenCounter(
             model=context_config.token_model
         )
+
+        # Initialize pruning config
+        self.pruning_config = pruning_config or PruningConfig()
+        if self.pruning_config.enabled:
+            self.pruner = ContextPruner(self.pruning_config, self.token_counter)
+        else:
+            self.pruner = None
 
         # Calculate available token budget
         self.context_window = llm_config.context_window
@@ -46,7 +56,8 @@ class ContextBuilder:
             f"ContextBuilder initialized: "
             f"context_window={self.context_window}, "
             f"budget={self.budget}, "
-            f"max_messages={context_config.max_history_messages}"
+            f"max_messages={context_config.max_history_messages}, "
+            f"pruning_enabled={self.pruning_config.enabled}"
         )
 
     def build_context(
@@ -143,6 +154,7 @@ class ContextBuilder:
         """Select history messages within token budget
 
         Prioritizes recent messages, but respects token limits.
+        Uses intelligent pruning if enabled.
 
         Args:
             history: Full message history
@@ -154,6 +166,23 @@ class ContextBuilder:
         if not history:
             return []
 
+        # Use Context Pruning if enabled
+        if self.pruner is not None and self.pruning_config.enabled:
+            # Check if pruning is needed (count tokens first)
+            history_tokens = self.token_counter.count_messages_tokens(history)
+
+            if history_tokens > budget:
+                logger.info(f"Using Context Pruning: {history_tokens} > {budget} tokens")
+                pruned_history, pruning_metadata = self.pruner.prune(history, budget)
+
+                logger.debug(
+                    f"Pruning complete: {pruning_metadata['reduction_ratio']:.1%} reduction, "
+                    f"{pruning_metadata['messages_removed']} messages removed"
+                )
+
+                return pruned_history
+
+        # Fallback to smart truncation
         if not self.config.smart_truncate:
             # Simple mode: use max_history_messages limit
             max_msg = self.config.max_history_messages

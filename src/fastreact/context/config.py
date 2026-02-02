@@ -8,7 +8,10 @@ No hardcoded values - all parameters come from configuration files.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Dict, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .context_pruning import PruningConfig
 
 
 @dataclass
@@ -54,6 +57,9 @@ class ContextConfig:
     # Memory retrieval configuration (optional, created from dict)
     retrieval: Optional[RetrievalConfig] = None
     compaction: Optional[CompactionConfig] = None
+
+    # Context pruning configuration (optional, created from dict)
+    pruning: Optional["PruningConfig"] = None
     
 
     @classmethod
@@ -78,6 +84,13 @@ class ContextConfig:
         # Extract compaction config
         compaction_config = CompactionConfig.from_dict(context_cfg) if context_cfg.get('compaction', {}).get('enabled', False) else None
 
+        # Extract pruning config
+        pruning_config = None
+        if context_cfg.get("pruning", {}).get("enabled", False):
+            # Import here to avoid circular dependency
+            from .context_pruning import PruningConfig
+            pruning_config = PruningConfig.from_dict(context_cfg)
+
         return cls(
             max_history_messages=context_cfg.get("max_history_messages", 50),
             max_history_tokens=context_cfg.get("max_history_tokens", 4000),
@@ -93,6 +106,7 @@ class ContextConfig:
             memory_flush_temperature=memory_flush_cfg.get("summarize_temperature", 0.3),
             retrieval=retrieval_config,
             compaction=compaction_config,
+            pruning=pruning_config,
         )
 
     def calculate_budget(self, context_window: int) -> int:
