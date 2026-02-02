@@ -15,7 +15,7 @@
 
 ## 📋 当前进度
 
-### 已完成 (14/22 = 64%)
+### 已完成 (15/22 = 68%)
 
 **核心功能** (5/5 = 100%):
 - ✅ Stage 1-5: Token 管理, Memory Flush, 向量搜索, Engine 集成, 渐进压缩
@@ -32,11 +32,11 @@
 - ✅ #26 PROJECT_VISION.md 战略愿景
 - ✅ TODO.md 更新
 
-**Coding Agent 核心功能** (3/4 = 75%):
+**Coding Agent 核心功能** (4/4 = 100%):
 - ✅ #24 Tool Result Pruning (1-2天, ⭐⭐⭐⭐⭐ P0)
 - ✅ #25 Stateful Shell (2-3天, ⭐⭐⭐⭐⭐ P0)
 - ✅ #26 Repository Map (2-3天, ⭐⭐⭐⭐ P1)
-- ⬜ #27 edit_file 工具 (2-3天, ⭐⭐⭐⭐ P1)
+- ✅ #27 edit_file 工具 (2-3天, ⭐⭐⭐⭐ P1)
 
 ---
 
@@ -88,30 +88,27 @@
 
 ---
 
-## 🎯 下个任务: #27 edit_file 工具
+## 🎯 Coding Agent 核心功能完成！
 
-**实现位置**: `src/fastreact/tools/edit_tool.py` (新增)
+**已完成的 4 个核心工具**:
 
-**核心功能**:
-- Search & Replace Block 模式（Strudel Pattern）
-- 精准修改代码，避免重写整个文件
-- Fuzzy Match（容忍空格/缩进差异）
-- 错误提示：匹配失败时给出 "Did you mean...?"
+1. ✅ **#24 Tool Result Pruning** - 防止 Context 爆炸
+2. ✅ **#25 Stateful Shell** - 持久化 Shell 会话
+3. ✅ **#26 Repository Map** - 项目结构"上帝视角"
+4. ✅ **#27 edit_file 工具** - 精准代码编辑
 
-**实现要点**:
-```python
-class EditFileTool(Tool):
-    async def execute_async(
-        self,
-        path: str,
-        search_block: str,
-        replace_block: str,
-        fuzzy: bool = True
-    ) -> str:
-        """Search and replace block in file"""
-```
+**FastReAct 现在具备**:
+- 🔧 完整的代码编辑能力
+- 📁 项目结构感知
+- 💻 持久化 Shell 环境
+- 🛡️ Context 爆炸防护
 
-**参考文档**: `docs/How_to_improve.md` 第 178-191 行
+**下一步建议**:
+1. 测试 Coding Agent 端到端流程
+2. 或继续实现其他优化任务（#18, #19, #20, #21, #22）
+3. 或实现性能优化（#15, #16）
+
+参考 `docs/How_to_improve.md` 了解更多可能的改进方向。
 
 ---
 
