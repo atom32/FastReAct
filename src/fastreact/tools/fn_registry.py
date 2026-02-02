@@ -318,6 +318,43 @@ def create_refresh_repo_tool() -> Tool:
     )
 
 
+def create_edit_file_tool() -> Tool:
+    """创建文件编辑工具"""
+    from .edit_tool import get_edit_tool
+
+    edit_tool = get_edit_tool()
+
+    return Tool(
+        name="edit_file",
+        label="Edit File",
+        description="精准编辑文件，使用 Search & Replace 模式修改代码块。支持模糊匹配，容忍空格和缩进差异。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "文件路径（相对或绝对）"
+                },
+                "search_block": {
+                    "type": "string",
+                    "description": "要搜索的代码块"
+                },
+                "replace_block": {
+                    "type": "string",
+                    "description": "替换的代码块"
+                },
+                "fuzzy": {
+                    "type": "boolean",
+                    "description": "是否启用模糊匹配（默认 True）",
+                    "default": True
+                }
+            },
+            "required": ["path", "search_block", "replace_block"]
+        },
+        execute=edit_tool.execute_async,
+    )
+
+
 # ============================================================================
 # 工具收集器
 # ============================================================================
@@ -360,6 +397,7 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
         create_ls_repo_tool(),      # Repository Map - P1 Coding Agent feature
         create_cd_repo_tool(),      # Change Directory
         create_refresh_repo_tool(), # Refresh Map
+        create_edit_file_tool(),    # Edit File - P1 Coding Agent feature
     ])
 
     logger.info(f"Created {len(tools)} builtin tools")
