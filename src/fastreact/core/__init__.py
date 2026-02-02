@@ -15,6 +15,16 @@ from fastreact.core.tool_policy import (
     create_default_policy,
     create_restrictive_policy,
 )
+from fastreact.core.approval import (
+    ApprovalManager,
+    ApprovalConfig,
+    ApprovalRequest,
+    ApprovalDecision,
+    ApprovalMode,
+    ApprovalResponse,
+    create_default_approval_manager,
+    mock_approval_callback,
+)
 
 __all__ = [
     "FastReAct",
@@ -31,4 +41,13 @@ __all__ = [
     "PolicyMode",
     "create_default_policy",
     "create_restrictive_policy",
+    # Execution Approval
+    "ApprovalManager",
+    "ApprovalConfig",
+    "ApprovalRequest",
+    "ApprovalDecision",
+    "ApprovalMode",
+    "ApprovalResponse",
+    "create_default_approval_manager",
+    "mock_approval_callback",
 ]
