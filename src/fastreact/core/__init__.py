@@ -25,6 +25,15 @@ from fastreact.core.approval import (
     create_default_approval_manager,
     mock_approval_callback,
 )
+from fastreact.core.tool_display import (
+    ToolDisplay,
+    DisplayConfig,
+    DisplayMode,
+    ToolCategory,
+    ToolCallInfo,
+    create_default_display,
+    format_tool_call_minimal,
+)
 
 __all__ = [
     "FastReAct",
@@ -50,4 +59,12 @@ __all__ = [
     "ApprovalResponse",
     "create_default_approval_manager",
     "mock_approval_callback",
+    # Tool Display
+    "ToolDisplay",
+    "DisplayConfig",
+    "DisplayMode",
+    "ToolCategory",
+    "ToolCallInfo",
+    "create_default_display",
+    "format_tool_call_minimal",
 ]
