@@ -15,7 +15,7 @@
 
 ## 📋 当前进度
 
-### 已完成 (13/22 = 59%)
+### 已完成 (14/22 = 64%)
 
 **核心功能** (5/5 = 100%):
 - ✅ Stage 1-5: Token 管理, Memory Flush, 向量搜索, Engine 集成, 渐进压缩
@@ -32,10 +32,10 @@
 - ✅ #26 PROJECT_VISION.md 战略愿景
 - ✅ TODO.md 更新
 
-**Coding Agent 核心功能** (2/4 = 50%):
+**Coding Agent 核心功能** (3/4 = 75%):
 - ✅ #24 Tool Result Pruning (1-2天, ⭐⭐⭐⭐⭐ P0)
 - ✅ #25 Stateful Shell (2-3天, ⭐⭐⭐⭐⭐ P0)
-- ⬜ #26 Repository Map (2-3天, ⭐⭐⭐⭐ P1)
+- ✅ #26 Repository Map (2-3天, ⭐⭐⭐⭐ P1)
 - ⬜ #27 edit_file 工具 (2-3天, ⭐⭐⭐⭐ P1)
 
 ---
@@ -88,28 +88,30 @@
 
 ---
 
-## 🎯 下个任务: #26 Repository Map
+## 🎯 下个任务: #27 edit_file 工具
 
-**实现位置**: `src/fastreact/context/repo_mapper.py` (新增)
+**实现位置**: `src/fastreact/tools/edit_tool.py` (新增)
 
 **核心功能**:
-- 生成项目的高层级地图（目录树结构）
-- 显示重要文件和文件夹
-- 自动折叠 node_modules, .git 等
-- 实时更新（工具修改文件后刷新）
-- 注入到 System Prompt 中（永久保留 2k-4k tokens）
+- Search & Replace Block 模式（Strudel Pattern）
+- 精准修改代码，避免重写整个文件
+- Fuzzy Match（容忍空格/缩进差异）
+- 错误提示：匹配失败时给出 "Did you mean...?"
 
 **实现要点**:
 ```python
-class RepoMapper:
-    def generate_map(self, root_path: str, max_depth: int = 3) -> str:
-        """Generate repository map as tree structure"""
-
-    def update_map(self, changed_files: List[str]) -> str:
-        """Update map when tools modify files"""
+class EditFileTool(Tool):
+    async def execute_async(
+        self,
+        path: str,
+        search_block: str,
+        replace_block: str,
+        fuzzy: bool = True
+    ) -> str:
+        """Search and replace block in file"""
 ```
 
-**参考文档**: `docs/How_to_improve.md` 第 12-23 行
+**参考文档**: `docs/How_to_improve.md` 第 178-191 行
 
 ---
 
