@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  fastreact:
+    build: .
+    container_name: fastreact
+    volumes:
+      - ./config:/app/config
+      - ./workspace:/app/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - FASTREACT_API_KEY=${API_KEY}
+      - FASTREACT_BASE_URL=${BASE_URL:-https://api.siliconflow.cn/v1}
+      - FASTREACT_MODEL=${MODEL:-deepseek-ai/DeepSeek-V3}
+    stdin_open: true
+    tty: true
+    command: python -m fastreact.cli.main chat
+
+  gateway:
+    build: .
+    container_name: fastreact-gateway
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./config:/app/config
+      - ./workspace:/app/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - FASTREACT_API_KEY=${API_KEY}
+      - FASTREACT_BASE_URL=${BASE_URL:-https://api.siliconflow.cn/v1}
+    command: python -m fastreact.cli.main gateway start --port 8765
