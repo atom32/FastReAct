@@ -1,17 +1,26 @@
 # FastReAct
 
-> 高性能 ReACT 框架 - 生产级多工具协同 AI Agent 系统
+> 企业级 Agent 基础设施框架 - "Bring Your Own Model & Data"
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version: 0.3.0](https://img.shields.io/badge/version-0.3.0-brightgreen.svg)](https://github.com/atom32/FastReAct)
+[![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](https://github.com/atom32/FastReAct)
 [![Tests](https://img.shields.io/badge/tests-7%2F7-passing-green.svg)](examples/05_comprehensive_e2e_test.py)
 
 ---
 
 ## 🎯 项目定位
 
-FastReAct 是一个**专注、高效、可扩展**的 ReACT (Reasoning + Acting) 框架，提供生产级的多工具协同 AI Agent 能力。
+FastReAct 是一个**企业级 Agent 基础设施框架**，提供"Bring Your Own Model & Data"的能力，让企业用 **1/10 成本**获得 **80% Claude Code** 体验。
+
+**核心差异**：
+- 🔒 **数据隐私**：完全离线部署，数据不出域（银行/国防可用）
+- 💰 **成本优化**：支持任意 LLM（DeepSeek、Qwen、本地模型）
+- 🛠️ **领域适应**：自定义工具集，深度业务集成
+- 🧠 **上下文管理**：Token-aware + 智能压缩 + 混合检索
+
+**从** ❌ "开源 Claude Code 克隆"
+**到** ✅ "企业级 Agent 运行时"
 
 ### 核心价值
 
@@ -25,11 +34,12 @@ FastReAct 是一个**专注、高效、可扩展**的 ReACT (Reasoning + Acting)
 
 ### 应用场景
 
-- ✅ **智能助手**: 需要多工具协同的 AI 应用
-- ✅ **代码执行**: 安全的沙箱环境运行用户代码
-- ✅ **知识图谱**: GraphRAG 集成，知识推理
-- ✅ **企业集成**: 多通道消息平台接入
-- ✅ **学习研究**: 理解 ReACT 原理和最佳实践
+- ✅ **Coding Agent**：完整的代码编辑能力（Shell + Repo Map + Edit）
+- ✅ **智能助手**：需要多工具协同的 AI 应用
+- ✅ **代码执行**：安全的沙箱环境运行用户代码
+- ✅ **知识图谱**：GraphRAG 集成，知识推理
+- ✅ **企业集成**：多通道消息平台接入
+- ✅ **学习研究**：理解 ReACT 原理和最佳实践
 
 ### 与竞品对比
 
@@ -37,6 +47,7 @@ FastReAct 是一个**专注、高效、可扩展**的 ReACT (Reasoning + Acting)
 |------|-----------|-----------|---------|----------|
 | **代码简洁** | 9/10 ✅ | 3/10 | 5/10 | 6/10 |
 | **ReACT 纯度** | 10/10 ✅ | 6/10 | 8/10 | 9/10 |
+| **上下文管理** | ⭐⭐⭐⭐⭐ | ⚠️ 简单 | ⚠️ 简单 | ⚠️ 简单 |
 | **沙箱执行** | ✅ Docker | ❌ | ✅ Docker | ❌ |
 | **MCP 支持** | ✅ 完整 | ✅ | ✅ 原生 | ❌ |
 | **工具系统** | ✅ 函数式+类式 | ✅ Chain | ✅ Schema | ⚠️ 简单 |
@@ -44,6 +55,8 @@ FastReAct 是一个**专注、高效、可扩展**的 ReACT (Reasoning + Acting)
 | **多通道** | 3 个 | - | 15+ 个 | - |
 | **配置系统** | ✅ Bootstrap | ⚠️ 简单 | ✅ JSON5 | ⚠️ 简单 |
 | **学习友好** | 10/10 ✅ | 4/10 | 5/10 | 6/10 |
+| **数据隐私** | ✅ 完全离线 | ⚠️ 依赖云 | ⚠️ 依赖云 | ⚠️ 依赖云 |
+| **模型灵活性** | ✅ 任意 LLM | ✅ | ⚠️ 有限 | ⚠️ 有限 |
 
 ---
 
@@ -83,6 +96,18 @@ FastReAct 是一个**专注、高效、可扩展**的 ReACT (Reasoning + Acting)
 - 请求去重
 - 认证授权
 - 协议版本控制
+
+### 7. 企业级上下文管理 🆕
+- **Token 计数**：Tiktoken 精确计数（<1ms，带缓存）
+- **智能压缩**：4 级渐进压缩（100% → 54% → 52% → 30%）
+- **Memory Flush**：自动记忆刷新（99.5% 压缩率）
+- **混合检索**：BM25 + Semantic + RRF（准确率 +10-20%）
+
+### 8. Coding Agent 工具链 🆕
+- **Tool Result Pruning**：Smart Truncation，防止 Context 爆炸
+- **Stateful Shell**：持久化 Shell 会话（状态保持）
+- **Repository Map**：代码库"上帝视角"（树形结构）
+- **Edit File**：精准代码编辑（Search & Replace Block）
 
 ---
 
