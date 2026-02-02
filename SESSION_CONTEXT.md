@@ -15,7 +15,7 @@
 
 ## 📋 当前进度
 
-### 已完成 (11/22 = 50%)
+### 已完成 (12/22 = 55%)
 
 **核心功能** (5/5 = 100%):
 - ✅ Stage 1-5: Token 管理, Memory Flush, 向量搜索, Engine 集成, 渐进压缩
@@ -32,10 +32,8 @@
 - ✅ #26 PROJECT_VISION.md 战略愿景
 - ✅ TODO.md 更新
 
-### 进行中
-
-**Coding Agent 核心功能** (4 个任务):
-- ⬜ #24 Tool Result Pruning (1-2天, ⭐⭐⭐⭐⭐ P0)
+**Coding Agent 核心功能** (1/4 = 25%):
+- ✅ #24 Tool Result Pruning (1-2天, ⭐⭐⭐⭐⭐ P0)
 - ⬜ #25 Stateful Shell (2-3天, ⭐⭐⭐⭐⭐ P0)
 - ⬜ #26 Repository Map (2-3天, ⭐⭐⭐⭐ P1)
 - ⬜ #27 edit_file 工具 (2-3天, ⭐⭐⭐⭐ P1)
@@ -90,30 +88,32 @@
 
 ---
 
-## 🎯 下个任务: #24 Tool Result Pruning
+## 🎯 下个任务: #25 Stateful Shell
 
-**实现位置**: `src/fastreact/core/engine.py:1376` (工具执行后)
+**实现位置**: `src/fastreact/tools/` (新增 shell_tool.py)
 
-**核心逻辑**:
+**核心功能**:
+- 持久化 Shell 会话（使用 subprocess.Popen）
+- 保持目录状态（cd 后继续生效）
+- 保持环境变量（export 后继续生效）
+- 超时控制（防止卡死）
+- 输出自动截断（复用 Tool Result Pruning）
+
+**实现要点**:
 ```python
-def prune_tool_output(result: str, max_lines: int = 100) -> str:
-    """Smart Truncation: Head/Tail 模式"""
-    if len(result.splitlines()) <= max_lines:
-        return result
-    
-    lines = result.splitlines()
-    head = lines[:50]
-    tail = lines[-50:]
-    
-    return f"""Output (truncated, {len(lines)} total lines):
-{''.join(head)}
-... {len(lines) - 100} lines hidden ...
-{''.join(tail)}
-
-[INFO] Output truncated. Use grep or read specific line ranges to see missing parts."""
+class StatefulShellTool(Tool):
+    def __init__(self):
+        self.process = subprocess.Popen(
+            ['/bin/bash' if sys.platform != 'win32' else 'cmd.exe'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        self.cwd = os.getcwd()
 ```
 
-**参考文档**: `docs/How_to_improve.md` 第 28-41 行
+**参考文档**: `docs/How_to_improve.md` 第 42-52 行
 
 ---
 
