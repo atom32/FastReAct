@@ -15,7 +15,7 @@
 
 ## 📋 当前进度
 
-### 已完成 (12/22 = 55%)
+### 已完成 (13/22 = 59%)
 
 **核心功能** (5/5 = 100%):
 - ✅ Stage 1-5: Token 管理, Memory Flush, 向量搜索, Engine 集成, 渐进压缩
@@ -32,9 +32,9 @@
 - ✅ #26 PROJECT_VISION.md 战略愿景
 - ✅ TODO.md 更新
 
-**Coding Agent 核心功能** (1/4 = 25%):
+**Coding Agent 核心功能** (2/4 = 50%):
 - ✅ #24 Tool Result Pruning (1-2天, ⭐⭐⭐⭐⭐ P0)
-- ⬜ #25 Stateful Shell (2-3天, ⭐⭐⭐⭐⭐ P0)
+- ✅ #25 Stateful Shell (2-3天, ⭐⭐⭐⭐⭐ P0)
 - ⬜ #26 Repository Map (2-3天, ⭐⭐⭐⭐ P1)
 - ⬜ #27 edit_file 工具 (2-3天, ⭐⭐⭐⭐ P1)
 
@@ -88,32 +88,28 @@
 
 ---
 
-## 🎯 下个任务: #25 Stateful Shell
+## 🎯 下个任务: #26 Repository Map
 
-**实现位置**: `src/fastreact/tools/` (新增 shell_tool.py)
+**实现位置**: `src/fastreact/context/repo_mapper.py` (新增)
 
 **核心功能**:
-- 持久化 Shell 会话（使用 subprocess.Popen）
-- 保持目录状态（cd 后继续生效）
-- 保持环境变量（export 后继续生效）
-- 超时控制（防止卡死）
-- 输出自动截断（复用 Tool Result Pruning）
+- 生成项目的高层级地图（目录树结构）
+- 显示重要文件和文件夹
+- 自动折叠 node_modules, .git 等
+- 实时更新（工具修改文件后刷新）
+- 注入到 System Prompt 中（永久保留 2k-4k tokens）
 
 **实现要点**:
 ```python
-class StatefulShellTool(Tool):
-    def __init__(self):
-        self.process = subprocess.Popen(
-            ['/bin/bash' if sys.platform != 'win32' else 'cmd.exe'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        self.cwd = os.getcwd()
+class RepoMapper:
+    def generate_map(self, root_path: str, max_depth: int = 3) -> str:
+        """Generate repository map as tree structure"""
+
+    def update_map(self, changed_files: List[str]) -> str:
+        """Update map when tools modify files"""
 ```
 
-**参考文档**: `docs/How_to_improve.md` 第 42-52 行
+**参考文档**: `docs/How_to_improve.md` 第 12-23 行
 
 ---
 
