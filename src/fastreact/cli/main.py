@@ -18,8 +18,13 @@ FastReAct CLI - 命令行工具
 
 import sys
 import asyncio
+import os
 from pathlib import Path
 from typing import Optional
+
+# Set UTF-8 encoding for Windows console
+if sys.platform == 'win32':
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 import click
 
@@ -129,20 +134,22 @@ def run(query: Optional[str], model: Optional[str], workspace: Optional[str],
         sys.exit(1)
 
     try:
-        from fastreact.core.config import load_config
+        from fastreact.bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
 
         # 加载配置
         config = load_config()
 
-        # 获取 API Key
-        api_key = config.get('llm', {}).get('providers', {}).get('openai', {}).get('api_key')
-        if not api_key:
-            click.echo("Error: API key not found. Please set it in config.json", err=True)
+        # 获取 API Key（自动从配置文件或环境变量获取）
+        try:
+            api_key = get_api_key(config)
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            click.echo("Please set FASTREACT_API_KEY environment variable or configure it in config.json", err=True)
             sys.exit(1)
 
-        # 模型
-        model = model or config.get('llm', {}).get('model', 'gpt-4')
-        base_url = config.get('llm', {}).get('providers', {}).get('openai', {}).get('base_url', 'https://api.openai.com/v1')
+        # 模型和 Base URL
+        model = model or get_model(config)
+        base_url = get_base_url(config)
 
         click.echo(f"[Agent] FastReAct ({model})")
         click.echo(f"Query: {query}")
@@ -206,20 +213,22 @@ def chat(model: Optional[str], workspace: Optional[str]):
         fastreact chat --model gpt-4
     """
     try:
-        from fastreact.core.config import load_config
+        from fastreact.bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
 
         # 加载配置
         config = load_config()
 
-        # 获取 API Key
-        api_key = config.get('llm', {}).get('providers', {}).get('openai', {}).get('api_key')
-        if not api_key:
-            click.echo("Error: API key not found. Please set it in config.json", err=True)
+        # 获取 API Key（自动从配置文件或环境变量获取）
+        try:
+            api_key = get_api_key(config)
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            click.echo("Please set FASTREACT_API_KEY environment variable or configure it in config.json", err=True)
             sys.exit(1)
 
-        # 模型
-        model = model or config.get('llm', {}).get('model', 'gpt-4')
-        base_url = config.get('llm', {}).get('providers', {}).get('openai', {}).get('base_url', 'https://api.openai.com/v1')
+        # 模型和 Base URL
+        model = model or get_model(config)
+        base_url = get_base_url(config)
 
         click.echo(f"[Agent] FastReAct Chat ({model})")
         click.echo("Type 'quit' or 'exit' to end the conversation")
