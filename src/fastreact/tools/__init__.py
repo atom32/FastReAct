@@ -32,6 +32,7 @@ from fastreact.tools.fn_registry import (
     create_weather_tool,
     create_datetime_tool,
     create_http_tool,
+    create_shell_tool,
     execute_tool,
     get_tool_function_schema,
 )
@@ -60,6 +61,7 @@ from fastreact.tools.calculator import CalculatorTool
 from fastreact.tools.search import SearchTool
 from fastreact.tools.weather import WeatherTool
 from fastreact.tools.http import HTTPTool
+from fastreact.tools.shell_tool import StatefulShellTool, get_stateful_shell
 
 # Tavily搜索工具
 try:
@@ -135,6 +137,7 @@ __all__ = [
     "create_weather_tool",
     "create_datetime_tool",
     "create_http_tool",
+    "create_shell_tool",
     "execute_tool",
     "get_tool_function_schema",
     # moltbot 风格扩展工具
@@ -163,6 +166,8 @@ __all__ = [
     "SearchTool",
     "WeatherTool",
     "HTTPTool",
+    "StatefulShellTool",
+    "get_stateful_shell",
     # Tavily搜索工具
     "TavilySearchTool",
     "TavilyNewsTool",

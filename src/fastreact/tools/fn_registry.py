@@ -193,6 +193,41 @@ def create_http_tool() -> Tool:
     )
 
 
+def create_shell_tool(timeout: int = 30) -> Tool:
+    """创建持久化 Shell 工具"""
+    from .shell_tool import get_stateful_shell
+
+    # 使用单例模式获取全局 shell 实例
+    shell = get_stateful_shell()
+
+    return Tool(
+        name="bash",
+        label="Shell",
+        description="在持久化的 Shell 会话中执行命令。状态会在命令之间保持（cd、export 等）。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "要执行的 Shell 命令"
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "超时时间（秒），默认 30",
+                    "default": 30
+                },
+                "new_session": {
+                    "type": "boolean",
+                    "description": "是否创建新的 Shell 会话（重置所有状态）",
+                    "default": False
+                }
+            },
+            "required": ["command"]
+        },
+        execute=shell.execute_async,
+    )
+
+
 # ============================================================================
 # 工具收集器
 # ============================================================================
@@ -227,6 +262,7 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
         create_weather_tool(),
         create_datetime_tool(),
         create_http_tool(),
+        create_shell_tool(),  # Stateful Shell - P0 Coding Agent feature
     ])
 
     logger.info(f"Created {len(tools)} builtin tools")
