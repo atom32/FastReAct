@@ -32,6 +32,14 @@ from .streaming import router as streaming_router
 from .websocket import websocket_chat_handler
 app.include_router(streaming_router)
 
+# 导入 Tool Graph 路由
+try:
+    from .graph_router import router as graph_router
+    app.include_router(graph_router)
+    logger.info("Tool Graph API router registered")
+except ImportError as e:
+    logger.warning(f"Failed to import Tool Graph router: {e}")
+
 # CORS 配置（允许所有来源，生产环境应限制）
 app.add_middleware(
     CORSMiddleware,

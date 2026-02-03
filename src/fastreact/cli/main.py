@@ -361,9 +361,18 @@ def version():
     click.echo("  [+] Tool calling and verification")
     click.echo("  [+] Bootstrap configuration system")
     click.echo("  [+] Multi-agent support")
+    click.echo("  [+] Tool Graph (workflow orchestration)")
     click.echo("  [+] WebSocket Gateway")
     click.echo()
     click.echo("Documentation: https://github.com/atom32/FastReAct")
+
+
+# Import and register Tool Graph commands
+try:
+    from .graph_commands import register_graph_commands
+    register_graph_commands(cli)
+except ImportError:
+    pass  # Tool Graph is optional
 
 
 async def _run_streaming_output(agent, query: str):
