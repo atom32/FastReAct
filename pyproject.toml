@@ -44,6 +44,9 @@ dev = [
     "mypy>=1.0.0",
 ]
 
+[project.entry-points."console_scripts"]
+fastreact = "fastreact.cli.main:cli"
+
 [project.urls]
 Homepage = "https://github.com/yourusername/FastReAct"
 Documentation = "https://github.com/yourusername/FastReAct/wiki"
