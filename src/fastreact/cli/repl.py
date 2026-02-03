@@ -99,10 +99,8 @@ class InteractiveREPL:
 
         # 自动检测是否使用 prompt_toolkit
         if use_prompt_toolkit is None:
-            # Windows Git Bash 环境禁用
-            import os
-            is_git_bash = 'TERM' in os.environ and 'xterm' in os.environ.get('TERM', '')
-            self.use_prompt_toolkit = PROMPT_TOOLKIT_AVAILABLE and not is_git_bash
+            # 在 Windows 上禁用 prompt_toolkit 以避免兼容性问题
+            self.use_prompt_toolkit = False  # 强制使用基础模式
         else:
             self.use_prompt_toolkit = use_prompt_toolkit and PROMPT_TOOLKIT_AVAILABLE
 

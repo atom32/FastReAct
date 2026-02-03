@@ -144,7 +144,7 @@ def show_dict_table(title: str, data: List[Dict[str, Any]]) -> None:
     columns = list(data[0].keys())
 
     # 创建表格
-    table = Table(title=title, title_style="bold cyan", box=box.ROUNDED)
+    table = Table(title=title, title_style="bold_cyan", box=box.ROUNDED)
     for col in columns:
         table.add_column(col.replace("_", " ").title(), style="dim")
 
