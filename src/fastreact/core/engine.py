@@ -119,6 +119,9 @@ class FastReAct:
         enable_event_stream: bool = True,
         event_callback: Optional[Callable] = None,
         context_config: Optional[ContextConfig] = None,
+        # V2: 工具分组支持
+        enable_groups: Optional[List[str]] = None,
+        respect_group_policies: bool = True,
     ):
         """
         初始化FastReAct引擎
@@ -127,7 +130,7 @@ class FastReAct:
             api_key: OpenAI API密钥
             base_url: API基础URL（支持兼容API）
             model: 模型名称
-            tools: 工具列表
+            tools: 工具列表（如果不指定，使用默认工具）
             max_iterations: 最大迭代次数
             max_concurrent_tools: 最大并发工具数
             enable_streaming: 是否启用流式响应
@@ -144,6 +147,8 @@ class FastReAct:
             enable_event_stream: 是否启用事件流（默认True）
             event_callback: 事件回调函数（异步）
             context_config: 上下文管理配置（可选，使用默认值）
+            enable_groups: 启用的工具分组列表（V2，如 ['file_ops', 'web']）
+            respect_group_policies: 是否遵守分组策略（V2，默认True）
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -162,6 +167,18 @@ class FastReAct:
         self.workspace = workspace
         self.enable_event_stream = enable_event_stream
         self.event_callback = event_callback
+
+        # V2: 工具分组系统
+        self.enable_groups = enable_groups
+        self.respect_group_policies = respect_group_policies
+        self._tool_manager = None
+        if enable_groups is not None:
+            try:
+                from ..core.tool_manager import get_global_manager
+                self._tool_manager = get_global_manager()
+                logger.info(f"Tool groups enabled: {enable_groups}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize tool manager: {e}")
 
         # 事件管理器
         self._event_manager = EventManager()
@@ -233,7 +250,30 @@ class FastReAct:
 
         # 工具注册表
         self.tools: Dict[str, Tool] = {}
-        if tools:
+
+        # V2: 使用工具分组系统
+        if self._tool_manager and self.enable_groups:
+            # 从工具管理器获取指定分组的工具
+            from ..tools import create_builtin_tools
+            all_tools = create_builtin_tools()
+
+            # 注册所有工具到工具管理器
+            for tool in all_tools:
+                if tool.group:
+                    self._tool_manager.register_tool(tool, tool.group, overwrite=True)
+
+            # 获取启用的分组工具
+            group_tools = self._tool_manager.get_tools_by_groups(
+                self.enable_groups,
+                respect_policies=self.respect_group_policies
+            )
+
+            for tool in group_tools:
+                self.register_tool(tool)
+
+            logger.info(f"Loaded {len(self.tools)} tools from groups: {self.enable_groups}")
+        elif tools:
+            # 传统方式：直接使用传入的工具列表
             for tool in tools:
                 self.register_tool(tool)
 

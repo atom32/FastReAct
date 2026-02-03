@@ -32,6 +32,17 @@ from fastreact.core.streaming import (
     StreamingContext,
     create_streaming_context,
 )
+# V2: 工具分组系统
+from fastreact.core.tool_group import (
+    ToolGroup,
+    GroupPolicy,
+    get_predefined_group,
+    list_predefined_groups,
+)
+from fastreact.core.tool_manager import (
+    ToolManager,
+    get_global_manager,
+)
 
 __all__ = [
     "FastReAct",
@@ -50,4 +61,11 @@ __all__ = [
     "StreamChunkType",
     "StreamingContext",
     "create_streaming_context",
+    # Tool Groups V2
+    "ToolGroup",
+    "GroupPolicy",
+    "get_predefined_group",
+    "list_predefined_groups",
+    "ToolManager",
+    "get_global_manager",
 ]

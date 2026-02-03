@@ -22,6 +22,7 @@ class Tool:
     # 可选元数据
     label: Optional[str] = None
     category: Optional[str] = None
+    group: Optional[str] = None  # 工具分组名称
 
     def __post_init__(self):
         if self.label is None:
@@ -49,6 +50,7 @@ def create_search_tool(api_key: Optional[str] = None) -> Tool:
         name="search",
         label="Search",
         description="搜索互联网获取最新信息。可以搜索新闻、技术文档、百科知识等。",
+        group="web",
         parameters={
             "type": "object",
             "properties": {
@@ -81,6 +83,7 @@ def create_calculator_tool() -> Tool:
         name="calculator",
         label="Calculator",
         description="执行数学计算。支持加减乘除、括号等数学表达式。",
+        group="math",
         parameters={
             "type": "object",
             "properties": {
@@ -173,6 +176,7 @@ def create_http_tool() -> Tool:
         name="http",
         label="HTTP",
         description="发送 HTTP 请求。可以获取网页内容或调用 HTTP API。",
+        group="web",
         parameters={
             "type": "object",
             "properties": {
@@ -204,6 +208,7 @@ def create_shell_tool(timeout: int = 30) -> Tool:
         name="bash",
         label="Shell",
         description="在持久化的 Shell 会话中执行命令。状态会在命令之间保持（cd、export 等）。",
+        group="system",
         parameters={
             "type": "object",
             "properties": {
@@ -240,6 +245,7 @@ def create_ls_repo_tool() -> Tool:
         name="ls_repo",
         label="List Repository",
         description="查看当前项目的文件结构。显示目录树，自动折叠无关目录（node_modules, .git 等）。",
+        group="code",
         parameters={
             "type": "object",
             "properties": {
@@ -272,6 +278,7 @@ def create_cd_repo_tool() -> Tool:
         name="cd_repo",
         label="Change Repository Directory",
         description="切换项目目录并刷新文件结构。支持相对路径和绝对路径。",
+        group="code",
         parameters={
             "type": "object",
             "properties": {
@@ -303,6 +310,7 @@ def create_refresh_repo_tool() -> Tool:
         name="refresh_repo",
         label="Refresh Repository",
         description="强制重新扫描当前目录结构。当文件系统发生变化时使用。",
+        group="code",
         parameters={
             "type": "object",
             "properties": {
@@ -328,6 +336,7 @@ def create_edit_file_tool() -> Tool:
         name="edit_file",
         label="Edit File",
         description="精准编辑文件，使用 Search & Replace 模式修改代码块。支持模糊匹配，容忍空格和缩进差异。",
+        group="file_ops",
         parameters={
             "type": "object",
             "properties": {
@@ -391,6 +400,7 @@ def create_write_file_tool() -> Tool:
         name="write_file",
         label="Write File",
         description="创建新文件或覆写已有文件的内容。会自动创建父目录。适用于生成代码、配置文件等。",
+        group="file_ops",
         parameters={
             "type": "object",
             "properties": {
@@ -451,6 +461,7 @@ def create_read_file_tool() -> Tool:
         name="read_file",
         label="Read File",
         description="读取文件内容。适用于查看代码、配置文件、日志等。返回前 10000 字符。",
+        group="file_ops",
         parameters={
             "type": "object",
             "properties": {

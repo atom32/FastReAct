@@ -22,6 +22,21 @@ FastReAct 内置工具集
    ```
 """
 
+# 工具分组系统（V2 新增）
+from fastreact.core.tool_group import (
+    ToolGroup,
+    GroupPolicy,
+    get_predefined_group,
+    list_predefined_groups,
+    PREDEFINED_GROUPS,
+)
+
+from fastreact.core.tool_manager import (
+    ToolManager,
+    get_global_manager,
+    reset_global_manager,
+)
+
 # 函数式工具（推荐方式）
 from fastreact.tools.fn_registry import (
     Tool,
@@ -131,6 +146,18 @@ except ImportError:
     pass
 
 __all__ = [
+    # ============================================================================
+    # 工具分组系统（V2 新增）
+    # ============================================================================
+    "ToolGroup",
+    "GroupPolicy",
+    "get_predefined_group",
+    "list_predefined_groups",
+    "PREDEFINED_GROUPS",
+    "ToolManager",
+    "get_global_manager",
+    "reset_global_manager",
+
     # ============================================================================
     # 函数式工具（推荐方式）
     # ============================================================================
