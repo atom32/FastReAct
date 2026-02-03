@@ -13,6 +13,23 @@ from typing import Optional, Dict, Any
 
 import click
 
+# Rich UI components
+try:
+    from .rich_ui import (
+        console, print_header, print_status, print_list,
+        GraphExecutor, info_panel, success_panel,
+        error_panel, show_dict_table
+    )
+except ImportError:
+    # Fallback to basic output
+    console = None
+    def print_status(*args, **kwargs):
+        pass
+    def print_header(*args, **kwargs):
+        pass
+    def print_list(*args, **kwargs):
+        pass
+
 
 def load_graph_definition(file_path: str) -> Dict[str, Any]:
     """
@@ -123,27 +140,42 @@ def run(file_path: str, inputs: str, debug: bool, breakpoint: tuple, output: Opt
     """
     try:
         # 加载图定义
-        click.echo(f"[*] Loading graph from {file_path}...")
+        if console:
+            print_status("running", f"Loading graph from {file_path}...")
+        else:
+            click.echo(f"[*] Loading graph from {file_path}...")
+
         graph_def = load_graph_definition(file_path)
 
-        click.echo(f"[OK] Graph: {graph_def.get('name', 'unnamed')}")
-        click.echo(f"    Nodes: {len(graph_def.get('nodes', []))}")
-        click.echo(f"    Edges: {len(graph_def.get('edges', []))}")
-        click.echo()
+        node_count = len(graph_def.get('nodes', []))
+        edge_count = len(graph_def.get('edges', []))
+
+        if console:
+            console.print(f"[green]✓[/green] Graph: [bold cyan]{graph_def.get('name', 'unnamed')}[/bold cyan]")
+            console.print(f"  Nodes: {node_count}, Edges: {edge_count}")
+            console.print()
+        else:
+            click.echo(f"[OK] Graph: {graph_def.get('name', 'unnamed')}")
+            click.echo(f"    Nodes: {node_count}")
+            click.echo(f"    Edges: {edge_count}")
+            click.echo()
 
         # 解析输入
         try:
             inputs_data = json.loads(inputs) if inputs else {}
         except json.JSONDecodeError as e:
-            click.echo(f"[ERROR] Invalid JSON inputs: {e}", err=True)
+            if console:
+                error_panel("Invalid Inputs", str(e))
+            else:
+                click.echo(f"[ERROR] Invalid JSON inputs: {e}", err=True)
             sys.exit(1)
 
         # 执行图
-        click.echo("[*] Executing graph...")
-        if debug:
-            click.echo("[DEBUG] Debug mode enabled")
-            if breakpoint:
-                click.echo(f"[DEBUG] Breakpoints: {list(breakpoint)}")
+        if console:
+            executor = GraphExecutor()
+            executor.start(graph_def.get('name', 'unnamed'), node_count)
+        else:
+            click.echo("[*] Executing graph...")
 
         result = asyncio.run(execute_graph_async(
             graph_def,
@@ -153,12 +185,15 @@ def run(file_path: str, inputs: str, debug: bool, breakpoint: tuple, output: Opt
         ))
 
         # 显示结果
-        click.echo()
-        click.echo("[Result] Execution Result:")
-        if isinstance(result, dict):
-            click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        if console:
+            executor.finish(result)
         else:
-            click.echo(str(result))
+            click.echo()
+            click.echo("[Result] Execution Result:")
+            if isinstance(result, dict):
+                click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+            else:
+                click.echo(str(result))
 
         # 保存到文件
         if output:
@@ -167,11 +202,17 @@ def run(file_path: str, inputs: str, debug: bool, breakpoint: tuple, output: Opt
                     json.dump(result, f, indent=2, ensure_ascii=False)
                 else:
                     f.write(str(result))
-            click.echo()
-            click.echo(f"[OK] Saved to: {output}")
+            if console:
+                print_status("done", f"Saved to: {output}")
+            else:
+                click.echo()
+                click.echo(f"[OK] Saved to: {output}")
 
     except Exception as e:
-        click.echo(f"[ERROR] {e}", err=True)
+        if console:
+            error_panel("Execution Error", str(e))
+        else:
+            click.echo(f"[ERROR] {e}", err=True)
         import traceback
         traceback.print_exc()
         sys.exit(1)
@@ -189,7 +230,10 @@ def validate(file_path: str):
         fastreact graph validate workflow.json
     """
     try:
-        click.echo(f"[*] Validating {file_path}...")
+        if console:
+            print_status("running", f"Validating {file_path}...")
+        else:
+            click.echo(f"[*] Validating {file_path}...")
 
         graph_def = load_graph_definition(file_path)
 
@@ -233,17 +277,29 @@ def validate(file_path: str):
 
         # 显示结果
         if errors:
-            click.echo("[FAIL] Validation failed:", err=True)
-            for error in errors:
-                click.echo(f"  - {error}", err=True)
+            if console:
+                error_panel("Validation Failed", "\n".join([f"• {e}" for e in errors]))
+            else:
+                click.echo("[FAIL] Validation failed:", err=True)
+                for error in errors:
+                    click.echo(f"  - {error}", err=True)
             sys.exit(1)
         else:
-            click.echo("[OK] Validation passed!")
-            click.echo(f"  - {len(node_ids)} nodes")
-            click.echo(f"  - {len(edge_ids)} edges")
+            if console:
+                success_panel(
+                    "Validation Passed",
+                    f"✓ All checks passed\n\nNodes: {len(node_ids)}\nEdges: {len(edge_ids)}"
+                )
+            else:
+                click.echo("[OK] Validation passed!")
+                click.echo(f"  - {len(node_ids)} nodes")
+                click.echo(f"  - {len(edge_ids)} edges")
 
     except Exception as e:
-        click.echo(f"[ERROR] {e}", err=True)
+        if console:
+            error_panel("Validation Error", str(e))
+        else:
+            click.echo(f"[ERROR] {e}", err=True)
         sys.exit(1)
 
 
@@ -297,12 +353,21 @@ def init(name: str, output: str):
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(template, f, indent=2, ensure_ascii=False)
 
-    click.echo(f"[OK] Created template: {output}")
-    click.echo()
-    click.echo("Next steps:")
-    click.echo(f"  1. Edit the template: vim {output}")
-    click.echo(f"  2. Validate: fastreact graph validate {output}")
-    click.echo(f"  3. Run: fastreact graph run {output}")
+    if console:
+        success_panel(
+            "Template Created",
+            f"File: {output}\n\nNext steps:\n"
+            f"1. Edit: [cyan]vim {output}[/cyan]\n"
+            f"2. Validate: [cyan]fastreact graph validate {output}[/cyan]\n"
+            f"3. Run: [cyan]fastreact graph run {output}[/cyan]"
+        )
+    else:
+        click.echo(f"[OK] Created template: {output}")
+        click.echo()
+        click.echo("Next steps:")
+        click.echo(f"  1. Edit the template: vim {output}")
+        click.echo(f"  2. Validate: fastreact graph validate {output}")
+        click.echo(f"  3. Run: fastreact graph run {output}")
 
 
 @graph.command()
@@ -316,27 +381,48 @@ def list():
         graph_files.extend(current_dir.glob(ext))
 
     if not graph_files:
-        click.echo("[INFO] No graph files found in current directory")
-        click.echo()
-        click.echo("Create one with:")
-        click.echo("  fastreact graph init my_workflow")
+        if console:
+            info_panel(
+                "No Graph Files Found",
+                "Create one with: [cyan]fastreact graph init my_workflow[/cyan]"
+            )
+        else:
+            click.echo("[INFO] No graph files found in current directory")
+            click.echo()
+            click.echo("Create one with:")
+            click.echo("  fastreact graph init my_workflow")
         return
 
-    click.echo(f"Found {len(graph_files)} graph file(s):")
-    click.echo()
-
+    # 收集图信息
+    graphs_info = []
     for f in graph_files:
         try:
             graph_def = load_graph_definition(str(f))
-            name = graph_def.get('name', 'unnamed')
-            node_count = len(graph_def.get('nodes', []))
-            click.echo(f"  {f.name}")
-            click.echo(f"    Name: {name}")
-            click.echo(f"    Nodes: {node_count}")
-            click.echo()
+            graphs_info.append({
+                "file": f.name,
+                "name": graph_def.get('name', 'unnamed'),
+                "nodes": len(graph_def.get('nodes', [])),
+                "edges": len(graph_def.get('edges', [])),
+            })
         except Exception as e:
-            click.echo(f"  {f.name}")
-            click.echo(f"    Error: {e}")
+            graphs_info.append({
+                "file": f.name,
+                "name": "Error",
+                "nodes": 0,
+                "edges": 0,
+                "error": str(e),
+            })
+
+    # 显示
+    if console:
+        show_dict_table("Tool Graphs", graphs_info)
+    else:
+        click.echo(f"Found {len(graph_files)} graph file(s):")
+        click.echo()
+        for info in graphs_info:
+            click.echo(f"  {info['file']}")
+            click.echo(f"    Name: {info['name']}")
+            click.echo(f"    Nodes: {info['nodes']}")
             click.echo()
 
 

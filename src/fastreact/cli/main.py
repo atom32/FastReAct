@@ -32,6 +32,11 @@ import click
 try:
     from fastreact import FastReAct
     from fastreact.bootstrap import init_workspace
+    from .rich_ui import (
+        console, print_header, print_status,
+        AgentExecutor, info_panel, success_panel,
+        show_dict_table, markdown_panel
+    )
 except ImportError:
     click.echo("Error: FastReAct not installed. Run: pip install fastreact", err=True)
     sys.exit(1)
@@ -72,23 +77,26 @@ def init(workspace: Optional[str], overwrite: bool):
         fastreact init --overwrite
     """
     try:
-        click.echo("[*] Initializing FastReAct workspace...")
+        print_status("running", "Initializing FastReAct workspace...")
         manager = init_workspace(workspace=workspace, overwrite=overwrite)
 
-        click.echo(f"[OK] Workspace created: {manager.workspace}")
-        click.echo()
-        click.echo("Created files:")
-        for filename in manager.list_files():
-            click.echo(f"  - {filename}")
+        console.print()
+        success_panel(
+            "Workspace Created",
+            f"Location: {manager.workspace}\n\nFiles Created:\n" +
+            "\n".join([f"  • {f}" for f in manager.list_files()])
+        )
+        console.print()
 
-        click.echo()
-        click.echo("Next steps:")
-        click.echo(f"  1. Edit configuration: vim {manager.workspace}/SOUL.md")
-        click.echo("  2. Start chatting: fastreact chat")
-        click.echo("  3. Or run a query: fastreact run \"your question\"")
+        info_panel(
+            "Next Steps",
+            f"1. Edit configuration: [cyan]vim {manager.workspace}/SOUL.md[/cyan]\n"
+            f"2. Start chatting: [cyan]fastreact chat[/cyan]\n"
+            f"3. Run a query: [cyan]fastreact run \"your question\"[/cyan]"
+        )
 
     except Exception as e:
-        click.echo(f"[ERROR] {e}", err=True)
+        error_panel("Error", str(e))
         sys.exit(1)
 
 
@@ -157,10 +165,6 @@ def run(query: Optional[str], model: Optional[str], workspace: Optional[str],
         model = model or get_model(config)
         base_url = get_base_url(config)
 
-        click.echo(f"[Agent] FastReAct ({model})")
-        click.echo(f"Query: {query}")
-        click.echo()
-
         # 创建 Agent
         agent = FastReAct(
             api_key=api_key,
@@ -172,19 +176,23 @@ def run(query: Optional[str], model: Optional[str], workspace: Optional[str],
 
         # 流式响应处理
         if stream:
-            click.echo("[Streaming] Streaming response enabled...")
-            click.echo()
-
+            print_status("running", f"Streaming with {model}...")
+            console.print()
             asyncio.run(_run_streaming_output(agent, query))
             return
+
+        # 使用 Rich UI 执行器
+        executor = AgentExecutor()
+        executor.start(query)
 
         # 步骤回调
         def step_callback(step):
             if show_thoughts:
                 if step.get('thought'):
-                    click.echo(f"[Thought] {step['thought']}", dim=True)
+                    executor.add_thought(step['thought'])
                 if step.get('action'):
-                    click.echo(f"[Tool] {step['action']['tool_name']}({step['action'].get('params', {})})", dim=True)
+                    action = step['action']
+                    executor.add_action(action.get('tool_name', 'unknown'), action.get('params', {}))
 
         # 运行
         result = asyncio.run(agent.run_async(
@@ -192,14 +200,11 @@ def run(query: Optional[str], model: Optional[str], workspace: Optional[str],
             step_callback=step_callback if show_thoughts else None
         ))
 
-        click.echo()
-        click.echo("[Answer] Answer:")
-        click.echo(result['answer'])
-        click.echo()
-        click.echo(f"[Stats] Stats: {result['stats']}")
+        # 完成并显示结果
+        executor.finish(result['answer'], result.get('stats', {}))
 
     except Exception as e:
-        click.echo(f"[ERROR] Error: {e}", err=True)
+        error_panel("Execution Error", str(e))
         import traceback
         traceback.print_exc()
         sys.exit(1)

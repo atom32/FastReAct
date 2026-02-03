@@ -28,6 +28,9 @@ dependencies = [
     "httpx>=0.25.0",
     "pydantic>=2.0.0",
     "mcp>=1.25.0",
+    "rich>=13.0.0",  # For beautiful CLI output
+    "pyyaml>=6.0",   # For YAML config files
+    "click>=8.0.0",  # For CLI framework
 ]
 
 [project.optional-dependencies]
