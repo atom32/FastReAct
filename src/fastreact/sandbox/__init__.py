@@ -5,5 +5,22 @@ Docker 沙箱系统
 """
 
 from .docker import DockerSandbox, SandboxError
+from .config import (
+    SandboxConfig,
+    NetworkMode,
+    SandboxPreset,
+    get_preset_config,
+    create_config_with_mounts,
+    PRESET_CONFIGS,
+)
 
-__all__ = ["DockerSandbox", "SandboxError"]
+__all__ = [
+    "DockerSandbox",
+    "SandboxError",
+    "SandboxConfig",
+    "NetworkMode",
+    "SandboxPreset",
+    "get_preset_config",
+    "create_config_with_mounts",
+    "PRESET_CONFIGS",
+]

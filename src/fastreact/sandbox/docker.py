@@ -5,7 +5,7 @@ Docker 沙箱
 """
 
 import docker
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 import logging
 import asyncio
 from datetime import datetime
@@ -30,8 +30,18 @@ class DockerSandbox:
 
     Usage:
         from fastreact.sandbox import DockerSandbox
+        from fastreact.sandbox.config import SandboxConfig, get_preset_config, SandboxPreset
 
+        # 方式 1: 使用默认配置
         sandbox = DockerSandbox()
+
+        # 方式 2: 使用预设配置
+        config = get_preset_config(SandboxPreset.SAFE)
+        sandbox = DockerSandbox(config=config)
+
+        # 方式 3: 使用自定义配置
+        config = SandboxConfig(memory_limit="1g", cpu_limit=1.0)
+        sandbox = DockerSandbox(config=config)
 
         # 执行代码
         result = await sandbox.execute_code(
@@ -43,8 +53,12 @@ class DockerSandbox:
         # Hello, World!
     """
 
-    def __init__(self):
-        """初始化 Docker 沙箱"""
+    def __init__(self, config=None):
+        """初始化 Docker 沙箱
+
+        Args:
+            config: SandboxConfig 对象（可选，使用默认配置）
+        """
         try:
             self.client = docker.from_env()
             self.client.ping()  # 测试连接
@@ -53,6 +67,9 @@ class DockerSandbox:
                 f"Failed to connect to Docker: {e}. "
                 "Please ensure Docker is installed and running."
             ) from e
+
+        # 配置
+        self.config = config
 
         # 容器池
         self.containers: Dict[str, docker.models.containers.Container] = {}
@@ -67,13 +84,16 @@ class DockerSandbox:
             "java": "openjdk:17-slim"
         }
 
-        # 默认资源限制
-        self.default_limits = {
-            "mem_limit": "512m",
-            "cpu_period": 100000,
-            "cpu_quota": 50000,  # 50% CPU
-            "network_disabled": False
-        }
+        # 默认资源限制（如果没有配置）
+        if config:
+            self.default_limits = config.to_docker_kwargs()
+        else:
+            self.default_limits = {
+                "mem_limit": "512m",
+                "cpu_period": 100000,
+                "cpu_quota": 50000,  # 50% CPU
+                "network_disabled": False
+            }
 
         logger.info("Docker sandbox initialized")
 
