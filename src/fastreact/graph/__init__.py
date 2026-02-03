@@ -46,6 +46,14 @@ from .agent import (
     AgentConfig,
     create_graph_agent,
 )
+from .conditional import (
+    ConditionalNode,
+    Branch,
+    ConditionType,
+    create_conditional_node,
+    if_then_else,
+    switch_case,
+)
 from .graph import (
     ToolGraph,
     ToolEdge,
@@ -101,4 +109,11 @@ __all__ = [
     "GraphAgent",
     "AgentConfig",
     "create_graph_agent",
+    # Conditional
+    "ConditionalNode",
+    "Branch",
+    "ConditionType",
+    "create_conditional_node",
+    "if_then_else",
+    "switch_case",
 ]

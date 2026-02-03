@@ -90,6 +90,15 @@ from fastreact.graph import (
     AgentConfig,
     create_graph_agent,
 )
+# Conditional Execution
+from fastreact.graph import (
+    ConditionalNode,
+    Branch,
+    ConditionType,
+    create_conditional_node,
+    if_then_else,
+    switch_case,
+)
 
 __all__ = [
     "FastReAct",
@@ -155,4 +164,11 @@ __all__ = [
     "GraphAgent",
     "AgentConfig",
     "create_graph_agent",
+    # Conditional Execution
+    "ConditionalNode",
+    "Branch",
+    "ConditionType",
+    "create_conditional_node",
+    "if_then_else",
+    "switch_case",
 ]
