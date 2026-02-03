@@ -99,6 +99,17 @@ from fastreact.graph import (
     if_then_else,
     switch_case,
 )
+# Loop
+from fastreact.graph import (
+    LoopNode,
+    LoopType,
+    LoopResult,
+    create_loop_node,
+    repeat,
+    while_true,
+    for_each,
+)
+
 
 __all__ = [
     "FastReAct",
@@ -171,4 +182,12 @@ __all__ = [
     "create_conditional_node",
     "if_then_else",
     "switch_case",
+    # Loop
+    "LoopNode",
+    "LoopType",
+    "LoopResult",
+    "create_loop_node",
+    "repeat",
+    "while_true",
+    "for_each",
 ]

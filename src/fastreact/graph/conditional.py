@@ -242,6 +242,7 @@ class ConditionalNode(ToolNode):
         支持的格式：
         - @key: 从 inputs 或 context 获取
         - @input.key: 从 inputs 获取
+        - @_last.key: 从上次输出获取
         - @node_id.key: 从 node outputs 获取（暂不支持）
         - 直接值：数字、字符串等
         """
@@ -261,6 +262,11 @@ class ConditionalNode(ToolNode):
             if prefix == "input":
                 # @input.key 格式
                 return inputs.get(key)
+            elif prefix == "_last":
+                # @_last.key 格式 - 从 context 获取上次输出
+                if "_last" in context:
+                    return context["_last"].get(key)
+                return None
             else:
                 # @node_id.key 格式 - 暂不支持，返回 None
                 return None

@@ -54,6 +54,15 @@ from .conditional import (
     if_then_else,
     switch_case,
 )
+from .loop import (
+    LoopNode,
+    LoopType,
+    LoopResult,
+    create_loop_node,
+    repeat,
+    while_true,
+    for_each,
+)
 from .graph import (
     ToolGraph,
     ToolEdge,
@@ -116,4 +125,12 @@ __all__ = [
     "create_conditional_node",
     "if_then_else",
     "switch_case",
+    # Loop
+    "LoopNode",
+    "LoopType",
+    "LoopResult",
+    "create_loop_node",
+    "repeat",
+    "while_true",
+    "for_each",
 ]
