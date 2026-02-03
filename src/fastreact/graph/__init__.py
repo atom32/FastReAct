@@ -104,6 +104,52 @@ from .graph import (
     create_parallel_workflow,
 )
 
+# IEL (Interactive Execution Loop) Components
+from .iel_types import (
+    Status,
+    FailureType,
+    ExternalObservation,
+    StepResult,
+    from_node_result,
+)
+from .iel_context import (
+    GraphSnapshot,
+    FailureCounter,
+    IELExecutionContext,
+)
+from .step_executor import (
+    StepConfig,
+    InterruptQueue,
+    StepExecutor,
+)
+from .replanner import (
+    PatchOp,
+    NodeInstruction,
+    GraphPatch,
+    ReflectionResult,
+    Replanner,
+)
+from .iel_loop import (
+    IELLoop,
+    IELLoopConfig,
+    run_iel_loop,
+)
+from .checkpoint import (
+    is_git_repo,
+    get_git_status,
+    GitCheckpoint,
+    FilesystemCheckpoint,
+    CheckpointManager,
+    create_checkpoint_manager,
+)
+from .interrupt import (
+    InterruptPriority,
+    SpecialCommand,
+    PriorityInterrupt,
+    PriorityInterruptQueue,
+    parse_fix_command,
+)
+
 __all__ = [
     # Node
     "ToolNode",
@@ -192,4 +238,37 @@ __all__ = [
     "create_recorder",
     "record_execution",
     "replay_execution",
+    # IEL (Interactive Execution Loop)
+    "Status",
+    "FailureType",
+    "ExternalObservation",
+    "StepResult",
+    "from_node_result",
+    "GraphSnapshot",
+    "FailureCounter",
+    "IELExecutionContext",
+    "StepConfig",
+    "InterruptQueue",
+    "StepExecutor",
+    "PatchOp",
+    "NodeInstruction",
+    "GraphPatch",
+    "ReflectionResult",
+    "Replanner",
+    "IELLoop",
+    "IELLoopConfig",
+    "run_iel_loop",
+    # Checkpoints & Rollback
+    "is_git_repo",
+    "get_git_status",
+    "GitCheckpoint",
+    "FilesystemCheckpoint",
+    "CheckpointManager",
+    "create_checkpoint_manager",
+    # Interrupts
+    "InterruptPriority",
+    "SpecialCommand",
+    "PriorityInterrupt",
+    "PriorityInterruptQueue",
+    "parse_fix_command",
 ]
