@@ -367,9 +367,49 @@ def version():
     click.echo("  [+] Bootstrap configuration system")
     click.echo("  [+] Multi-agent support")
     click.echo("  [+] Tool Graph (workflow orchestration)")
+    click.echo("  [+] Interactive shell (REPL)")
     click.echo("  [+] WebSocket Gateway")
     click.echo()
     click.echo("Documentation: https://github.com/atom32/FastReAct")
+
+
+@cli.command()
+@click.option(
+    '--model',
+    default=None,
+    help='LLM 模型（覆盖配置文件）'
+)
+@click.option(
+    '--workspace',
+    default=None,
+    help='工作区路径'
+)
+def shell(model: Optional[str], workspace: Optional[str]):
+    """
+    启动交互式 Shell（REPL）
+
+    启动一个持续运行的交互式命令行界面，支持：
+    - 多轮对话和查询
+    - 命令历史和自动补全
+    - 变量持久化
+    - 图操作
+
+    示例:
+        fastreact shell
+        fastreact shell --model gpt-4
+    """
+    try:
+        from .repl import run_repl
+        run_repl()
+    except ImportError as e:
+        click.echo(f"[ERROR] Failed to start shell: {e}", err=True)
+        click.echo("Install with: pip install prompt-toolkit", err=True)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        click.echo("\n[Bye] Goodbye!")
+    except Exception as e:
+        click.echo(f"[ERROR] {e}", err=True)
+        sys.exit(1)
 
 
 # Import and register Tool Graph commands
