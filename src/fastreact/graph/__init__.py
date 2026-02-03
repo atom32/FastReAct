@@ -82,6 +82,18 @@ from .debug import (
     create_debugger,
     debug_graph,
 )
+from .history import (
+    EventType,
+    ExecutionEvent,
+    ExecutionSnapshot,
+    ExecutionHistory,
+    ExecutionRecorder,
+    RecordingRuntime,
+    PlaybackRuntime,
+    create_recorder,
+    record_execution,
+    replay_execution,
+)
 from .graph import (
     ToolGraph,
     ToolEdge,
@@ -169,4 +181,15 @@ __all__ = [
     "DebuggingRuntime",
     "create_debugger",
     "debug_graph",
+    # History
+    "EventType",
+    "ExecutionEvent",
+    "ExecutionSnapshot",
+    "ExecutionHistory",
+    "ExecutionRecorder",
+    "RecordingRuntime",
+    "PlaybackRuntime",
+    "create_recorder",
+    "record_execution",
+    "replay_execution",
 ]
