@@ -145,8 +145,15 @@ class DockerSandbox:
             # 构建命令
             command = self._build_command(code, language)
 
-            # 获取环境变量
-            env = self._get_environment(language)
+            # 合并环境变量到 default_limits 中
+            run_kwargs = self.default_limits.copy()
+            run_kwargs.update({
+                "stdin_open": True if stdin else False,
+                "remove": True,
+                "stdout": True,
+                "stderr": True,
+                "detach": False,
+            })
 
             # 在线程池中运行同步的 Docker 命令，并设置超时
             loop = asyncio.get_event_loop()
@@ -157,13 +164,7 @@ class DockerSandbox:
                         lambda: self.client.containers.run(
                             image,
                             command=command,
-                            stdin_open=True if stdin else False,
-                            environment=env,
-                            **self.default_limits,
-                            remove=True,
-                            stdout=True,
-                            stderr=True,
-                            detach=False
+                            **run_kwargs,
                         )
                     ),
                     timeout=timeout
