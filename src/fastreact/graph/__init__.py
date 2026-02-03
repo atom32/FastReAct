@@ -63,6 +63,15 @@ from .loop import (
     while_true,
     for_each,
 )
+from .subgraph import (
+    SubGraph,
+    SubGraphConfig,
+    SubGraphNode,
+    SubGraphTemplates,
+    create_subgraph,
+    compose_subgraph,
+    inline_subgraph,
+)
 from .graph import (
     ToolGraph,
     ToolEdge,
@@ -133,4 +142,12 @@ __all__ = [
     "repeat",
     "while_true",
     "for_each",
+    # SubGraph
+    "SubGraph",
+    "SubGraphConfig",
+    "SubGraphNode",
+    "SubGraphTemplates",
+    "create_subgraph",
+    "compose_subgraph",
+    "inline_subgraph",
 ]

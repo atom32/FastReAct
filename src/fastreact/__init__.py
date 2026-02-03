@@ -109,6 +109,16 @@ from fastreact.graph import (
     while_true,
     for_each,
 )
+# SubGraph
+from fastreact.graph import (
+    SubGraph,
+    SubGraphConfig,
+    SubGraphNode,
+    SubGraphTemplates,
+    create_subgraph,
+    compose_subgraph,
+    inline_subgraph,
+)
 
 
 __all__ = [
@@ -190,4 +200,12 @@ __all__ = [
     "repeat",
     "while_true",
     "for_each",
+    # SubGraph
+    "SubGraph",
+    "SubGraphConfig",
+    "SubGraphNode",
+    "SubGraphTemplates",
+    "create_subgraph",
+    "compose_subgraph",
+    "inline_subgraph",
 ]
