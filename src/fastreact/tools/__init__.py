@@ -37,6 +37,8 @@ from fastreact.tools.fn_registry import (
     create_cd_repo_tool,
     create_refresh_repo_tool,
     create_edit_file_tool,
+    create_write_file_tool,
+    create_read_file_tool,
     execute_tool,
     get_tool_function_schema,
 )
@@ -146,6 +148,8 @@ __all__ = [
     "create_cd_repo_tool",
     "create_refresh_repo_tool",
     "create_edit_file_tool",
+    "create_write_file_tool",
+    "create_read_file_tool",
     "execute_tool",
     "get_tool_function_schema",
     # moltbot 风格扩展工具

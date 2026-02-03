@@ -38,7 +38,7 @@ except ImportError:
 
 
 @click.group()
-@click.version_option(version="0.3.0", prog_name="fastreact")
+@click.version_option(version="1.0.0", prog_name="fastreact")
 def cli():
     """
     FastReAct - 生产级 ReAct Agent 框架
@@ -340,7 +340,7 @@ def gateway(action: str, port: int, host: str):
 @cli.command()
 def version():
     """显示版本信息"""
-    click.echo("FastReAct v0.3.0")
+    click.echo("FastReAct v1.0.0")
     click.echo()
     click.echo("Features:")
     click.echo("  [+] ReAct loop with transparent reasoning")

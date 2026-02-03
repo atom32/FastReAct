@@ -355,6 +355,121 @@ def create_edit_file_tool() -> Tool:
     )
 
 
+def create_write_file_tool() -> Tool:
+    """创建文件写入工具"""
+    import os
+    from pathlib import Path
+
+    async def execute(path: str, content: str, create_dirs: bool = True) -> str:
+        """
+        写入文件内容
+
+        Args:
+            path: 文件路径（相对或绝对）
+            content: 文件内容
+            create_dirs: 是否自动创建父目录（默认 True）
+
+        Returns:
+            执行结果
+        """
+        try:
+            file_path = Path(path)
+
+            # 创建父目录
+            if create_dirs:
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # 写入文件
+            file_path.write_text(content, encoding='utf-8')
+
+            return f"[OK] File written: {file_path} ({len(content)} bytes)"
+
+        except Exception as e:
+            return f"[ERROR] Failed to write file: {str(e)}"
+
+    return Tool(
+        name="write_file",
+        label="Write File",
+        description="创建新文件或覆写已有文件的内容。会自动创建父目录。适用于生成代码、配置文件等。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "文件路径（相对或绝对），如 'src/main.py' 或 '/tmp/config.json'"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "文件内容，可以是代码、文本、JSON 等"
+                },
+                "create_dirs": {
+                    "type": "boolean",
+                    "description": "是否自动创建父目录（默认 True）",
+                    "default": True
+                }
+            },
+            "required": ["path", "content"]
+        },
+        execute=execute,
+    )
+
+
+def create_read_file_tool() -> Tool:
+    """创建文件读取工具"""
+    from pathlib import Path
+
+    async def execute(path: str, encoding: str = "utf-8") -> str:
+        """
+        读取文件内容
+
+        Args:
+            path: 文件路径（相对或绝对）
+            encoding: 文件编码（默认 utf-8）
+
+        Returns:
+            文件内容
+        """
+        try:
+            file_path = Path(path)
+
+            if not file_path.exists():
+                return f"[ERROR] File not found: {file_path}"
+
+            content = file_path.read_text(encoding=encoding)
+
+            # 限制返回长度
+            max_length = 10000
+            if len(content) > max_length:
+                content = content[:max_length] + f"\n... (truncated, total {len(content)} chars)"
+
+            return f"[OK] File: {file_path}\n{content}"
+
+        except Exception as e:
+            return f"[ERROR] Failed to read file: {str(e)}"
+
+    return Tool(
+        name="read_file",
+        label="Read File",
+        description="读取文件内容。适用于查看代码、配置文件、日志等。返回前 10000 字符。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "文件路径（相对或绝对）"
+                },
+                "encoding": {
+                    "type": "string",
+                    "description": "文件编码（默认 utf-8）",
+                    "default": "utf-8"
+                }
+            },
+            "required": ["path"]
+        },
+        execute=execute,
+    )
+
+
 # ============================================================================
 # 工具收集器
 # ============================================================================
@@ -398,6 +513,8 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
         create_cd_repo_tool(),      # Change Directory
         create_refresh_repo_tool(), # Refresh Map
         create_edit_file_tool(),    # Edit File - P1 Coding Agent feature
+        create_write_file_tool(),   # Write File - Create new files
+        create_read_file_tool(),    # Read File - Read file contents
     ])
 
     logger.info(f"Created {len(tools)} builtin tools")
