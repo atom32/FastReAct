@@ -57,6 +57,36 @@ class REPLState:
         self.workspace = Path.cwd()
         self.last_result = None
         self.session_start = datetime.now()
+        self.agent = None  # 持久的 Agent 实例
+        self.conversation_history: List[Dict[str, str]] = []  # 对话历史
+
+    def get_or_create_agent(self) -> 'FastReAct':
+        """获取或创建 Agent 实例"""
+        if self.agent is None:
+            from fastreact import FastReAct
+            from fastreact.bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
+
+            config = load_config()
+            api_key = get_api_key(config)
+            model = get_model(config)
+            base_url = get_base_url(config)
+
+            self.agent = FastReAct(
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                enable_bootstrap=True,
+            )
+
+        return self.agent
+
+    def add_conversation(self, role: str, content: str):
+        """添加对话记录"""
+        self.conversation_history.append({
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now().isoformat(),
+        })
 
     def set_var(self, name: str, value: Any):
         """设置变量"""
@@ -81,6 +111,8 @@ class REPLState:
             "commands_executed": len(self.history),
             "variables": len(self.variables),
             "workspace": str(self.workspace),
+            "conversation_turns": len(self.conversation_history),
+            "agent_created": self.agent is not None,
         }
 
 
@@ -115,11 +147,13 @@ class InteractiveREPL:
             'load': self.cmd_load,
             'vars': self.cmd_vars,
             'history': self.cmd_history,
+            'conversation': self.cmd_conversation,
             'clear': self.cmd_clear,
             'status': self.cmd_status,
             'debug': self.cmd_debug,
             'eval': self.cmd_eval,
             'python': self.cmd_python,
+            'reset': self.cmd_reset,
         }
 
         # 仅在使用 prompt_toolkit 时初始化
@@ -241,14 +275,16 @@ class InteractiveREPL:
             console.print()
 
             commands = [
-                ("run <query>", "Execute a query"),
+                ("run <query>", "Execute a query (keeps context)"),
                 ("chat", "Interactive chat mode"),
                 ("graph <subcommand>", "Tool Graph commands (init, run, list, validate)"),
                 ("load <file>", "Load a graph definition"),
                 ("vars", "List all variables"),
                 ("history", "Show command history"),
+                ("conversation", "Show conversation history"),
                 ("clear", "Clear screen"),
                 ("status", "Show session status"),
+                ("reset", "Reset agent and conversation"),
                 ("debug <command>", "Debug commands"),
                 ("eval <expr>", "Evaluate Python expression"),
                 ("python", "Start Python REPL"),
@@ -292,29 +328,24 @@ class InteractiveREPL:
             return True
 
         try:
-            from fastreact import FastReAct
-            from fastreact.bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
-
-            config = load_config()
-            api_key = get_api_key(config)
-            model = get_model(config)
-            base_url = get_base_url(config)
+            # 获取或创建持久 Agent 实例
+            agent = self.state.get_or_create_agent()
 
             if console:
                 console.print()
-                console.print(f"[dim]Executing with {model}...[/dim]")
+                console.print(f"[dim]Query: {query}[/dim]")
                 console.print()
 
-            agent = FastReAct(
-                api_key=api_key,
-                base_url=base_url,
-                model=model,
-                enable_bootstrap=True,
-            )
+            # 记录用户输入
+            self.state.add_conversation("user", query)
 
+            # 执行查询
             result = await agent.run_async(query=query)
 
             self.state.last_result = result
+
+            # 记录助手回复
+            self.state.add_conversation("assistant", result['answer'])
 
             if console:
                 console.print(Panel(
@@ -322,15 +353,17 @@ class InteractiveREPL:
                     title="Answer",
                     border_style="green"
                 ))
-                console.print(f"Stats: {result['stats']}\n", style="dim")
+                console.print(f"[dim]Conversation turns: {len(self.state.conversation_history)//2}[/dim]\n")
             else:
                 print(f"\nAnswer: {result['answer']}")
-                print(f"Stats: {result['stats']}\n")
+                print(f"Turns: {len(self.state.conversation_history)//2}\n")
 
             return True
 
         except Exception as e:
             self.print_error(str(e))
+            import traceback
+            traceback.print_exc()
             return True
 
     async def cmd_chat(self, args: str) -> bool:
@@ -572,11 +605,63 @@ class InteractiveREPL:
                 table.add_row(key.replace('_', ' ').title(), str(value))
 
             console.print(table)
+
+            # 显示最近的对话（如果有）
+            if self.state.conversation_history:
+                console.print("\n[bold]Recent Conversation:[/bold]")
+                for msg in self.state.conversation_history[-6:]:
+                    role = msg['role'].title()
+                    content = msg['content'][:100]
+                    if len(msg['content']) > 100:
+                        content += "..."
+                    console.print(f"  [{role}]: {content}")
         else:
             self.print_output("\nSession Status:")
             for key, value in stats.items():
                 print(f"  {key}: {value}")
 
+        return True
+
+    def cmd_conversation(self, args: str) -> bool:
+        """显示对话历史"""
+        if not self.state.conversation_history:
+            self.print_output("No conversation yet")
+            return True
+
+        limit = int(args) if args.isdigit() else 20
+        recent = self.state.conversation_history[-limit:]
+
+        if console:
+            from rich.table import Table
+            table = Table(show_header=True)
+            table.add_column("Role")
+            table.add_column("Message")
+
+            for msg in recent:
+                role = msg['role'].upper()
+                content = msg['content'][:200]
+                table.add_row(role, content)
+
+            console.print(table)
+        else:
+            self.print_output(f"\nLast {len(recent)} messages:")
+            for msg in recent:
+                role = msg['role'].upper()
+                content = msg['content'][:100]
+                print(f"  [{role}]: {content}")
+
+        return True
+
+    def cmd_reset(self, args: str) -> bool:
+        """重置会话"""
+        # 重置 Agent
+        self.state.agent = None
+        # 清空对话历史
+        self.state.conversation_history.clear()
+        # 清空变量
+        self.state.variables.clear()
+
+        self.print_success("Session reset - agent and conversation cleared")
         return True
 
     def cmd_debug(self, args: str) -> bool:
