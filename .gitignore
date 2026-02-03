@@ -74,3 +74,5 @@ demo_clean.py
 
 # Windows temporary files
 nul
+test_workspace/
+models/
