@@ -162,10 +162,11 @@ class InteractiveREPL:
         if console and is_interactive:
             console.print()
             console.print(Panel(
-                "[bold cyan]FastReAct Interactive Shell[/bold cyan]\n\n"
-                "Type [yellow]help[/yellow] for available commands\n"
-                "Type [yellow]exit[/yellow] or [yellow]quit[/yellow] to exit\n"
-                "Type [yellow]Ctrl+D[/yellow] to exit",
+                "FastReAct Interactive Shell\n\n"
+                "Type 'help' for available commands\n"
+                "Type 'exit' or 'quit' to exit\n"
+                "Type Ctrl+D to exit",
+                title="FastReAct",
                 border_style="cyan"
             ))
             console.print()
@@ -238,7 +239,7 @@ class InteractiveREPL:
         """显示帮助"""
         if console:
             console.print()
-            console.print("[bold cyan]Available Commands:[/bold cyan]")
+            console.print("Available Commands:", style="bold cyan")
             console.print()
 
             commands = [
@@ -258,7 +259,7 @@ class InteractiveREPL:
             ]
 
             for cmd, desc in commands:
-                console.print(f"  [yellow]{cmd:<30}[/yellow] {desc}")
+                console.print(f"  {cmd:<30} {desc}", style="yellow")
             console.print()
         else:
             print("\nAvailable Commands:")
@@ -281,7 +282,7 @@ class InteractiveREPL:
     def cmd_exit(self, args: str) -> bool:
         """退出"""
         if console:
-            console.print("\n[bold cyan]Goodbye![/bold cyan]\n")
+            console.print("\nGoodbye!\n", style="bold cyan")
         else:
             print("\nGoodbye!\n")
         return False
@@ -320,10 +321,10 @@ class InteractiveREPL:
             if console:
                 console.print(Panel(
                     result['answer'],
-                    title="[bold green]Answer[/bold green]",
+                    title="Answer",
                     border_style="green"
                 ))
-                console.print(f"[dim]Stats: {result['stats']}[/dim]\n")
+                console.print(f"Stats: {result['stats']}\n", style="dim")
             else:
                 print(f"\nAnswer: {result['answer']}")
                 print(f"Stats: {result['stats']}\n")
@@ -506,8 +507,8 @@ class InteractiveREPL:
             if console:
                 from rich.table import Table
                 table = Table(show_header=True)
-                table.add_column("Variable", style="cyan")
-                table.add_column("Value", style="yellow")
+                table.add_column("Variable")
+                table.add_column("Value")
 
                 for name, value in self.state.variables.items():
                     table.add_row(name, str(value)[:50])
@@ -532,9 +533,9 @@ class InteractiveREPL:
             if console:
                 from rich.table import Table
                 table = Table(show_header=True)
-                table.add_column("Time", style="dim")
-                table.add_column("Command", style="yellow")
-                table.add_column("Result", style="green")
+                table.add_column("Time")
+                table.add_column("Command")
+                table.add_column("Result")
 
                 for entry in recent:
                     table.add_row(
@@ -565,9 +566,9 @@ class InteractiveREPL:
 
         if console:
             from rich.table import Table
-            table = Table(title="[bold cyan]Session Status[/bold cyan]", show_header=False)
-            table.add_column("Metric", style="cyan")
-            table.add_column("Value", style="yellow")
+            table = Table(title="Session Status", show_header=False)
+            table.add_column("Metric")
+            table.add_column("Value")
 
             for key, value in stats.items():
                 table.add_row(key.replace('_', ' ').title(), str(value))
