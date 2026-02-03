@@ -72,6 +72,16 @@ from .subgraph import (
     compose_subgraph,
     inline_subgraph,
 )
+from .debug import (
+    Debugger,
+    DebugSession,
+    DebugFrame,
+    Breakpoint,
+    DebugCommand,
+    DebuggingRuntime,
+    create_debugger,
+    debug_graph,
+)
 from .graph import (
     ToolGraph,
     ToolEdge,
@@ -150,4 +160,13 @@ __all__ = [
     "create_subgraph",
     "compose_subgraph",
     "inline_subgraph",
+    # Debug
+    "Debugger",
+    "DebugSession",
+    "DebugFrame",
+    "Breakpoint",
+    "DebugCommand",
+    "DebuggingRuntime",
+    "create_debugger",
+    "debug_graph",
 ]

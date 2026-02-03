@@ -119,6 +119,17 @@ from fastreact.graph import (
     compose_subgraph,
     inline_subgraph,
 )
+# Debug
+from fastreact.graph import (
+    Debugger,
+    DebugSession,
+    DebugFrame,
+    Breakpoint,
+    DebugCommand,
+    create_debugger,
+    debug_graph,
+)
+
 
 
 __all__ = [
@@ -208,4 +219,12 @@ __all__ = [
     "create_subgraph",
     "compose_subgraph",
     "inline_subgraph",
+    # Debug
+    "Debugger",
+    "DebugSession",
+    "DebugFrame",
+    "Breakpoint",
+    "DebugCommand",
+    "create_debugger",
+    "debug_graph",
 ]
