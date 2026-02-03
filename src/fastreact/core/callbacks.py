@@ -233,7 +233,7 @@ class ConsoleCallbacks(StreamingCallbacks):
 
             print()
             print("=" * 60)
-            print(f"✅ 完成 - 耗时: {total_time:.2f}s, 迭代: {iterations} 次")
+            print(f"[OK] 完成 - 耗时: {total_time:.2f}s, 迭代: {iterations} 次")
             print("=" * 60)
 
     async def _on_thought(self, thought: str):
@@ -263,7 +263,7 @@ class ConsoleCallbacks(StreamingCallbacks):
             if len(observation) > max_len:
                 observation = observation[:max_len] + "..."
 
-            print(self._colorize(f"📊 结果: {observation}", "observation"))
+            print(self._colorize(f"[CHART] 结果: {observation}", "observation"))
 
     async def _on_answer_delta(self, delta: str):
         """回复增量回调"""

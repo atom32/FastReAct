@@ -42,14 +42,14 @@ def create_search_tool(api_key: Optional[str] = None) -> Tool:
             tavily = TavilySearchTool(api_key=api_key)
             return await tavily.execute_async(query, max_results=num_results)
         else:
-            # 否则使用模拟搜索
+            # 否则使用模拟搜索（明确警告无法获取真实数据）
             await __import__('asyncio').sleep(0.1)
-            return f"🔍 搜索 '{query}' 找到相关结果（模拟模式）"
+            return f"[WARNING] 搜索功能未配置 TAVILY_API_KEY，无法获取实时数据。查询 '{query}' 未执行真实搜索。请设置 TAVILY_API_KEY 环境变量或在 config.json 中配置。获取 API Key: https://tavily.com/"
 
     return Tool(
         name="search",
         label="Search",
-        description="搜索互联网获取最新信息。可以搜索新闻、技术文档、百科知识等。",
+        description="搜索互联网获取最新信息。可以搜索新闻、技术文档、百科知识等。注意：需要配置 TAVILY_API_KEY 才能获取真实搜索结果，否则会返回警告信息。",
         group="web",
         parameters={
             "type": "object",
@@ -481,7 +481,7 @@ def create_read_file_tool() -> Tool:
     )
 
 
-def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = None):
+def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = None, model: str = "gpt-4"):
     """
     创建深度研究工具
 
@@ -496,6 +496,7 @@ def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = N
         topic: str,
         depth: str = "standard",
         focus_areas: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[str], None]] = None,
     ) -> str:
         """执行深度研究"""
         from .deep_research import DeepResearchEngine
@@ -509,11 +510,13 @@ def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = N
             except Exception as e:
                 logger.warning(f"Tavily client init failed: {e}")
 
-        # 创建研究引擎
+        # 创建研究引擎（传入模型名和进度回调）
         engine = DeepResearchEngine(
             llm_client=llm_client,
             search_client=search_client,
             enable_tavily=True,
+            model=model,  # 传入模型名
+            progress_callback=progress_callback,  # 传入进度回调
         )
 
         # 执行研究
@@ -568,12 +571,13 @@ def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = N
 # 工具收集器
 # ============================================================================
 
-def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
+def create_builtin_tools(config: Optional[Dict[str, Any]] = None, model: str = "gpt-4") -> List[Tool]:
     """
     创建所有内置工具
 
     Args:
         config: 配置字典，可包含 API keys 等参数
+        model: LLM 模型名称（用于需要 LLM 的工具）
 
     Returns:
         工具列表
@@ -584,8 +588,27 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
     tools = []
 
     # 搜索工具（可能需要 API key）
-    # 支持两种配置方式: tavily_api_key 或 tavily.api_key
+    # 支持三种配置方式:
+    # 1. tools.tavily_api_key (直接配置)
+    # 2. tools.tavily.api_key (嵌套配置)
+    # 3. TAVILY_API_KEY 环境变量 (回退)
     tavily_api_key = tools_config.get("tavily_api_key") or tools_config.get("tavily", {}).get("api_key")
+
+    # 环境变量回退
+    if not tavily_api_key:
+        import os
+        tavily_api_key = os.getenv("TAVILY_API_KEY")
+        if tavily_api_key:
+            logger.info("Using TAVILY_API_KEY from environment variable")
+
+    # 日志记录 API Key 状态
+    if tavily_api_key:
+        # 只显示前 10 个字符和后 4 个字符
+        key_preview = f"{tavily_api_key[:10]}...{tavily_api_key[-4:]}"
+        logger.info(f"Tavily API Key loaded: {key_preview}")
+    else:
+        logger.warning("Tavily API Key not configured - search will use fallback mode")
+
     tavily_config = tools_config.get("tavily", {})
     if tavily_config.get("enabled", True):
         tools.append(create_search_tool(
@@ -616,8 +639,14 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
     # 在实际使用时，可以通过 Agent 的 context 传入
     deep_research_enabled = tools_config.get("deep_research", {}).get("enabled", True)
     if deep_research_enabled:
-        # 创建工具，但不设置 llm_client（会在执行时从 Agent 获取）
-        tools.append(create_deep_research_tool(llm_client=None, tavily_api_key=tavily_api_key))
+        # 创建工具，设置默认模型（llm_client 会在执行时从 Agent 注入）
+        # model 优先从配置读取，否则使用默认值
+        model = tools_config.get("deep_research", {}).get("model", "gpt-4")
+        tools.append(create_deep_research_tool(
+            llm_client=None,
+            tavily_api_key=tavily_api_key,
+            model=model
+        ))
 
     logger.info(f"Created {len(tools)} builtin tools")
     return tools

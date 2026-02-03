@@ -22,9 +22,11 @@ import os
 from pathlib import Path
 from typing import Optional
 
-# Set UTF-8 encoding for Windows console
-if sys.platform == 'win32':
-    os.environ['PYTHONIOENCODING'] = 'utf-8'
+# Fix Windows console encoding for emoji support
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 import click
 
@@ -171,7 +173,8 @@ def run(query: Optional[str], model: Optional[str], workspace: Optional[str],
             base_url=base_url,
             model=model,
             enable_bootstrap=enable_bootstrap,
-            workspace=workspace
+            workspace=workspace,
+            config=config,  # 传递完整配置，用于工具初始化（如 Tavily API Key）
         )
 
         # 流式响应处理
@@ -259,7 +262,8 @@ def chat(model: Optional[str], workspace: Optional[str]):
             base_url=base_url,
             model=model,
             enable_bootstrap=True,
-            workspace=workspace
+            workspace=workspace,
+            config=config,  # 传递完整配置，用于工具初始化（如 Tavily API Key）
         )
 
         # 对话循环

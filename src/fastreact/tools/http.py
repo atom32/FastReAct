@@ -83,11 +83,11 @@ class HTTPTool(Tool):
             output = f"""📡 HTTP请求结果
 
 🔗 URL: {url}
-📋 方法: {method}
-📊 状态码: {response.status_code}
-📄 内容类型: {response.headers.get('content-type', 'N/A')}
+[LIST] 方法: {method}
+[CHART] 状态码: {response.status_code}
+[FILE] 内容类型: {response.headers.get('content-type', 'N/A')}
 
-📝 响应内容:
+[NOTE] 响应内容:
 {response.text[:1000]}  # 限制长度
 """
 
@@ -97,9 +97,9 @@ class HTTPTool(Tool):
             return output
 
         except httpx.TimeoutException:
-            return f"❌ 请求超时: {url}"
+            return f"[ERROR] 请求超时: {url}"
         except Exception as e:
-            return f"❌ 请求失败: {str(e)}"
+            return f"[ERROR] 请求失败: {str(e)}"
 
     async def close(self):
         """关闭HTTP客户端"""

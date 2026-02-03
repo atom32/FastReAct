@@ -387,6 +387,23 @@ class GatewayServer:
 
                     logger.info(f"[Session {session_id}] Processing query: {query[:100]}...")
 
+                    # 定义进度回调
+                    def progress_callback(message: str):
+                        """实时发送工具执行进度"""
+                        try:
+                            asyncio.create_task(websocket.send_json({
+                                "type": "progress",
+                                "content": message,
+                                "metadata": {
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                            }))
+                        except Exception as e:
+                            logger.error(f"Progress callback error: {e}")
+
+                    # 设置进度回调到 agent
+                    self.agent.set_progress_callback(progress_callback)
+
                     # 定义步骤回调
                     async def step_callback(step):
                         """实时发送执行步骤"""

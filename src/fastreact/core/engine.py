@@ -125,6 +125,8 @@ class FastReAct:
         # V2: 策略与审批系统
         policy_engine=None,
         approval_manager=None,
+        # 配置系统：用于传递给工具创建函数
+        config: Optional[Dict[str, Any]] = None,
     ):
         """
         初始化FastReAct引擎
@@ -172,6 +174,7 @@ class FastReAct:
         self.workspace = workspace
         self.enable_event_stream = enable_event_stream
         self.event_callback = event_callback
+        self.config = config or {}
 
         # V2: 工具分组系统
         self.enable_groups = enable_groups
@@ -278,7 +281,7 @@ class FastReAct:
         if self._tool_manager and self.enable_groups:
             # 从工具管理器获取指定分组的工具
             from ..tools import create_builtin_tools
-            all_tools = create_builtin_tools()
+            all_tools = create_builtin_tools(config=self.config, model=self.model)
 
             # 注册所有工具到工具管理器
             for tool in all_tools:
@@ -311,6 +314,9 @@ class FastReAct:
         self._recent_calls: deque = deque()
         self._recent_results: Dict[str, Any] = {}
 
+        # 进度回调（用于显示长时间运行的工具的进度）
+        self._progress_callback: Optional[Callable[[str], None]] = None
+
         # 性能统计
         self.stats = {
             "total_calls": 0,
@@ -323,9 +329,51 @@ class FastReAct:
             "dedup_hits": 0,    # 新增：去重命中次数
         }
 
+        # 延迟初始化：标记是否已注入 LLM client 到工具
+        self._llm_client_injected = False
+
     def register_tool(self, tool: Tool) -> None:
         """注册工具"""
         self.tools[tool.name] = tool
+
+    def _ensure_llm_client_injected(self):
+        """确保需要 LLM client 的工具已经注入 client"""
+        if self._llm_client_injected:
+            return
+
+        # 获取 client（这会触发初始化）
+        client = self._get_client()
+
+        # 注入到需要 client 的工具
+        if "deep_research" in self.tools:
+            tool = self.tools["deep_research"]
+            # 检查工具是否需要注入 client
+            import inspect
+            closure_vars = inspect.getclosurevars(tool.execute)
+
+            # 如果 llm_client 是 None，则注入
+            if "llm_client" in closure_vars.nonlocals and closure_vars.nonlocals["llm_client"] is None:
+                # 重新创建工具并注入 client
+                from ..tools import create_deep_research_tool
+                tavily_api_key = self.config.get("tools", {}).get("tavily", {}).get("api_key")
+
+                new_tool = create_deep_research_tool(
+                    llm_client=client,
+                    tavily_api_key=tavily_api_key,
+                    model=self.model,  # 传入模型名
+                )
+                self.tools["deep_research"] = new_tool
+                logger.info("LLM client injected to deep_research tool")
+
+        self._llm_client_injected = True
+
+    def set_progress_callback(self, callback: Optional[Callable[[str], None]]):
+        """设置进度回调函数
+
+        Args:
+            callback: 接收进度消息的回调函数，参数为字符串
+        """
+        self._progress_callback = callback
 
     def _get_context_builder(self) -> ContextBuilder:
         """获取或创建 ContextBuilder 实例
@@ -802,16 +850,26 @@ class FastReAct:
 
         for attempt in range(self.max_tool_retries + 1):
             try:
+                # 注入 progress_callback（如果工具支持）
+                import inspect
+                execute_params = params.copy()
+
+                # 检查工具的 execute 函数是否接受 progress_callback 参数
+                if self._progress_callback is not None:
+                    sig = inspect.signature(tool.execute)
+                    if 'progress_callback' in sig.parameters:
+                        execute_params['progress_callback'] = self._progress_callback
+
                 # 执行工具 - 兼容旧方式和新方式
                 if hasattr(tool, 'execute_async'):
                     # 旧的 Tool 类（面向对象）
-                    result = await tool.execute_async(**params)
+                    result = await tool.execute_async(**execute_params)
                 elif hasattr(tool, 'execute') and asyncio.iscoroutinefunction(tool.execute):
                     # 新的函数式 Tool
-                    result = await tool.execute(**params)
+                    result = await tool.execute(**execute_params)
                 else:
                     # 同步函数式 Tool
-                    result = tool.execute(**params)
+                    result = tool.execute(**execute_params)
 
                 execution_time = time.time() - start_time
 
@@ -1429,6 +1487,9 @@ class FastReAct:
         # 发送生命周期开始事件
         await self._emit_lifecycle("start")
 
+        # 确保需要 LLM client 的工具已经注入 client
+        self._ensure_llm_client_injected()
+
         try:
             # 使用 ContextBuilder 构建消息上下文
             # Memory Flush 检查在 iteration 0 执行
@@ -1612,15 +1673,15 @@ class FastReAct:
                 "from within an async context. Please use `await run_async(...)` instead.\n"
                 "\n"
                 "Example:\n"
-                "  # ❌ Wrong (will cause this error):\n"
+                "  # [ERROR] Wrong (will cause this error):\n"
                 "  async def my_function():\n"
                 "      result = react.run('query')  # Error!\n"
                 "\n"
-                "  # ✅ Correct:\n"
+                "  # [OK] Correct:\n"
                 "  async def my_function():\n"
                 "      result = await react.run_async('query')\n"
                 "\n"
-                "  # ✅ Or use in sync context (no event loop):\n"
+                "  # [OK] Or use in sync context (no event loop):\n"
                 "  result = asyncio.run(react.run_async('query'))"
             )
         except RuntimeError:

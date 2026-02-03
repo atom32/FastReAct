@@ -7,7 +7,7 @@ Deep Research 工具
 
 import asyncio
 import time
-from typing import Dict, List, Any, Optional, AsyncIterator
+from typing import Dict, List, Any, Optional, AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
@@ -92,6 +92,8 @@ class DeepResearchEngine:
         max_iterations: int = 3,
         max_sources: int = 10,
         enable_tavily: bool = True,
+        model: str = "gpt-4",
+        progress_callback: Optional[Callable[[str], None]] = None,
     ):
         """
         初始化研究引擎
@@ -102,16 +104,25 @@ class DeepResearchEngine:
             max_iterations: 最大搜索轮数
             max_sources: 最大收集来源数量
             enable_tavily: 是否启用 Tavily（如果有）
+            model: LLM 模型名称
+            progress_callback: 进度回调函数，接收状态消息
         """
         self.llm_client = llm_client
         self.search_client = search_client
         self.max_iterations = max_iterations
         self.max_sources = max_sources
         self.enable_tavily = enable_tavily
+        self.model = model  # 存储模型名称
+        self.progress_callback = progress_callback
 
         # 收集的信息
         self._collected_info: List[Dict[str, Any]] = []
         self._search_queries: List[str] = []
+
+    def _report_progress(self, message: str):
+        """报告进度（如果设置了回调）"""
+        if self.progress_callback:
+            self.progress_callback(message)
 
     async def research(
         self,
@@ -141,26 +152,33 @@ class DeepResearchEngine:
         logger.info(f"Starting deep research on '{topic}' (depth={depth}, iterations={max_iterations})")
 
         # Phase 1: 生成初始研究问题
+        self._report_progress(f"[Query] Generating research queries for: {topic}")
         initial_queries = await self._generate_research_queries(topic, focus_areas)
 
         # Phase 2: 多轮搜索
+        self._report_progress(f"[Research] Performing {len(initial_queries[:max_iterations])} rounds of research...")
         for i, query in enumerate(initial_queries[:max_iterations]):
             logger.info(f"Research iteration {i+1}/{max_iterations}: {query}")
+            self._report_progress(f"  [{i+1}/{max_iterations}] Searching: {query[:60]}...")
             await self._search_and_collect(query, topic)
 
             # 避免请求过快
             await asyncio.sleep(0.5)
 
         # Phase 3: 生成报告结构
+        self._report_progress("[Structure] Structuring report...")
         report_structure = await self._generate_report_structure(topic)
 
         # Phase 4: 填充各个章节
         sections = []
-        for section_def in report_structure.get("sections", []):
+        total_sections = len(report_structure.get("sections", []))
+        for i, section_def in enumerate(report_structure.get("sections", [])):
+            self._report_progress(f"  Writing section [{i+1}/{total_sections}]: {section_def.get('title', '')}")
             section = await self._generate_section(section_def, topic)
             sections.append(section)
 
         # Phase 5: 生成摘要和关键发现
+        self._report_progress("[Findings] Generating key findings...")
         summary = await self._generate_summary(topic, sections)
         key_findings = await self._generate_key_findings(topic, sections)
 
@@ -516,7 +534,7 @@ Return only the bullet points, one per line."""
         """调用 LLM"""
         try:
             response = await self.llm_client.chat.completions.create(
-                model=self.llm_client.model or "gpt-4",
+                model=self.model,  # 使用存储的模型名
                 messages=[
                     {"role": "system", "content": "You are a helpful research assistant."},
                     {"role": "user", "content": prompt}
@@ -540,6 +558,7 @@ def create_deep_research_tool(
     llm_client=None,
     search_client=None,
     default_depth: str = "standard",
+    model: str = "gpt-4",
 ):
     """
     创建深度研究工具
@@ -548,6 +567,7 @@ def create_deep_research_tool(
         llm_client: LLM 客户端
         search_client: 搜索客户端（Tavily）
         default_depth: 默认深度
+        model: LLM 模型名称
 
     Returns:
         Tool: 深度研究工具
@@ -559,6 +579,7 @@ def create_deep_research_tool(
         depth: str = default_depth,
         focus_areas: Optional[List[str]] = None,
         output_format: str = "markdown",
+        progress_callback: Optional[Callable[[str], None]] = None,
     ) -> str:
         """
         执行深度研究
@@ -568,6 +589,7 @@ def create_deep_research_tool(
             depth: 研究深度 (quick/standard/deep)
             focus_areas: 关注领域列表
             output_format: 输出格式 (markdown/json)
+            progress_callback: 进度回调函数
 
         Returns:
             研究报告（Markdown 格式）
@@ -576,6 +598,8 @@ def create_deep_research_tool(
             llm_client=llm_client,
             search_client=search_client,
             enable_tavily=True,
+            model=model,
+            progress_callback=progress_callback,
         )
 
         report = await engine.research(topic, depth, focus_areas)

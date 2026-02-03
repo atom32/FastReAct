@@ -251,20 +251,20 @@ class EditFileTool:
 
         # 检查文件是否存在
         if not os.path.exists(path):
-            return f"""❌ File not found: {path}
+            return f"""[ERROR] File not found: {path}
 
 Current directory: {os.getcwd()}
-💡 Hint: Use 'ls' or 'ls_repo' to see available files."""
+[INFO] Hint: Use 'ls' or 'ls_repo' to see available files."""
 
         if not os.path.isfile(path):
-            return f"❌ Not a file: {path}"
+            return f"[ERROR] Not a file: {path}"
 
         # 读取文件内容
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
-            return f"❌ Failed to read file: {e}"
+            return f"[ERROR] Failed to read file: {e}"
 
         # 标准化搜索块（去除首尾空白）
         search_block = search_block.strip()
@@ -285,7 +285,7 @@ Current directory: {os.getcwd()}
                 # 未找到好的匹配，提供建议
                 suggestions = self._find_suggestions(content, search_block)
 
-                error_msg = f"""❌ Could not find matching code block.
+                error_msg = f"""[ERROR] Could not find matching code block.
 
 Search block:
 ```
@@ -294,7 +294,7 @@ Search block:
 
 Similarity: {similarity:.2%} (threshold: 50%)
 
-💡 Did you mean to match one of these?
+[INFO] Did you mean to match one of these?
 """
 
                 for i, (start, end, sim, preview) in enumerate(suggestions[:3], 1):
@@ -316,14 +316,14 @@ Similarity: {similarity:.2%} (threshold: 50%)
                     break
 
             if start_idx is None:
-                return f"""❌ Exact match not found.
+                return f"""[ERROR] Exact match not found.
 
 Search block:
 ```
 {search_block[:200]}{'...' if len(search_block) > 200 else ''}
 ```
 
-💡 Hint: Try with fuzzy=True to tolerate whitespace differences."""
+[INFO] Hint: Try with fuzzy=True to tolerate whitespace differences."""
 
         # 执行替换
         content_lines = content.splitlines()
@@ -357,17 +357,17 @@ Search block:
             logger.info(f"File edited: {path} (similarity: {similarity:.2%})")
 
             # 返回成功信息
-            return f"""✅ File edited successfully
+            return f"""[OK] File edited successfully
 
-📄 File: {path}
-📊 Match similarity: {similarity:.1%}
+[FILE] File: {path}
+[CHART] Match similarity: {similarity:.1%}
 
-📝 Changes:
+[NOTE] Changes:
 ```diff
 {diff}
 ```
 
-💾 Backup saved to: {backup_path}
+[SAVE] Backup saved to: {backup_path}
 """
 
         except Exception as e:
@@ -376,11 +376,11 @@ Search block:
                 try:
                     with open(path, 'w', encoding='utf-8') as f:
                         f.write(content)
-                    return f"❌ Failed to write file: {e}\n✅ Restored from backup."
+                    return f"[ERROR] Failed to write file: {e}\n[OK] Restored from backup."
                 except Exception as restore_error:
-                    return f"❌ Failed to write: {e}\n❌ Failed to restore: {restore_error}"
+                    return f"[ERROR] Failed to write: {e}\n[ERROR] Failed to restore: {restore_error}"
             else:
-                return f"❌ Failed to write file: {e}"
+                return f"[ERROR] Failed to write file: {e}"
 
     def _get_description(self) -> str:
         return """精准编辑文件（Search & Replace 模式）

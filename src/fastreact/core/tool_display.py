@@ -62,21 +62,21 @@ class ToolCategory(IntEnum):
 
 # Tool icons mapping
 TOOL_ICONS = {
-    ToolCategory.EXECUTION: "🔧",
-    ToolCategory.SEARCH: "🔍",
-    ToolCategory.EDIT: "📝",
-    ToolCategory.DATA: "📊",
-    ToolCategory.NETWORK: "🌐",
-    ToolCategory.SYSTEM: "⚙️",
-    ToolCategory.UNKNOWN: "🔹",
+    ToolCategory.EXECUTION: "[TOOL]",
+    ToolCategory.SEARCH: "[SEARCH]",
+    ToolCategory.EDIT: "[EDIT]",
+    ToolCategory.DATA: "[DATA]",
+    ToolCategory.NETWORK: "[NET]",
+    ToolCategory.SYSTEM: "[GEAR]",
+    ToolCategory.UNKNOWN: "[DOT]",
 }
 
 # Status icons
 STATUS_ICONS = {
-    "success": "✅",
-    "error": "❌",
-    "running": "⏳",
-    "warning": "⚠️",
+    "success": "[OK]",
+    "error": "[X]",
+    "running": "[...]",
+    "warning": "[!]",
 }
 
 

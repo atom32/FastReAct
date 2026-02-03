@@ -12,9 +12,9 @@ from typing import Dict, Optional
 from fastapi import WebSocket, WebSocketDisconnect, Query
 from starlette.websockets import WebSocketState
 
-from ...core.streaming import StreamChunk, StreamChunkType
-from ...bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
-from ... import FastReAct
+from ..core.streaming import StreamChunk, StreamChunkType
+from ..bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
+from .. import FastReAct
 
 logger = logging.getLogger(__name__)
 

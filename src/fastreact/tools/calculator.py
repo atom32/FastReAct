@@ -57,9 +57,9 @@ class CalculatorTool(Tool):
             # 使用eval计算（限制可用函数）
             result = eval(expression, {"__builtins__": {}}, allowed_names)
 
-            return f"✅ 计算结果: {expression} = {result}"
+            return f"[OK] 计算结果: {expression} = {result}"
 
         except ZeroDivisionError:
-            return f"❌ 计算错误: 除零错误"
+            return f"[ERROR] 计算错误: 除零错误"
         except Exception as e:
-            return f"❌ 计算错误: {str(e)}"
+            return f"[ERROR] 计算错误: {str(e)}"

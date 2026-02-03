@@ -28,6 +28,9 @@ from fastreact.utils.config import get_config
 config = get_config()
 llm_config = config.get_llm_config()
 
+# 启用工具分组（包括 deep_research）
+enable_groups = ['file_ops', 'web', 'math', 'ai', 'code', 'system']
+
 api_key = llm_config.get("api_key")
 if not api_key or api_key == "YOUR_API_KEY_HERE":
     print("❌ 错误: 请在 config.json 中设置 api_key")
@@ -54,22 +57,25 @@ print(f"🔄 自动保存: {auto_save}")
 print(f"📄 配置: config.json")
 print("=" * 60)
 
-# 🔥 函数式工具加载 - 类似 moltbot 的简洁方式
-print("\n📦 加载工具（包含扩展工具）...")
-tools = create_all_tools(config.config)
-print(f"✅ 成功加载 {len(tools)} 个工具:")
-for tool in tools:
-    print(f"   - {tool.name} ({tool.label})")
+# 🔥 使用工具分组系统
+print("\n📦 使用工具分组系统加载工具...")
 
 agent = FastReAct(
     api_key=api_key,
     base_url=base_url,
     model=model,
-    tools=tools,
+    enable_bootstrap=True,
+    config=config.config,  # 传递完整配置，用于工具初始化
+    # 启用工具分组（包括 deep_research）
+    enable_groups=['file_ops', 'web', 'math', 'ai', 'code', 'system'],
     max_iterations=10,
     enable_cache=True,
     enable_deduplication=True,
 )
+
+print(f"✅ 成功加载 {len(agent.tools)} 个工具:")
+for tool_name in agent.tools.keys():
+    print(f"   - {tool_name}")
 
 # 包装为网关
 gateway = GatewayServer(

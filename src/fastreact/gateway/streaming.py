@@ -13,9 +13,9 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ...core.streaming import StreamChunk, StreamChunkType
-from ...bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
-from ... import FastReAct
+from ..core.streaming import StreamChunk, StreamChunkType
+from ..bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
+from .. import FastReAct
 
 logger = logging.getLogger(__name__)
 
