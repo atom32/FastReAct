@@ -84,6 +84,12 @@ from fastreact.graph import (
     create_runtime,
     execute_graph,
 )
+# Graph Agent
+from fastreact.graph import (
+    GraphAgent,
+    AgentConfig,
+    create_graph_agent,
+)
 
 __all__ = [
     "FastReAct",
@@ -145,4 +151,8 @@ __all__ = [
     "ToolRuntime",
     "create_runtime",
     "execute_graph",
+    # Graph Agent
+    "GraphAgent",
+    "AgentConfig",
+    "create_graph_agent",
 ]
