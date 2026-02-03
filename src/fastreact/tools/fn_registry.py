@@ -481,6 +481,89 @@ def create_read_file_tool() -> Tool:
     )
 
 
+def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = None):
+    """
+    创建深度研究工具
+
+    Args:
+        llm_client: LLM 客户端（由 Agent 传入）
+        tavily_api_key: Tavily API key（可选，用于真实搜索）
+
+    Returns:
+        Tool: 深度研究工具
+    """
+    async def execute(
+        topic: str,
+        depth: str = "standard",
+        focus_areas: Optional[List[str]] = None,
+    ) -> str:
+        """执行深度研究"""
+        from .deep_research import DeepResearchEngine
+
+        # 准备搜索客户端
+        search_client = None
+        if tavily_api_key:
+            try:
+                from .tavily import TavilySearchTool
+                search_client = TavilySearchTool(api_key=tavily_api_key)
+            except Exception as e:
+                logger.warning(f"Tavily client init failed: {e}")
+
+        # 创建研究引擎
+        engine = DeepResearchEngine(
+            llm_client=llm_client,
+            search_client=search_client,
+            enable_tavily=True,
+        )
+
+        # 执行研究
+        report = await engine.research(topic, depth, focus_areas)
+
+        return report.to_markdown()
+
+    return Tool(
+        name="deep_research",
+        label="Deep Research",
+        description="""生成类似 Perplexity 的深度研究报告。
+
+通过多轮搜索和 LLM 综合分析，生成结构化的研究报告。
+
+研究深度：
+- quick: 快速模式（2轮搜索，适合简单查询）
+- standard: 标准模式（4轮搜索，平衡深度和速度）
+- deep: 深度模式（6轮搜索，全面深入分析）
+
+报告包含：
+- 执行摘要
+- 关键发现
+- 详细章节
+- 来源引用""",
+        group="ai",
+        parameters={
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "研究主题或问题"
+                },
+                "depth": {
+                    "type": "string",
+                    "description": "研究深度",
+                    "enum": ["quick", "standard", "deep"],
+                    "default": "standard"
+                },
+                "focus_areas": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "可选的关注领域列表"
+                }
+            },
+            "required": ["topic"]
+        },
+        execute=execute,
+    )
+
+
 # ============================================================================
 # 工具收集器
 # ============================================================================
@@ -527,6 +610,14 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
         create_write_file_tool(),   # Write File - Create new files
         create_read_file_tool(),    # Read File - Read file contents
     ])
+
+    # Deep Research 工具（需要 LLM client，在运行时设置）
+    # 注意：这个工具的 execute 函数需要 llm_client 参数
+    # 在实际使用时，可以通过 Agent 的 context 传入
+    deep_research_enabled = tools_config.get("deep_research", {}).get("enabled", True)
+    if deep_research_enabled:
+        # 创建工具，但不设置 llm_client（会在执行时从 Agent 获取）
+        tools.append(create_deep_research_tool(llm_client=None, tavily_api_key=tavily_api_key))
 
     logger.info(f"Created {len(tools)} builtin tools")
     return tools

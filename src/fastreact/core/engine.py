@@ -122,6 +122,9 @@ class FastReAct:
         # V2: 工具分组支持
         enable_groups: Optional[List[str]] = None,
         respect_group_policies: bool = True,
+        # V2: 策略与审批系统
+        policy_engine=None,
+        approval_manager=None,
     ):
         """
         初始化FastReAct引擎
@@ -149,6 +152,8 @@ class FastReAct:
             context_config: 上下文管理配置（可选，使用默认值）
             enable_groups: 启用的工具分组列表（V2，如 ['file_ops', 'web']）
             respect_group_policies: 是否遵守分组策略（V2，默认True）
+            policy_engine: 工具策略引擎实例（V2，可选）
+            approval_manager: 审批管理器实例（V2，可选）
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -179,6 +184,24 @@ class FastReAct:
                 logger.info(f"Tool groups enabled: {enable_groups}")
             except Exception as e:
                 logger.warning(f"Failed to initialize tool manager: {e}")
+
+        # V2: 策略与审批系统
+        self._policy_engine = policy_engine
+        self._approval_manager = approval_manager
+        if policy_engine:
+            logger.info("Policy engine enabled")
+        if approval_manager:
+            logger.info("Approval manager enabled")
+            # 设置用户输入回调（用于审批请求）
+            if hasattr(approval_manager, 'set_user_input_callback'):
+                approval_manager.set_user_input_callback(self._handle_approval_request)
+
+        # 将策略和审批系统附加到工具管理器
+        if self._tool_manager:
+            if policy_engine:
+                self._tool_manager.set_policy_engine(policy_engine)
+            if approval_manager:
+                self._tool_manager.set_approval_manager(approval_manager)
 
         # 事件管理器
         self._event_manager = EventManager()
@@ -731,6 +754,25 @@ class FastReAct:
                 error=f"Tool '{tool_name}' not found. Available tools: {list(self.tools.keys())}",
                 execution_time=time.time() - start_time,
             )
+
+        # V2: 检查工具访问权限（分组策略 + 工具策略 + 审批）
+        if self._tool_manager is not None and self.respect_group_policies:
+            allowed, reason, approval_id = self._tool_manager.check_tool_access_with_policy(
+                tool_name,
+                policy_engine=getattr(self, '_policy_engine', None),
+                approval_manager=getattr(self, '_approval_manager', None),
+                context={"parameters": params}
+            )
+
+            if not allowed:
+                logger.warning(f"Tool '{tool_name}' access denied: {reason}")
+                self.stats["tool_errors"] += 1
+                return ToolResult(
+                    tool_name=tool_name,
+                    result=None,
+                    error=f"Access denied for tool '{tool_name}': {reason}",
+                    execution_time=time.time() - start_time,
+                )
 
         # 检查去重（优先级最高，在缓存之前）
         duplicate_result = self._check_duplicate(tool_name, params)
@@ -1955,3 +1997,42 @@ class FastReAct:
             ))
             await self._emit_lifecycle("error", error=str(e))
             raise
+
+    # ============================================================================
+    # V2: 审批请求处理
+    # ============================================================================
+
+    async def _handle_approval_request(self, request):
+        """
+        处理审批请求
+
+        这是 ApprovalManager 调用的回调函数。在同步上下文中，
+        返回默认拒绝，避免阻塞执行。
+
+        Args:
+            request: ApprovalRequest 对象
+
+        Returns:
+            ApprovalResponse
+        """
+        logger.warning(
+            f"Approval request for '{request.tool_name}' "
+            f"(no interactive handler, auto-denying)"
+        )
+
+        # 在非交互式环境中，自动拒绝高风险操作
+        from .approval import ApprovalResponse
+        return ApprovalResponse.DENY
+
+    def set_approval_handler(self, handler: Callable):
+        """
+        设置自定义审批处理函数
+
+        Args:
+            handler: 处理审批请求的函数，接收 ApprovalRequest，返回 ApprovalResponse
+        """
+        if self._approval_manager and hasattr(self._approval_manager, 'set_user_input_callback'):
+            self._approval_manager.set_user_input_callback(handler)
+            logger.info("Custom approval handler set")
+        else:
+            logger.warning("Cannot set approval handler: no approval manager")

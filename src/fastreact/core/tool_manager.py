@@ -2,12 +2,13 @@
 工具管理器
 
 集中管理所有工具分组，提供注册、查询、过滤等功能。
+集成策略和审批系统，实现完整的工具访问控制。
 """
 
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING, Tuple, Any
 import logging
 
-from .tool_group import ToolGroup, get_predefined_group, list_predefined_groups
+from .tool_group import ToolGroup, get_predefined_group, list_predefined_groups, GroupPolicy
 
 if TYPE_CHECKING:
     from fastreact.tools import Tool
@@ -350,6 +351,118 @@ class ToolManager:
             "total_tools": total_tools,
             "groups": group_stats,
         }
+
+    # ============================================================================
+    # 策略与审批系统集成
+    # ============================================================================
+
+    def check_tool_access_with_policy(
+        self,
+        tool_name: str,
+        policy_engine=None,
+        approval_manager=None,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Tuple[bool, str, Optional[str]]:
+        """
+        检查工具访问权限（集成策略和审批系统）
+
+        检查顺序：
+        1. 分组策略检查 (GroupPolicy)
+        2. 工具策略检查 (ToolPolicy if provided)
+        3. 审批检查 (ApprovalManager if provided)
+
+        Args:
+            tool_name: 工具名称
+            policy_engine: 策略引擎实例（可选）
+            approval_manager: 审批管理器实例（可选）
+            context: 额外上下文信息
+
+        Returns:
+            (allowed, reason, approval_request_id) 元组
+            - allowed: 是否允许执行
+            - reason: 原因说明
+            - approval_request_id: 审批请求ID（如果需要审批）
+        """
+        context = context or {}
+
+        # 1. 检查工具是否存在
+        group_name = self._tool_index.get(tool_name)
+        if not group_name:
+            return False, f"Tool '{tool_name}' not found", None
+
+        group = self.get_group(group_name)
+        if not group:
+            return False, f"Group '{group_name}' not found", None
+
+        # 2. 检查分组策略
+        if not group.is_tool_allowed(tool_name):
+            return False, f"Tool '{tool_name}' not allowed by group policy '{group.policy.value}'", None
+
+        # 3. 检查工具策略（如果提供）
+        if policy_engine is not None:
+            try:
+                # 获取工具所属分组用于策略检查
+                from .tool_policy import ToolPolicyDecision
+                decision = policy_engine.check_tool_access(tool_name, context)
+
+                if not decision.allowed:
+                    return False, f"Blocked by tool policy: {decision.reason}", None
+
+                # 如果需要审批
+                if decision.requires_approval:
+                    if approval_manager is not None:
+                        # 创建审批请求
+                        try:
+                            from .approval import ApprovalRequest, ApprovalMode
+                            from .tool_policy import RiskLevel
+
+                            req = approval_manager.create_request(
+                                policy_name="tool_policy",
+                                tool_name=tool_name,
+                                tool_args=context.get("parameters", {}),
+                                reason=decision.reason,
+                                context=context,
+                            )
+                            return False, f"Approval required: {decision.reason}", req.request_id
+                        except Exception as e:
+                            logger.warning(f"Failed to create approval request: {e}")
+                            return False, f"Approval required but approval system unavailable: {decision.reason}", None
+                    else:
+                        return False, f"Approval required but no approval manager: {decision.reason}", None
+            except Exception as e:
+                logger.warning(f"Policy engine check failed: {e}")
+                # 继续执行，不阻塞
+
+        # 所有检查通过
+        return True, "Access granted", None
+
+    def set_policy_engine(self, policy_engine) -> None:
+        """
+        设置策略引擎
+
+        Args:
+            policy_engine: 策略引擎实例
+        """
+        self._policy_engine = policy_engine
+        logger.info("Policy engine attached to tool manager")
+
+    def set_approval_manager(self, approval_manager) -> None:
+        """
+        设置审批管理器
+
+        Args:
+            approval_manager: 审批管理器实例
+        """
+        self._approval_manager = approval_manager
+        logger.info("Approval manager attached to tool manager")
+
+    def get_policy_engine(self):
+        """获取策略引擎"""
+        return getattr(self, '_policy_engine', None)
+
+    def get_approval_manager(self):
+        """获取审批管理器"""
+        return getattr(self, '_approval_manager', None)
 
 
 # 全局工具管理器实例

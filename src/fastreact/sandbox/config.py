@@ -25,6 +25,11 @@ class SandboxPreset(Enum):
     STANDARD = "standard"      # 标准模式：桥接网络，中等资源
     PERFORMANCE = "performance"  # 性能模式：更多资源
     UNRESTRICTED = "unrestricted"  # 无限制模式（危险！）
+    # 新增预设
+    WEB_SCRAPING = "web_scraping"      # 网页抓取：浏览器环境
+    DATA_PROCESSING = "data_processing"  # 数据处理：大内存 + 数据库
+    CI_CD = "ci_cd"                    # CI/CD：完整开发工具链
+    MINIMAL = "minimal"                # 最小化：极简镜像
 
 
 @dataclass
@@ -228,6 +233,74 @@ PRESET_CONFIGS: Dict[SandboxPreset, SandboxConfig] = {
         timeout=300,
         denylist=[],
     ),
+
+    # 新增预设配置
+    SandboxPreset.WEB_SCRAPING: SandboxConfig(
+        image="python:3.11-slim",
+        memory_limit="1g",
+        cpu_limit=1.0,
+        network_mode=NetworkMode.BRIDGE,
+        enable_network=True,
+        auto_remove=True,
+        timeout=60,
+        environment={
+            "PYTHONUNBUFFERED": "1",
+            # 网页抓取相关环境变量
+            "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright",
+        },
+        denylist=[
+            "os.system",
+            "subprocess.run",
+            "eval",
+        ],
+    ),
+
+    SandboxPreset.DATA_PROCESSING: SandboxConfig(
+        image="python:3.11",
+        memory_limit="4g",
+        cpu_limit=2.0,
+        network_mode=NetworkMode.BRIDGE,
+        enable_network=True,
+        auto_remove=True,
+        timeout=120,
+        environment={
+            "PYTHONUNBUFFERED": "1",
+            # 数据处理相关
+            "PYTHONDONTWRITEBYTECODE": "1",
+        },
+        denylist=[],
+    ),
+
+    SandboxPreset.CI_CD: SandboxConfig(
+        image="python:3.11",
+        memory_limit="2g",
+        cpu_limit=2.0,
+        network_mode=NetworkMode.BRIDGE,
+        enable_network=True,
+        auto_remove=True,
+        timeout=180,
+        environment={
+            "PYTHONUNBUFFERED": "1",
+            # CI/CD 相关
+            "CI": "true",
+            "DEBIAN_FRONTEND": "noninteractive",
+        },
+        denylist=[],
+    ),
+
+    SandboxPreset.MINIMAL: SandboxConfig(
+        image="python:3.11-alpine",
+        memory_limit="128m",
+        cpu_limit=0.25,
+        network_mode=NetworkMode.BRIDGE,
+        enable_network=True,
+        auto_remove=True,
+        timeout=15,
+        environment={
+            "PYTHONUNBUFFERED": "1",
+        },
+        denylist=["os.system", "subprocess"],
+    ),
 }
 
 
@@ -273,3 +346,116 @@ def create_config_with_mounts(
             })
 
     return config
+
+
+# ============================================================================
+# 用户自定义预设
+# ============================================================================
+
+# 用户自定义预设存储
+_CUSTOM_PRESETS: Dict[str, SandboxConfig] = {}
+
+
+def register_custom_preset(name: str, config: SandboxConfig) -> None:
+    """
+    注册用户自定义预设配置
+
+    Args:
+        name: 预设名称
+        config: 沙箱配置
+
+    Example:
+        ```python
+        from fastreact.sandbox import SandboxConfig, NetworkMode, register_custom_preset
+
+        my_config = SandboxConfig(
+            image="python:3.12",
+            memory_limit="1g",
+            cpu_limit=1.0,
+            network_mode=NetworkMode.BRIDGE,
+        )
+
+        register_custom_preset("my_custom", my_config)
+        ```
+    """
+    _CUSTOM_PRESETS[name] = config
+    import logging
+    logging.getLogger(__name__).info(f"Registered custom preset: {name}")
+
+
+def unregister_custom_preset(name: str) -> bool:
+    """
+    注销用户自定义预设
+
+    Args:
+        name: 预设名称
+
+    Returns:
+        是否成功注销
+    """
+    if name in _CUSTOM_PRESETS:
+        del _CUSTOM_PRESETS[name]
+        return True
+    return False
+
+
+def get_custom_preset(name: str) -> Optional[SandboxConfig]:
+    """
+    获取用户自定义预设
+
+    Args:
+        name: 预设名称
+
+    Returns:
+        沙箱配置或 None
+    """
+    return _CUSTOM_PRESETS.get(name)
+
+
+def list_custom_presets() -> List[str]:
+    """列出所有用户自定义预设名称"""
+    return list(_CUSTOM_PRESETS.keys())
+
+
+def list_all_presets() -> Dict[str, SandboxConfig]:
+    """
+    列出所有预设（内置 + 自定义）
+
+    Returns:
+        {预设名称: 沙箱配置} 字典
+    """
+    result = {preset.value: config for preset, config in PRESET_CONFIGS.items()}
+    result.update(_CUSTOM_PRESETS)
+    return result
+
+
+def get_preset_by_name(name: str) -> Optional[SandboxConfig]:
+    """
+    通过名称获取预设配置
+
+    支持内置预设和用户自定义预设。
+
+    Args:
+        name: 预设名称（如 "standard", "safe", 或自定义名称）
+
+    Returns:
+        沙箱配置或 None
+
+    Example:
+        ```python
+        # 获取内置预设
+        config = get_preset_by_name("standard")
+
+        # 获取自定义预设
+        config = get_preset_by_name("my_custom")
+        ```
+    """
+    # 先尝试从内置预设获取
+    try:
+        preset = SandboxPreset(name)
+        return get_preset_config(preset)
+    except ValueError:
+        pass
+
+    # 再尝试从自定义预设获取
+    return get_custom_preset(name)
