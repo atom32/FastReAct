@@ -26,6 +26,12 @@ from fastreact.core.callbacks import (
     Phase,
     StepEvent
 )
+from fastreact.core.streaming import (
+    StreamChunk,
+    StreamChunkType,
+    StreamingContext,
+    create_streaming_context,
+)
 
 __all__ = [
     "FastReAct",
@@ -39,4 +45,9 @@ __all__ = [
     "CallbackRecorder",
     "Phase",
     "StepEvent",
+    # Streaming V2
+    "StreamChunk",
+    "StreamChunkType",
+    "StreamingContext",
+    "create_streaming_context",
 ]

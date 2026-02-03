@@ -116,8 +116,14 @@ def init(workspace: Optional[str], overwrite: bool):
     default=False,
     help='显示推理过程'
 )
+@click.option(
+    '--stream',
+    is_flag=True,
+    default=False,
+    help='启用流式响应（实时输出思考过程和工具调用）'
+)
 def run(query: Optional[str], model: Optional[str], workspace: Optional[str],
-        enable_bootstrap: bool, show_thoughts: bool):
+        enable_bootstrap: bool, show_thoughts: bool, stream: bool):
     """
     运行单个查询
 
@@ -163,6 +169,14 @@ def run(query: Optional[str], model: Optional[str], workspace: Optional[str],
             enable_bootstrap=enable_bootstrap,
             workspace=workspace
         )
+
+        # 流式响应处理
+        if stream:
+            click.echo("[Streaming] Streaming response enabled...")
+            click.echo()
+
+            asyncio.run(_run_streaming_output(agent, query))
+            return
 
         # 步骤回调
         def step_callback(step):
@@ -350,6 +364,51 @@ def version():
     click.echo("  [+] WebSocket Gateway")
     click.echo()
     click.echo("Documentation: https://github.com/atom32/FastReAct")
+
+
+async def _run_streaming_output(agent, query: str):
+    """
+    流式输出处理器（用于 --stream 模式）
+
+    实时输出 <thinking>、工具调用和答案。
+    """
+    from fastreact.core.streaming import StreamChunkType
+
+    try:
+        async for chunk in agent.run_streaming(query=query, enable_thinking=True):
+            if chunk.type == StreamChunkType.METADATA:
+                if chunk.content == "start":
+                    click.echo("[Start] Processing your query...", fg="green")
+                elif chunk.content == "complete":
+                    stats = chunk.metadata or {}
+                    click.echo(f"[Complete] Done! (iterations: {stats.get('tool_calls', 0)}, cache_hits: {stats.get('cache_hits', 0)})", fg="green")
+
+            elif chunk.type == StreamChunkType.THINKING:
+                # 显示思考过程（灰色）
+                click.echo(f"[Thinking] {chunk.content[:100]}...", dim=True)
+
+            elif chunk.type == StreamChunkType.TOOL_CALL:
+                # 显示工具调用（黄色）
+                tool_info = f"{chunk.tool_name}({chunk.tool_params or ''})"
+                click.echo(f"[Tool] {tool_info}", fg="yellow")
+
+            elif chunk.type == StreamChunkType.TOOL_RESULT:
+                # 显示工具结果（蓝色）
+                result_preview = chunk.content[:100]
+                click.echo(f"[Result] {chunk.tool_name}: {result_preview}...", fg="blue")
+
+            elif chunk.type == StreamChunkType.ANSWER:
+                # 显示答案（白色）
+                click.echo(f"[Answer] {chunk.content}")
+
+            elif chunk.type == StreamChunkType.ERROR:
+                # 显示错误（红色）
+                click.echo(f"[Error] {chunk.content}", fg="red")
+
+    except KeyboardInterrupt:
+        click.echo("\n[Interrupted] Stopping...", fg="yellow")
+    except Exception as e:
+        click.echo(f"[Error] Streaming failed: {e}", fg="red")
 
 
 def main():

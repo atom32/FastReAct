@@ -27,6 +27,11 @@ app = FastAPI(
     version="0.1.0"
 )
 
+# 导入流式路由
+from .streaming import router as streaming_router
+from .websocket import websocket_chat_handler
+app.include_router(streaming_router)
+
 # CORS 配置（允许所有来源，生产环境应限制）
 app.add_middleware(
     CORSMiddleware,
@@ -554,3 +559,52 @@ class GatewayServer:
                 for session_id, session in self.sessions.items()
             ]
         }
+
+
+# ============================================================================
+# WebSocket 流式聊天端点（V2 新增）
+# ============================================================================
+
+@app.websocket("/ws/chat")
+async def websocket_chat_streaming(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None, description="认证令牌"),
+):
+    """
+    WebSocket 流式聊天端点
+
+    用于实时流式对话，支持实时输出 <thinking> 和工具调用。
+
+    连接后发送 JSON 格式消息：
+    ```json
+    {
+        "type": "query",
+        "query": "帮我写个排序算法",
+        "enable_thinking": true
+    }
+    ```
+
+    服务器会返回流式 JSON：
+    ```json
+    {
+        "type": "thinking",
+        "content": "...",
+        "timestamp": 1234567890.123
+    }
+    ```
+    """
+    await websocket.accept()
+
+    # TODO: 添加认证验证
+    # if not token:
+    #     await websocket.close(code=1008, reason="Unauthorized")
+    #     return
+
+    # 导入 WebSocket 处理器
+    from .websocket import WebSocketStreamer
+
+    # 创建流式处理器
+    streamer = WebSocketStreamer(websocket)
+
+    # 运行主循环
+    await streamer.run_loop()

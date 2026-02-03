@@ -13,7 +13,7 @@ import json
 import re
 import time
 from collections import deque
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, AsyncIterator
 
 from ..core.tool import Tool, ToolCall, ToolResult
 from ..core.cache import LRUCache
@@ -1567,6 +1567,44 @@ class FastReAct:
             stats["avg_time_per_call"] = 0.0
 
         return stats
+
+    async def run_streaming(
+        self,
+        query: str,
+        enable_thinking: bool = True,
+    ) -> AsyncIterator:
+        """
+        流式执行（V2 新功能）
+
+        实时输出 <thinking> 推理过程和工具调用结果。
+
+        Args:
+            query: 用户查询
+            enable_thinking: 是否输出思考过程（默认 True）
+
+        Yields:
+            StreamChunk: 流式数据块
+
+        使用示例:
+            ```python
+            agent = FastReAct(api_key="...", streaming_mode="sse")
+            async for chunk in agent.run_streaming("帮我写个排序算法"):
+                if chunk.type == StreamChunkType.THINKING:
+                    print(f"<thinking>{chunk.content}</thinking>")
+                elif chunk.type == StreamChunkType.TOOL_CALL:
+                    print(f"<tool>{chunk.tool_name}({chunk.tool_params})</tool>")
+                elif chunk.type == StreamChunkType.ANSWER:
+                    print(f"<answer>{chunk.content}</answer>")
+            ```
+        """
+        from .streaming import StreamingContext, StreamChunkType
+
+        # 创建流式上下文
+        stream_ctx = StreamingContext(self, enable_thinking=enable_thinking)
+
+        # 流式执行
+        async for chunk in stream_ctx.stream_with_sse(query):
+            yield chunk
 
     def clear_cache(self) -> None:
         """清空缓存"""
