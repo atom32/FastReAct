@@ -43,14 +43,14 @@ async def main():
     print(repo_map[:600])
 
     # 2. Stateful Shell
-    print("\n💻 Stateful Shell - 持久化会话")
+    print("\n[CODE] Stateful Shell - 持久化会话")
     print("-" * 80)
     shell = create_shell_tool()
     result = await shell.execute("pwd && echo 'Hello' && ls README.md")
     print(result[:400])
 
     # 3. Edit File
-    print("\n📝 Edit File - 精准编辑")
+    print("\n[NOTE] Edit File - 精准编辑")
     print("-" * 80)
 
     # 创建测试文件
@@ -81,7 +81,7 @@ async def main():
 
     # 总结
     print("\n" + "=" * 80)
-    print("✅ FastReAct Coding Agent - 完整能力已就绪！")
+    print("[OK] FastReAct Coding Agent - 完整能力已就绪！")
     print("=" * 80)
 
 

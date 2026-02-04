@@ -12,6 +12,7 @@ services:
       - FASTREACT_API_KEY=${API_KEY}
       - FASTREACT_BASE_URL=${BASE_URL:-https://api.siliconflow.cn/v1}
       - FASTREACT_MODEL=${MODEL:-deepseek-ai/DeepSeek-V3}
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN}
     stdin_open: true
     tty: true
     command: python -m fastreact.cli.main chat
@@ -28,4 +29,5 @@ services:
     environment:
       - FASTREACT_API_KEY=${API_KEY}
       - FASTREACT_BASE_URL=${BASE_URL:-https://api.siliconflow.cn/v1}
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN}
     command: python -m fastreact.cli.main gateway start --port 8765

@@ -4,20 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastreact"
-version = "1.0.0"
+dynamic = ["version"]  # 版本从 __init__.py 动态读取
 description = "企业级 ReAct Agent 基础设施框架 - 开箱即用，生产就绪"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "FastReAct Team", email = "contact@fastreact.dev"}
 ]
-keywords = ["react", "agent", "llm", "ai", "framework"]
+keywords = ["react", "agent", "llm", "ai", "framework", "mcp", "multi-tenant"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -48,13 +49,19 @@ dev = [
 fastreact = "fastreact.cli.main:cli"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/FastReAct"
-Documentation = "https://github.com/yourusername/FastReAct/wiki"
-Repository = "https://github.com/yourusername/FastReAct"
-Issues = "https://github.com/yourusername/FastReAct/issues"
+Homepage = "https://github.com/atom32/FastReAct"
+Documentation = "https://github.com/atom32/FastReAct/wiki"
+Repository = "https://github.com/atom32/FastReAct"
+Issues = "https://github.com/atom32/FastReAct/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "fastreact.__version__"}
 
 [tool.black]
 line-length = 100
