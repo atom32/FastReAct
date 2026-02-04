@@ -78,7 +78,11 @@ test_*.json
 verify_*.py
 # Exceptions: Keep important test scripts
 !test_config_priority.py
+!test_memory_flush_fix.py
 !tests/mcp_verification/verify_*.py
+
+# Test data directories
+test_docs/
 
 # Temporary MCP configs
 mcp_config*.json
