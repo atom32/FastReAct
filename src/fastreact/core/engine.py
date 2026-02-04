@@ -227,9 +227,9 @@ class FastReAct:
                 logger.warning(f"Failed to initialize Bootstrap: {e}")
 
         # 上下文管理配置
+        from ..context import ContextConfig
         if context_config is None and config is not None:
             # Create ContextConfig from config dict
-            from ..context import ContextConfig
             self._context_config = ContextConfig.from_dict(config)
         else:
             self._context_config = context_config or ContextConfig()
@@ -311,6 +311,14 @@ class FastReAct:
             # 传统方式：直接使用传入的工具列表
             for tool in tools:
                 self.register_tool(tool)
+
+        # MCP (Model Context Protocol) 集成
+        # 标记为需要异步加载（延迟到第一次 run_async 时）
+        self._mcp_manager = None
+        self._mcp_loaded = False
+        self._mcp_enabled = self.config.get("mcp", {}).get("enabled", False)
+        if self._mcp_enabled:
+            logger.info("MCP enabled - will load tools on first use")
 
         # LRU缓存
         self.cache = LRUCache(max_size=cache_size) if enable_cache else None
@@ -481,6 +489,121 @@ class FastReAct:
             f"top_k={self._retrieval_config.top_k}"
             f"{hybrid_info}"
         )
+
+    async def _load_mcp_tools(self) -> None:
+        """Load tools from MCP (Model Context Protocol) servers
+
+        This method:
+        1. Reads MCP server config from self.config
+        2. Initializes MCPClientManager
+        3. Connects to all configured servers
+        4. Fetches tools from each server
+        5. Wraps and registers MCP tools
+
+        Raises:
+            ImportError: If MCP dependencies are missing
+            Exception: If connection or tool loading fails
+        """
+        try:
+            from ..tools.mcp_client_manager import MCPClientManager
+        except ImportError as e:
+            logger.error(f"MCP dependencies not available: {e}")
+            logger.error("Install with: pip install mcp")
+            return
+
+        # Get MCP config
+        mcp_config = self.config.get("mcp", {})
+        servers_config = mcp_config.get("servers", {})
+
+        if not servers_config:
+            logger.warning("MCP enabled but no servers configured")
+            return
+
+        logger.info(f"Loading MCP tools from {len(servers_config)} server(s)...")
+
+        # Create MCP manager
+        self._mcp_manager = MCPClientManager()
+
+        # Add servers
+        for server_name, server_config in servers_config.items():
+            try:
+                # Build server config dict
+                # Check if it's stdio or http
+                if "command" in server_config:
+                    # stdio transport
+                    config = {
+                        "command": server_config["command"],
+                        "args": server_config.get("args", []),
+                        "env": server_config.get("env", {}),
+                    }
+                elif "url" in server_config:
+                    # http transport
+                    config = {
+                        "url": server_config["url"],
+                        "headers": server_config.get("headers", {}),
+                    }
+                else:
+                    logger.error(f"Invalid server config for '{server_name}': missing 'command' or 'url'")
+                    continue
+
+                self._mcp_manager.add_server(server_name, config)
+                logger.info(f"  Registered MCP server: {server_name}")
+            except Exception as e:
+                logger.error(f"Failed to register server '{server_name}': {e}")
+
+        # Connect to all servers and fetch tools
+        try:
+            async with self._mcp_manager.auto_connect():
+                # Get server status
+                status = self._mcp_manager.get_server_status()
+                connected_count = sum(1 for connected in status.values() if connected)
+                logger.info(f"MCP: Connected to {connected_count}/{len(servers_config)} server(s)")
+
+                # Show connection details
+                for server_name, connected in status.items():
+                    status_str = "[OK]" if connected else "[FAILED]"
+                    logger.info(f"  {status_str} {server_name}")
+
+                # Fetch and register tools
+                mcp_tools = await self._mcp_manager.get_all_tools()
+                logger.info(f"MCP: Fetched {len(mcp_tools)} tool(s)")
+
+                # Register each MCP tool
+                for tool in mcp_tools:
+                    self.register_tool(tool)
+                    logger.info(f"  [+] {tool.name} ({tool.group})")
+
+                logger.info(f"MCP: Registered {len(mcp_tools)} tool(s) successfully")
+                self._mcp_loaded = True
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Failed to connect/fetch MCP tools: {error_msg}")
+
+            # Provide helpful guidance for common errors
+            if "ERR_UNSUPPORTED_DIR_IMPORT" in error_msg:
+                logger.warning("")
+                logger.warning("=" * 70)
+                logger.warning("[MCP Environment Issue Detected]")
+                logger.warning("=" * 70)
+                logger.warning("This error is caused by an upstream Node.js v24 compatibility")
+                logger.warning("issue with certain npm packages (not FastReAct code).")
+                logger.warning("")
+                logger.warning("Solutions:")
+                logger.warning("  1. Use Python-based MCP servers")
+                logger.warning("  2. Use HTTP-transport MCP servers")
+                logger.warning("  3. Downgrade Node.js to v20 LTS for npx-based servers")
+                logger.warning("")
+                logger.warning("FastReAct will continue to function with built-in tools.")
+                logger.warning("=" * 70)
+                logger.warning("")
+            else:
+                import traceback
+                logger.error(traceback.format_exc())
+
+            # Mark as loaded but with errors (don't retry)
+            self._mcp_loaded = True
+            return
 
     async def _build_messages_context(
         self,
@@ -1523,6 +1646,13 @@ class FastReAct:
         # 发送生命周期开始事件
         await self._emit_lifecycle("start")
 
+        # 加载 MCP 工具（如果启用且尚未加载）
+        if self._mcp_enabled and not self._mcp_loaded:
+            try:
+                await self._load_mcp_tools()
+            except Exception as e:
+                logger.warning(f"MCP tool loading failed: {e}")
+
         # 确保需要 LLM client 的工具已经注入 client
         self._ensure_llm_client_injected()
 
@@ -1799,6 +1929,14 @@ class FastReAct:
 
         注意：建议使用 async with FastReAct(...) 自动管理资源
         """
+        # 关闭 MCP 连接
+        if self._mcp_manager:
+            try:
+                await self._mcp_manager.close_all()
+                logger.info("MCP: Disconnected all servers")
+            except Exception as e:
+                logger.warning(f"MCP cleanup failed: {e}")
+
         if self._http_client:
             await self._http_client.aclose()
             self._http_client = None

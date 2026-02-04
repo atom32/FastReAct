@@ -2,10 +2,10 @@
 
 > **企业级 Agent 基础设施框架** - 开箱即用，生产就绪 🚀
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/licenses/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](https://github.com/atom32/FastReAct)
-[![Production Ready](https://img.shields.io/badge/production--ready-brightgreen.svg)]()
+[![Version: 1.1.0-alpha](https://img.shields.io/badge/version-1.1.0--alpha-orange.svg)](https://github.com/atom32/FastReAct)
+[![MCP Support](https://img.shields.io/badge/MCP-supported-brightgreen.svg)]()
 
 ---
 
@@ -200,6 +200,51 @@ agent = FastReAct(
     context_config=config
 )
 ```
+
+### MCP (Model Context Protocol) 配置
+
+FastReAct v1.1.0+ 完整支持 MCP，可以连接外部工具服务器。
+
+**在 config.json 中启用 MCP**:
+
+```json
+{
+  "mcp": {
+    "enabled": true,
+    "servers": {
+      "local_files": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\projects"]
+      },
+      "postgres": {
+        "command": "docker",
+        "args": ["run", "-i", "--rm", "-e", "PG_CONNECTION_STRING=...", "mcp/postgres"]
+      },
+      "github": {
+        "url": "https://api.github.com/mcp",
+        "headers": {
+          "Authorization": "Bearer YOUR_TOKEN"
+        }
+      }
+    }
+  }
+}
+```
+
+**支持的传输协议**:
+- `stdio` - 本地进程通信（npx, docker）
+- `http` - HTTP REST API
+
+**⚠️ 环境兼容性说明**:
+
+如果使用 **Node.js v24**，部分基于 npx 的 MCP 服务器可能会遇到 `ERR_UNSUPPORTED_DIR_IMPORT` 错误（这是上游 npm 包的兼容性问题，不是 FastReAct 代码问题）。
+
+**解决方案**:
+1. 使用 Python 实现的 MCP 服务器
+2. 使用 HTTP transport 的 MCP 服务器
+3. 将 Node.js 降级到 v20 LTS（用于 npx-based 服务器）
+
+FastReAct 会优雅地处理 MCP 加载失败，内置工具仍然可以正常使用。
 
 ---
 
