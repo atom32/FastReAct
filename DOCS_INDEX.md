@@ -113,7 +113,9 @@ FastReAct/
 ### For Users
 1. [Getting Started](README.md)
 2. [Installation](INSTALLATION.md)
-3. [Configuration](CONFIG.md)
+3. [New Environment Setup](NEW_ENVIRONMENT_SETUP.md) ← NEW!
+4. [Configuration](CONFIG.md)
+5. [Configuration Priority](CONFIG_PRIORITY.md) ← NEW!
 
 ### For Developers
 1. [Development Rules](CLAUDE.md)
@@ -123,8 +125,16 @@ FastReAct/
 
 ### Feature Docs
 1. [Multi-Tenant Workspace](MULTI_TENANT_WORKSPACE.md)
-2. [Session Resume](SESSION_RESUME.md)
-3. [MCP Integration](MCP_INTEGRATION_SUCCESS.md)
+2. [Workspace Isolation](WORKSPACE_ISOLATION.md)
+3. [Session Resume](SESSION_RESUME.md)
+4. [Multi-line Input](MULTILINE_INPUT.md) ← NEW!
+5. [MCP Integration](MCP_INTEGRATION_SUCCESS.md)
+6. [Gateway & Web UI](GATEWAY_WEB_EVALUATION.md) ← NEW!
+
+### System Docs
+1. [Memory Systems Integration](MEMORY_SYSTEMS_INTEGRATION.md) ← NEW!
+2. [Memory Flush & Compaction](MEMORY_FLUSH_COMPACTION_INTERACTION.md) ← NEW!
+3. [Memory Flush Bug Analysis](MEMORY_FLUSH_BUG_ANALYSIS.md) ← NEW!
 
 ---
 

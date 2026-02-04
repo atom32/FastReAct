@@ -1,18 +1,183 @@
 {
+  "_comment": "FastReAct Project Configuration Template",
+  "_purpose": "Project-level shared settings (不含敏感信息，可以提交到 git)",
+
   "llm": {
     "providers": {
       "siliconflow": {
-        "api_key": "your-siliconflow-api-key",
+        "enabled": true,
+        "name": "SiliconFlow (DeepSeek)",
         "base_url": "https://api.siliconflow.cn/v1",
-        "model": "deepseek-ai/DeepSeek-V3"
+        "model": "deepseek-ai/DeepSeek-V3",
+        "max_tokens": 8192,
+        "context_window": 64000,
+        "temperature": 0.7,
+        "api_key": "YOUR_SILICONFLOW_KEY_HERE"
+      },
+      "openai": {
+        "enabled": false,
+        "name": "OpenAI GPT-4o",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o",
+        "max_tokens": 16384,
+        "context_window": 128000,
+        "temperature": 0.7,
+        "api_key": "YOUR_OPENAI_KEY_HERE"
+      },
+      "ollama": {
+        "enabled": false,
+        "name": "Local Ollama",
+        "base_url": "http://localhost:11434/v1",
+        "model": "llama3.1",
+        "max_tokens": 8192,
+        "context_window": 128000,
+        "temperature": 0.7
       }
     },
-    "default_provider": "siliconflow"
+    "default_provider": "siliconflow",
+    "timeout_seconds": 60,
+    "retry_attempts": 3
+  },
+
+  "context": {
+    "max_history_messages": 1000,
+    "max_history_tokens": 48000,
+    "reserve_tokens": 12000,
+    "system_prompt_tokens": 2000,
+    "token_model": "gpt-4",
+    "smart_truncate": true,
+
+    "memory_flush": {
+      "enabled": true,
+      "soft_threshold_tokens": 50000,
+      "hard_threshold_tokens": 55000,
+      "summarize_prompt": "Please summarize the following conversation concisely, preserving key information and decisions. Focus on key topics, decisions, and outcomes.",
+      "summarize_temperature": 0.3
+    },
+
+    "retrieval": {
+      "enabled": false,
+      "provider": "local",
+      "embedding_model": "models/Qwen/Qwen3-Embedding-0.6B",
+      "device": "cpu",
+      "vector_store": "apsw",
+      "db_path": "./data/memory.db",
+      "chunk_size": 500,
+      "chunk_overlap": 50,
+      "top_k": 5,
+      "min_similarity": 0.65,
+      "max_context_chunks": 5,
+      "inject_position": "system",
+      "template": "以下是相关的历史对话上下文，请参考这些信息来回答：\n\n{context}\n\n---\n\n",
+      "auto_index": true,
+      "index_delay": 1,
+      "hybrid_search": {
+        "enabled": false,
+        "fusion_method": "rrf",
+        "alpha": 0.5,
+        "rrf_k": 60,
+        "bm25_k1": 1.2,
+        "bm25_b": 0.75,
+        "bm25_language": "chinese",
+        "min_score": 0.3
+      }
+    },
+
+    "compaction": {
+      "enabled": false,
+      "base_chunk_ratio": 0.4,
+      "min_chunk_ratio": 0.15,
+      "safety_margin": 1.2,
+      "summary_levels": 3,
+      "trigger_threshold_tokens": 50000,
+      "auto_compact": true
+    }
+  },
+
+  "memory": {
+    "enabled": false,
+    "vector_store": "sqlite_vec",
+    "embedding_provider": "modelscope",
+    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+    "embedding_dim": 1024,
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "top_k": 3,
+    "min_similarity": 0.7,
+    "note": "Qwen3-Embedding-0.6B: 1536 dimensions, SOTA Chinese (73.84 MTEB), 100+ languages"
+  },
+
+  "react": {
+    "max_iterations": 10,
+    "max_concurrent_tools": 3,
+    "enable_cache": true,
+    "cache_size": 1000,
+    "enable_streaming": false
   },
 
   "tools": {
+    "builtin_enabled": true,
+    "custom_tools_path": "tools/",
+    "available_tools": [
+      "Calculator",
+      "TavilySearch",
+      "Weather",
+      "HTTP",
+      "GetCurrentTime"
+    ],
     "tavily": {
-      "api_key": "your-tavily-api-key-here"
+      "enabled": true,
+      "params": {
+        "max_results": 10,
+        "search_depth": "basic"
+      },
+      "api_key": "YOUR_TAVILY_API_KEY_HERE",
+      "note": "Get your key from https://tavily.com/ and add to ~/.fastreact/config.json"
     }
+  },
+
+  "mcp": {
+    "enabled": true,
+    "servers": {
+      "github": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-github"
+        ],
+        "timeout": 120.0,
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN_HERE"
+        },
+        "note": "GitHub MCP server for issue/PR management. Create token at https://github.com/settings/tokens"
+      },
+      "apollo_core": {
+        "command": "docker",
+        "args": [
+          "run",
+          "-i",
+          "--rm",
+          "apollo-mcp-server"
+        ],
+        "timeout": 60.0,
+        "env": {},
+        "note": "Apollo Core financial tools (requires Docker container). See test_docs/start_apollo_server.py"
+      }
+    },
+    "note": "MCP servers configuration. Sensitive tokens should be in ~/.fastreact/config.json instead."
+  },
+
+  "logging": {
+    "level": "INFO",
+    "log_file": "logs/fastreact.log",
+    "console_output": true
+  },
+
+  "_setup_instructions": {
+    "step_1": "复制此文件为 config.json: cp config.example.json config.json",
+    "step_2": "在 ~/.fastreact/config.json 中添加你的 API keys（推荐）",
+    "step_3": "或者在此文件中添加 API keys（不推荐，不要提交）",
+    "step_4": "安装依赖: pip install -e .",
+    "step_5": "运行: python -m fastreact.cli.main shell"
   }
 }
