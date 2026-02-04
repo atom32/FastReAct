@@ -1,0 +1,53 @@
+{
+  "_comment": "GitHub MCP Integration Template for FastReAct TODO #16",
+  "_instructions": [
+    "1. Copy this file to config.json or merge with existing config",
+    "2. Set GITHUB_PERSONAL_ACCESS_TOKEN in .env file",
+    "3. Install mcp-server-github: npm install -g @modelcontextprotocol/server-github",
+    "4. Test connection: python -m fastreact.cli.main shell"
+  ],
+  "mcp": {
+    "enabled": true,
+    "servers": {
+      "github": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-github"
+        ],
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+        },
+        "_note": "GitHub MCP server for issue/PR management, code search, etc."
+      },
+      "apollo_core": {
+        "command": "docker",
+        "args": [
+          "run",
+          "-i",
+          "--rm",
+          "apollo-mcp-server"
+        ],
+        "env": {},
+        "_note": "Apollo Core financial tools (existing)"
+      }
+    },
+    "_iron_rule_compliance": "SimpleMCP-Stdio driver isolates anyio from main event loop"
+  },
+  "_github_token_scopes": {
+    "classic_token": "repo scope required",
+    "fine_grained_token": "Contents (read/write), Issues (read/write), Pull Requests (read/write)",
+    "get_token": "https://github.com/settings/tokens"
+  },
+  "_expected_tools": [
+    "create_issue",
+    "create_pull_request",
+    "search_issues_and_prs",
+    "update_issue",
+    "add_comment",
+    "create_or_update_file",
+    "get_file_contents",
+    "search_repositories",
+    "search_code"
+  ]
+}
