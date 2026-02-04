@@ -42,9 +42,11 @@ try:
     from rich.panel import Panel
     from rich.markdown import Markdown
     from rich.syntax import Syntax
+    from rich.status import Status  # Live spinner support
     console = Console()
 except ImportError:
     console = None
+    Status = None
 
 
 class REPLState:
@@ -561,17 +563,20 @@ class InteractiveREPL:
                         ))
 
             # 进度回调 - 显示长时间运行的工具的进度
+            # 注意：由于 Status spinner 正在运行，这里简化了输出
+            # 只在 FASTREACT_SHOW_PROGRESS=1 时显示详细进度
             def progress_callback(message: str):
-                """显示工具执行进度"""
-                if console:
-                    # 使用 dim 颜色显示进度，不使用 Panel 以节省空间
-                    # 用户可以设置环境变量 FASTREACT_SHOW_PROGRESS=1 来显示详细进度
-                    import os
-                    show_progress = os.getenv("FASTREACT_SHOW_PROGRESS", "1") == "1"
-                    if show_progress:
-                        console.print(f"[dim cyan]  {message}[/dim cyan]")
-                else:
+                """显示工具执行进度（与 spinner 配合）"""
+                import os
+                show_progress = os.getenv("FASTREACT_SHOW_PROGRESS", "0") == "1"
+
+                if show_progress and console:
+                    # 详细模式：显示进度（会暂时覆盖 spinner）
+                    console.print(f"[dim cyan]  [Progress] {message}[/dim cyan]")
+                elif not console:
+                    # Fallback: 纯文本模式
                     print(f"  {message}")
+                # 否则：静默模式，让 spinner 独自显示
 
             # 设置进度回调到 agent（在两种模式下都设置）
             agent.set_progress_callback(progress_callback)
@@ -598,11 +603,26 @@ class InteractiveREPL:
                 result = {'answer': '(streaming complete)'}
             else:
                 # 标准执行模式（传递会话上下文，使用步骤回调）
-                result = await agent.run_async(
-                    query=query,
-                    session_context=session_context,
-                    step_callback=step_callback
-                )
+                # 使用 Status spinner 提供实时反馈
+                if Status and console:
+                    # 使用 dots spinner（经典、优雅）
+                    with Status(
+                        "[bold cyan]FastReAct 正在思考...[/bold cyan]",
+                        console=console,
+                        spinner="dots"
+                    ):
+                        result = await agent.run_async(
+                            query=query,
+                            session_context=session_context,
+                            step_callback=step_callback
+                        )
+                else:
+                    # Fallback: 无 spinner 模式
+                    result = await agent.run_async(
+                        query=query,
+                        session_context=session_context,
+                        step_callback=step_callback
+                    )
 
                 self.state.last_result = result
 

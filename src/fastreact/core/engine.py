@@ -1586,6 +1586,9 @@ class FastReAct:
                     }
 
                 # 执行工具调用
+                # NOTE: Format is {"name": str, "parameters": dict}
+                # Test suite validates parameter extraction: test_integration_4_tool_graph.py
+                # Key name is 'parameters', NOT 'args' or 'params'
                 step["tool_calls"] = [
                     {"name": tc.name, "parameters": tc.parameters} for tc in tool_calls
                 ]

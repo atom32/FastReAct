@@ -468,6 +468,9 @@ def create_read_file_tool() -> Tool:
                 "path": {
                     "type": "string",
                     "description": "文件路径（相对或绝对）"
+                    # NOTE: Parameter name is 'path', NOT 'file_path' or 'file'
+                    # This is consistent with engine.py which returns 'parameters' key
+                    # Test suite validates: test_integration_4_tool_graph.py
                 },
                 "encoding": {
                     "type": "string",
