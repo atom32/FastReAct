@@ -8,7 +8,7 @@ No hardcoded values - all parameters come from configuration files.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context_pruning import PruningConfig
@@ -218,7 +218,11 @@ class CompactionConfig:
 
 @dataclass
 class RetrievalConfig:
-    """Memory retrieval configuration for semantic search"""
+    """Memory retrieval configuration for semantic search
+
+    Multi-tenant support: workspace_paths and db_path can be set at runtime
+    to support multiple tenants with isolated knowledge bases.
+    """
 
     # Enable/disable retrieval
     enabled: bool = False
@@ -232,6 +236,10 @@ class RetrievalConfig:
     # Vector store configuration
     vector_store: str = "sqlite_vec"  # or "apsw" for Windows
     db_path: str = "./data/memory.db"
+
+    # Workspace paths (multi-tenant support)
+    # Can be overridden at runtime via set_workspace()
+    workspace_paths: List[str] = field(default_factory=lambda: ["./docs"])
 
     # Chunking parameters
     chunk_size: int = 500
@@ -258,11 +266,12 @@ class RetrievalConfig:
     hybrid_search: Optional[HybridSearchConfig] = None
 
     @classmethod
-    def from_dict(cls, config_dict: dict) -> "RetrievalConfig":
+    def from_dict(cls, config_dict: dict, workspace_paths: Optional[List[str]] = None) -> "RetrievalConfig":
         """Create RetrievalConfig from config.json section
 
         Args:
             config_dict: The 'retrieval' section from context config
+            workspace_paths: Optional runtime workspace override for multi-tenant support
 
         Returns:
             RetrievalConfig instance
@@ -275,6 +284,10 @@ class RetrievalConfig:
         if retrieval_cfg.get("hybrid_search", {}).get("enabled", False):
             hybrid_config = HybridSearchConfig.from_dict(retrieval_cfg)
 
+        # Support runtime workspace override for multi-tenant scenarios
+        if workspace_paths is None:
+            workspace_paths = retrieval_cfg.get("workspace_paths", ["./docs"])
+
         return cls(
             enabled=retrieval_cfg.get("enabled", False),
             provider=retrieval_cfg.get("provider", "modelscope"),
@@ -283,6 +296,7 @@ class RetrievalConfig:
             device=retrieval_cfg.get("device", "cuda"),
             vector_store=retrieval_cfg.get("vector_store", "sqlite_vec"),
             db_path=retrieval_cfg.get("db_path", "./data/memory.db"),
+            workspace_paths=workspace_paths,  # Multi-tenant support
             chunk_size=retrieval_cfg.get("chunk_size", 500),
             chunk_overlap=retrieval_cfg.get("chunk_overlap", 50),
             top_k=retrieval_cfg.get("top_k", 3),

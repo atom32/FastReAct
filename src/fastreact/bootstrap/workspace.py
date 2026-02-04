@@ -51,14 +51,14 @@ If you're uncertain, use more tools.
 ## What Makes You Different
 
 Unlike chatbots that:
-- ❌ Hide their reasoning
-- ❌ Hallucinate information
-- ❌ Guess instead of verifying
+- [ERROR] Hide their reasoning
+- [ERROR] Hallucinate information
+- [ERROR] Guess instead of verifying
 
 You:
-- ✅ Show every thought
-- ✅ Use tools to verify
-- ✅ Provide accurate answers
+- [OK] Show every thought
+- [OK] Use tools to verify
+- [OK] Provide accurate answers
 
 ## Workflow Example
 

@@ -38,8 +38,8 @@ class Config:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"⚠️  加载配置文件失败: {e}")
-            print("💡 使用默认配置")
+            print(f"[WARNING]  加载配置文件失败: {e}")
+            print("[INFO] 使用默认配置")
             return self._get_default_config()
 
     def _get_default_config(self) -> Dict[str, Any]:
@@ -84,14 +84,14 @@ class Config:
 
         providers = llm_config.get("providers", {})
         if provider_name not in providers:
-            print(f"⚠️  提供商 '{provider_name}' 不存在，使用默认配置")
+            print(f"[WARNING]  提供商 '{provider_name}' 不存在，使用默认配置")
             provider_name = list(providers.keys())[0] if providers else "default"
 
         provider_config = providers.get(provider_name, {})
 
         # 检查是否启用
         if not provider_config.get("enabled", True):
-            print(f"⚠️  提供商 '{provider_name}' 未启用")
+            print(f"[WARNING]  提供商 '{provider_name}' 未启用")
 
         return provider_config
 
@@ -128,7 +128,7 @@ class Config:
         default_provider = self.config.get("llm", {}).get("default_provider", "")
 
         for name, config in providers.items():
-            enabled = "✅" if config.get("enabled", True) else "❌"
+            enabled = "[OK]" if config.get("enabled", True) else "[ERROR]"
             is_default = " (默认)" if name == default_provider else ""
             model = config.get("model", "N/A")
             base_url = config.get("base_url", "N/A")
@@ -151,9 +151,9 @@ class Config:
         try:
             with open(save_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
-            print(f"✅ 配置已保存到: {save_path}")
+            print(f"[OK] 配置已保存到: {save_path}")
         except Exception as e:
-            print(f"❌ 保存配置失败: {e}")
+            print(f"[ERROR] 保存配置失败: {e}")
 
 
 # 创建全局配置实例
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     config = get_config()
     config.list_providers()
 
-    print("\n🔧 当前LLM配置:")
+    print("\n[CONFIG] 当前LLM配置:")
     llm_config = config.get_llm_config()
     for key, value in llm_config.items():
         if key != "api_key":

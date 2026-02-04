@@ -222,13 +222,13 @@ class TavilySearchTool(Tool):
 
         # 添加 AI 生成的答案（如果有）
         if data.get("answer"):
-            output_parts.append(f"📝 **AI 答案摘要**")
+            output_parts.append(f"[NOTE] **AI 答案摘要**")
             output_parts.append(f"{data['answer']}\n")
 
         # 添加搜索结果
         results = data.get("results", [])
         if results:
-            output_parts.append(f"🔍 **搜索 '{query}' 找到 {len(results)} 条结果**\n")
+            output_parts.append(f"[SEARCH] **搜索 '{query}' 找到 {len(results)} 条结果**\n")
 
             for i, result in enumerate(results, 1):
                 # 标题
@@ -312,7 +312,7 @@ class TavilySearchTool(Tool):
 
         # 格式化输出
         output = [
-            f"🔍 搜索 '{query}' (演示模式 - 未配置 Tavily API Key)",
+            f"[SEARCH] 搜索 '{query}' (演示模式 - 未配置 Tavily API Key)",
             f"找到 {len(results)} 条模拟结果:\n"
         ]
 
@@ -322,7 +322,7 @@ class TavilySearchTool(Tool):
             output.append(f"   🔗 {result['url']}")
             output.append("")
 
-        output.append("💡 提示: 配置 TAVILY_API_KEY 环境变量以使用真实搜索")
+        output.append("[INFO] 提示: 配置 TAVILY_API_KEY 环境变量以使用真实搜索")
         output.append("   获取 API Key: https://tavily.com/")
 
         return "\n".join(output)

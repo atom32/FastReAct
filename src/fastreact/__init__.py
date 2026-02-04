@@ -13,7 +13,7 @@ FastReAct - 企业级 Agent 基础设施框架
 战略定位："Bring Your Own Model & Data" - 让企业用 1/10 成本获得 80% Claude Code 体验
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "FastReAct Team"
 
 from fastreact.core.engine import FastReAct
@@ -134,6 +134,8 @@ from fastreact.graph import (
 
 __all__ = [
     "FastReAct",
+    "__version__",  # Export version
+    "Tool",
     "Tool",
     "ToolCall",
     "ToolResult",

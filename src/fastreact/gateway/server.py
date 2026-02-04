@@ -165,7 +165,8 @@ class GatewayServer:
             session_id: str,
             token: Optional[str] = Query(None),
             password: Optional[str] = Query(None),
-            api_key: Optional[str] = Query(None)
+            api_key: Optional[str] = Query(None),
+            workspace: Optional[str] = Query(None)  # Multi-tenant workspace support
         ):
             """WebSocket 端点
 
@@ -175,6 +176,7 @@ class GatewayServer:
                 token: 认证令牌（Query 参数）
                 password: 密码（Query 参数）
                 api_key: API 密钥（Query 参数）
+                workspace: 工作区路径（Query 参数，多租户支持）
             """
             # 认证检查
             authenticated, user_id, auth_metadata = self.auth.authenticate_websocket(
@@ -259,10 +261,20 @@ class GatewayServer:
                         "created_at": datetime.now().isoformat(),
                         "last_active": datetime.now().isoformat(),
                         "title": "新对话",
-                        "websocket": websocket
+                        "websocket": websocket,
+                        "workspace": workspace,  # Multi-tenant support
+                        "user_id": user_id
                     }
                 }
                 session = self.sessions[session_id]
+
+                # 设置工作区（如果提供）
+                if workspace:
+                    try:
+                        self.agent.set_workspace(workspace)
+                        logger.info(f"Session {session_id} workspace set to: {workspace}")
+                    except Exception as e:
+                        logger.warning(f"Failed to set workspace for session {session_id}: {e}")
 
                 # 发送欢迎消息
                 await websocket.send_json({
@@ -460,6 +472,17 @@ class GatewayServer:
 
                     # 执行查询（带会话上下文和步骤回调）
                     try:
+                        # Multi-tenant support: Switch to session workspace if set
+                        session_workspace = session["metadata"].get("workspace")
+                        previous_workspace = None
+                        if session_workspace:
+                            try:
+                                previous_workspace = self.agent.get_workspace()
+                                self.agent.set_workspace(session_workspace)
+                                logger.debug(f"[Session {session_id}] Using workspace: {session_workspace}")
+                            except Exception as e:
+                                logger.warning(f"Failed to switch workspace for query: {e}")
+
                         logger.info(f"[Session {session_id}] Starting agent execution...")
                         result = await self.agent.run_async(
                             query=query,
@@ -467,6 +490,13 @@ class GatewayServer:
                             step_callback=step_callback
                         )
                         logger.info(f"[Session {session_id}] Agent execution completed. Answer: {result.get('answer', '')[:50]}...")
+
+                        # Restore previous workspace if needed (for multi-tenant isolation)
+                        if session_workspace and previous_workspace and previous_workspace != session_workspace:
+                            try:
+                                self.agent.set_workspace(previous_workspace)
+                            except Exception as e:
+                                logger.warning(f"Failed to restore workspace: {e}")
 
                         # 保存助手回复
                         assistant_message = {

@@ -220,7 +220,7 @@ class ConsoleCallbacks(StreamingCallbacks):
         """开始回调"""
         self.start_time = time.time()
         print("=" * 60)
-        print("🤖 FastReAct Agent 启动")
+        print("[BOT] FastReAct Agent 启动")
         print("=" * 60)
         print()
 
@@ -246,7 +246,7 @@ class ConsoleCallbacks(StreamingCallbacks):
         if self.show_actions:
             tool_name = action.get("tool_name", "unknown")
             params = action.get("parameters", {})
-            print(self._colorize(f"🔧 工具: {tool_name}", "action"))
+            print(self._colorize(f"[CONFIG] 工具: {tool_name}", "action"))
 
             # 简化参数显示
             if params:

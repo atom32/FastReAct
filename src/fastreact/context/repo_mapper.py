@@ -320,13 +320,13 @@ class RepoMapper:
 
             # 添加元信息
             header = f"""📁 Current Directory: {self._cwd}
-📊 Project Structure (scanned {scan_time:.2f}s, {self._count_entries(root_entry)} items):
+[STATS] Project Structure (scanned {scan_time:.2f}s, {self._count_entries(root_entry)} items):
 
 """
             footer = f"""
 
-💡 Tip: Use 'cd_repo' to change directory, 'refresh_repo' to rescan.
-🔍 Hidden: {', '.join(self.config.fold_patterns[:5])}...
+[INFO] Tip: Use 'cd_repo' to change directory, 'refresh_repo' to rescan.
+[SEARCH] Hidden: {', '.join(self.config.fold_patterns[:5])}...
 """
 
             self._map = header + map_text + footer
@@ -338,7 +338,7 @@ class RepoMapper:
 
         except Exception as e:
             logger.error(f"Failed to generate repo map: {e}")
-            return f"❌ Failed to scan directory: {e}\n📁 Current: {self._cwd}"
+            return f"[ERROR] Failed to scan directory: {e}\n📁 Current: {self._cwd}"
 
     def change_directory(self, new_path: str) -> str:
         """
@@ -359,10 +359,10 @@ class RepoMapper:
 
             # 检查路径是否存在
             if not new_cwd.exists():
-                return f"❌ Directory not found: {new_path}\n📁 Current: {self._cwd}"
+                return f"[ERROR] Directory not found: {new_path}\n📁 Current: {self._cwd}"
 
             if not new_cwd.is_dir():
-                return f"❌ Not a directory: {new_path}\n📁 Current: {self._cwd}"
+                return f"[ERROR] Not a directory: {new_path}\n📁 Current: {self._cwd}"
 
             # 切换目录
             self._cwd = new_cwd
@@ -372,7 +372,7 @@ class RepoMapper:
             return self.generate_map(force_refresh=True)
 
         except Exception as e:
-            return f"❌ Failed to change directory: {e}\n📁 Current: {self._cwd}"
+            return f"[ERROR] Failed to change directory: {e}\n📁 Current: {self._cwd}"
 
     @property
     def current_directory(self) -> str:

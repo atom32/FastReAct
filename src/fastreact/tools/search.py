@@ -85,7 +85,7 @@ class SearchTool(Tool):
         results = mock_results[:num_results]
 
         # 格式化输出
-        output = [f"🔍 搜索'{query}'找到{len(results)}条结果:\n"]
+        output = [f"[SEARCH] 搜索'{query}'找到{len(results)}条结果:\n"]
 
         for i, result in enumerate(results, 1):
             output.append(f"{i}. **{result['title']}**")

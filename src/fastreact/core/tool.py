@@ -64,6 +64,7 @@ class Tool(ABC):
         self.name = self.__class__.__name__
         self.description = self._get_description()
         self.parameters = self._get_parameters()
+        self.group = "mcp"  # 默认工具组
 
     @abstractmethod
     def _get_description(self) -> str:
