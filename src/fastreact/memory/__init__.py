@@ -12,6 +12,7 @@ from .embeddings import (
     EmbeddingCache,
     EmbeddingGenerator,
     EmbeddingBuilder,
+    create_model_change_callback,
 )
 from .vector_store import VectorStore, VectorStoreBuilder
 from .sqlite_vec import SQLiteVecStore, APSWVecStore
@@ -27,6 +28,7 @@ __all__ = [
     "EmbeddingCache",
     "EmbeddingGenerator",
     "EmbeddingBuilder",
+    "create_model_change_callback",
     "VectorStore",
     "VectorStoreBuilder",
     "SQLiteVecStore",

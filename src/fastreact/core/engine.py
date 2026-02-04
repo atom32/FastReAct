@@ -227,7 +227,12 @@ class FastReAct:
                 logger.warning(f"Failed to initialize Bootstrap: {e}")
 
         # 上下文管理配置
-        self._context_config = context_config or ContextConfig()
+        if context_config is None and config is not None:
+            # Create ContextConfig from config dict
+            from ..context import ContextConfig
+            self._context_config = ContextConfig.from_dict(config)
+        else:
+            self._context_config = context_config or ContextConfig()
         self._llm_config = LLMProviderConfig(
             name=model,
             model=model,
@@ -265,7 +270,9 @@ class FastReAct:
 
         # Memory Retriever (if enabled)
         self._retriever = None
-        self._retrieval_config = context_config.retrieval if context_config else None
+        self._retrieval_config = self._context_config.retrieval if self._context_config else None
+        self._embedding_generator = None
+        self._model_change_callback = None
         if self._retrieval_config and self._retrieval_config.enabled:
             try:
                 self._setup_retriever()
@@ -273,6 +280,8 @@ class FastReAct:
                 logger.warning(f"Failed to initialize Memory Retriever: {e}")
                 self._retriever = None
                 self._retrieval_config = None
+                self._embedding_generator = None
+                self._model_change_callback = None
 
         # 工具注册表
         self.tools: Dict[str, Tool] = {}
@@ -402,7 +411,12 @@ class FastReAct:
             ImportError: If required dependencies are missing
             Exception: If initialization fails
         """
-        from ..memory import MemoryRetriever, EmbeddingGenerator, VectorStoreBuilder
+        from ..memory import (
+            MemoryRetriever,
+            EmbeddingGenerator,
+            VectorStoreBuilder,
+            create_model_change_callback,
+        )
 
         # Create embedding provider
         provider = EmbeddingGenerator.create_provider(
@@ -416,13 +430,29 @@ class FastReAct:
             provider=provider,
             enable_cache=True,
             cache_size=10000,
+            db_path=self._retrieval_config.db_path.replace(".db", "_embedding_cache.db"),
         )
+
+        # Create model change callback (interactive for CLI)
+        model_change_callback = create_model_change_callback(interactive=True)
+
+        # NOTE: We'll initialize the generator later (async)
+        # Store for later initialization
+        self._embedding_generator = generator
+        self._model_change_callback = model_change_callback
+
+        # Get embedding dimension from provider (try sync method first)
+        embedding_dim = provider.get_embedding_dim_sync()
+        if embedding_dim is None:
+            # Fallback to config value for backward compatibility
+            embedding_dim = self._retrieval_config.embedding_dim if hasattr(self._retrieval_config, 'embedding_dim') else 1536
+            logger.info(f"Using embedding_dim from config: {embedding_dim}")
 
         # Create vector store
         vector_store = VectorStoreBuilder.create(
             backend=self._retrieval_config.vector_store,
             db_path=self._retrieval_config.db_path,
-            embedding_dim=self._retrieval_config.embedding_dim,
+            embedding_dim=embedding_dim,
         )
 
         # Get hybrid search config (if enabled)
@@ -527,12 +557,18 @@ class FastReAct:
             try:
                 # Lazy initialization of vector store
                 await self._retriever.initialize()
+
+                # Initialize embedding generator if not yet initialized
+                if self._embedding_generator and not self._embedding_generator._initialized:
+                    await self._embedding_generator.initialize(
+                        on_model_change=self._model_change_callback,
+                    )
+
                 # 检索相关历史对话
+                # Note: top_k and min_similarity are already set in retriever initialization
                 results = await self._retriever.retrieve(
                     query=query,
                     session_id=session_context.get("session_id") if session_context else None,
-                    top_k=self._retrieval_config.top_k,
-                    min_similarity=self._retrieval_config.min_similarity,
                 )
 
                 if results:

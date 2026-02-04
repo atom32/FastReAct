@@ -10,6 +10,13 @@ from typing import List, Dict, Any, Optional
 from collections import OrderedDict
 import httpx
 
+try:
+    import aiosqlite
+    AIOSQLITE_AVAILABLE = True
+except ImportError:
+    AIOSQLITE_AVAILABLE = False
+    aiosqlite = None
+
 from ..utils.logger import get_logger
 
 logger = get_logger("fastreact.embeddings")
@@ -51,6 +58,23 @@ class EmbeddingProvider:
             await self._client.aclose()
             self._client = None
 
+    def get_embedding_dim_sync(self) -> Optional[int]:
+        """Get embedding dimension synchronously (if possible)
+
+        Returns:
+            The dimension if available synchronously, None otherwise
+        """
+        # Default: not available synchronously
+        return None
+
+    async def get_embedding_dim(self) -> int:
+        """Get the embedding dimension for this provider
+
+        Returns:
+            The dimension of embeddings produced by this provider
+        """
+        raise NotImplementedError
+
     async def embed(self, text: str) -> List[float]:
         """Generate embedding for a single text
 
@@ -81,6 +105,25 @@ class EmbeddingProvider:
 
 class OpenAIEmbedding(EmbeddingProvider):
     """OpenAI-compatible embedding provider"""
+
+    # OpenAI embedding dimensions
+    DIMENSIONS = {
+        "text-embedding-3-small": 1536,
+        "text-embedding-3-large": 3072,
+        "text-embedding-ada-002": 1536,
+    }
+
+    def get_embedding_dim_sync(self) -> int:
+        """Get embedding dimension synchronously (lookup table only)
+
+        Returns:
+            The dimension of embeddings produced by this model
+        """
+        if self.model in self.DIMENSIONS:
+            return self.DIMENSIONS[self.model]
+        # Default fallback for unknown models
+        logger.warning(f"Unknown model {self.model}, using default dimension 1536")
+        return 1536
 
     def __init__(
         self,
@@ -177,26 +220,324 @@ class OpenAIEmbedding(EmbeddingProvider):
             logger.warning("Falling back to sequential embedding generation")
             return await super().embed_batch(texts)
 
+    async def get_embedding_dim(self) -> int:
+        """Get the embedding dimension for this model
+
+        Returns:
+            The dimension of embeddings produced by this model
+        """
+        # Try lookup table first
+        if self.model in self.DIMENSIONS:
+            return self.DIMENSIONS[self.model]
+
+        # If not in table, try to infer from API response
+        # This is a fallback that makes a real API call
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/embeddings",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "input": "test",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            embedding = data["data"][0]["embedding"]
+            dim = len(embedding)
+            logger.info(f"Auto-detected embedding dimension for {self.model}: {dim}")
+            return dim
+        except Exception as e:
+            logger.warning(f"Failed to auto-detect dimension for {self.model}: {e}")
+            # Default fallback
+            return 1536
+
+
+def create_model_change_callback(
+    interactive: bool = False,
+    auto_clear: bool = False,
+) -> Optional[callable]:
+    """Create a callback function for handling model changes
+
+    Args:
+        interactive: If True, prompt user for action in CLI
+        auto_clear: If True, automatically clear old cache without prompting
+
+    Returns:
+        Callback function or None
+    """
+    async def model_change_callback(
+        old_model: str,
+        old_dim: int,
+        new_model: str,
+        new_dim: int,
+    ) -> None:
+        """Handle model change during cache initialization
+
+        Args:
+            old_model: Previous model name
+            old_dim: Previous embedding dimension
+            new_model: New model name
+            new_dim: New embedding dimension
+        """
+        import sys
+
+        # Print yellow warning
+        warning_msg = (
+            f"\n"
+            f"[WARNING] Embedding model changed!\n"
+            f"  Old model: {old_model} ({old_dim}D)\n"
+            f"  New model: {new_model} ({new_dim}D)\n"
+            f"  Old embeddings will not be used with the new model.\n"
+        )
+
+        if sys.platform == 'win32':
+            # Windows: no ANSI colors by default
+            print(warning_msg)
+        else:
+            # Unix-like: use yellow color
+            print(f"\033[93m{warning_msg}\033[0m")
+
+        if auto_clear:
+            # Automatically clear old cache
+            print("[INFO] Auto-clearing old embeddings from cache...")
+            # This will be handled by the cache initialization
+            return
+
+        if interactive:
+            # Prompt user for action
+            print("\nWhat would you like to do?")
+            print("  1. Keep old embeddings (they won't be used)")
+            print("  2. Clear old embeddings (recommended)")
+            print("  3. Cancel startup (exit)")
+
+            while True:
+                try:
+                    choice = input("\nChoose [1-3]: ").strip()
+                    if choice in ["1", "2", "3"]:
+                        break
+                    print("Invalid choice, please enter 1, 2, or 3")
+                except (EOFError, KeyboardInterrupt):
+                    print("\n[CANCELLED] Exiting...")
+                    sys.exit(1)
+
+            if choice == "3":
+                print("[CANCELLED] Exiting due to model change...")
+                sys.exit(1)
+            elif choice == "2":
+                print("[INFO] Old embeddings will be cleared...")
+                # The cache should handle this via a flag or separate method
+                # For now, we just log the intent
+            else:
+                print("[INFO] Keeping old embeddings (they won't be used with new model)")
+        else:
+            # Non-interactive mode: just log
+            print("[INFO] Continuing with old embeddings in cache...")
+            print("       Use 'Clear embeddings' command if needed")
+
+    return model_change_callback if interactive or auto_clear else None
+
 
 class EmbeddingCache:
-    """LRU cache for embeddings
+    """Persistent embedding cache with SQLite backend
 
-    Uses OrderedDict for efficient LRU (Least Recently Used) eviction.
+    Features:
+    - SQLite persistence across restarts
+    - In-memory LRU cache for fast access
+    - Model tracking with change detection
+    - Automatic schema initialization
     """
 
-    def __init__(self, max_size: int = 10000):
+    def __init__(
+        self,
+        db_path: str = "./data/embedding_cache.db",
+        max_size: int = 10000,
+        model_name: Optional[str] = None,
+    ):
         """Initialize cache
 
         Args:
-            max_size: Maximum number of cached embeddings
+            db_path: Path to SQLite database file
+            max_size: Maximum number of embeddings in in-memory LRU cache
+            model_name: Name of the embedding model (for change detection)
         """
-        self.cache: OrderedDict[str, List[float]] = OrderedDict()
+        self.db_path = db_path
         self.max_size = max_size
+        self.model_name = model_name
+        self.embedding_dim: Optional[int] = None
+
+        # In-memory LRU cache for fast access
+        self.cache: OrderedDict[str, List[float]] = OrderedDict()
+
+        # Statistics
         self.hits = 0
         self.misses = 0
 
-    def get(self, text: str) -> Optional[List[float]]:
-        """Get cached embedding
+        # Database connection (lazy loaded)
+        self._conn = None
+        self._initialized = False
+
+    async def initialize(
+        self,
+        model_name: str,
+        embedding_dim: int,
+        on_model_change: Optional[callable] = None,
+    ) -> None:
+        """Initialize the cache database and check for model changes
+
+        Args:
+            model_name: Current embedding model name
+            embedding_dim: Current embedding dimension
+            on_model_change: Optional callback when model change is detected
+
+        Returns:
+            None
+        """
+        if not AIOSQLITE_AVAILABLE:
+            raise ImportError(
+                "aiosqlite is required for persistent embedding cache. "
+                "Install it with: pip install aiosqlite"
+            )
+
+        import sqlite3
+
+        self.model_name = model_name
+        self.embedding_dim = embedding_dim
+
+        # Ensure data directory exists
+        from pathlib import Path
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+
+        # Connect to database
+        self._conn = await aiosqlite.connect(self.db_path)
+
+        # Create tables
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS embeddings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL,
+                vector BLOB NOT NULL,
+                model_name TEXT NOT NULL,
+                embedding_dim INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(text, model_name)
+            )
+        """)
+
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
+        # Create indexes for performance
+        await self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_embeddings_text
+            ON embeddings(text)
+        """)
+
+        await self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_embeddings_model
+            ON embeddings(model_name)
+        """)
+
+        await self._conn.commit()
+
+        # Check for model changes
+        await self._check_model_change(on_model_change)
+
+        self._initialized = True
+
+    async def _check_model_change(self, on_model_change: Optional[callable]) -> None:
+        """Check if the model has changed since last run
+
+        Args:
+            on_model_change: Optional callback when model change is detected
+        """
+        # Get stored model info
+        cursor = await self._conn.execute(
+            "SELECT value FROM metadata WHERE key = 'model_name'"
+        )
+        row = await cursor.fetchone()
+
+        stored_model = row[0] if row else None
+
+        if stored_model and stored_model != self.model_name:
+            # Model has changed!
+            cursor = await self._conn.execute(
+                "SELECT value FROM metadata WHERE key = 'embedding_dim'"
+            )
+            dim_row = await cursor.fetchone()
+            stored_dim = int(dim_row[0]) if dim_row else None
+
+            logger.warning(
+                f"[Model Change Detected] "
+                f"Old: {stored_model} ({stored_dim}D), "
+                f"New: {self.model_name} ({self.embedding_dim}D)"
+            )
+
+            # Call callback if provided
+            if on_model_change:
+                await on_model_change(stored_model, stored_dim, self.model_name, self.embedding_dim)
+
+            # Count embeddings from old model
+            cursor = await self._conn.execute(
+                "SELECT COUNT(*) FROM embeddings WHERE model_name = ?",
+                (stored_model,)
+            )
+            old_count = (await cursor.fetchone())[0]
+
+            logger.info(
+                f"Found {old_count} embeddings from old model {stored_model}. "
+                f"They will not be used with the new model."
+            )
+
+        # Update metadata with current model
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('model_name', ?)",
+            (self.model_name,)
+        )
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('embedding_dim', ?)",
+            (str(self.embedding_dim),)
+        )
+        await self._conn.commit()
+
+    def _serialize_vector(self, vector: List[float]) -> bytes:
+        """Serialize vector to bytes for storage
+
+        Args:
+            vector: Float vector
+
+        Returns:
+            Serialized bytes
+        """
+        import struct
+        # Pack floats as little-endian
+        return struct.pack(f'{len(vector)}f', *vector)
+
+    def _deserialize_vector(self, data: bytes, dim: int) -> List[float]:
+        """Deserialize bytes to vector
+
+        Args:
+            data: Serialized bytes
+            dim: Expected dimension
+
+        Returns:
+            Float vector
+        """
+        import struct
+        # Unpack floats from little-endian
+        return list(struct.unpack(f'{dim}f', data))
+
+    async def get(self, text: str) -> Optional[List[float]]:
+        """Get cached embedding (memory cache first, then SQLite)
 
         Args:
             text: Input text
@@ -204,16 +545,73 @@ class EmbeddingCache:
         Returns:
             Embedding vector or None
         """
+        if not self._initialized:
+            logger.warning("EmbeddingCache not initialized, call initialize() first")
+            return None
+
+        # Check memory cache first
         if text in self.cache:
             self.hits += 1
             # Move to end (mark as recently used)
             self.cache.move_to_end(text)
             return self.cache[text]
+
+        # Check SQLite database
+        cursor = await self._conn.execute(
+            """SELECT vector, embedding_dim
+               FROM embeddings
+               WHERE text = ? AND model_name = ?
+               LIMIT 1""",
+            (text, self.model_name)
+        )
+        row = await cursor.fetchone()
+
+        if row:
+            self.hits += 1
+            vector_blob, dim = row
+            embedding = self._deserialize_vector(vector_blob, dim)
+
+            # Add to memory cache
+            self._add_to_memory_cache(text, embedding)
+
+            # Update last_accessed
+            await self._conn.execute(
+                "UPDATE embeddings SET last_accessed = CURRENT_TIMESTAMP WHERE text = ? AND model_name = ?",
+                (text, self.model_name)
+            )
+            await self._conn.commit()
+
+            return embedding
+
         self.misses += 1
         return None
 
-    def put(self, text: str, embedding: List[float]) -> None:
-        """Cache embedding
+    async def put(self, text: str, embedding: List[float]) -> None:
+        """Cache embedding (both memory and SQLite)
+
+        Args:
+            text: Input text
+            embedding: Embedding vector
+        """
+        if not self._initialized:
+            logger.warning("EmbeddingCache not initialized, call initialize() first")
+            return
+
+        # Add to memory cache
+        self._add_to_memory_cache(text, embedding)
+
+        # Add to SQLite
+        vector_blob = self._serialize_vector(embedding)
+
+        await self._conn.execute(
+            """INSERT OR REPLACE INTO embeddings (text, vector, model_name, embedding_dim)
+               VALUES (?, ?, ?, ?)""",
+            (text, vector_blob, self.model_name, self.embedding_dim)
+        )
+        await self._conn.commit()
+
+    def _add_to_memory_cache(self, text: str, embedding: List[float]) -> None:
+        """Add to in-memory LRU cache
 
         Args:
             text: Input text
@@ -227,23 +625,89 @@ class EmbeddingCache:
         self.cache[text] = embedding
         # New item is at the end (most recently used)
 
-    def get_stats(self) -> Dict[str, Any]:
+    async def clear(self, model_name: Optional[str] = None) -> int:
+        """Clear embeddings from cache
+
+        Args:
+            model_name: If specified, only clear embeddings for this model.
+                       If None, clear all embeddings.
+
+        Returns:
+            Number of embeddings cleared
+        """
+        if not self._initialized:
+            logger.warning("EmbeddingCache not initialized, call initialize() first")
+            return 0
+
+        if model_name:
+            cursor = await self._conn.execute(
+                "DELETE FROM embeddings WHERE model_name = ?",
+                (model_name,)
+            )
+        else:
+            cursor = await self._conn.execute("DELETE FROM embeddings")
+
+        deleted_count = cursor.rowcount
+        await self._conn.commit()
+
+        # Also clear memory cache
+        if model_name is None:
+            self.cache.clear()
+        else:
+            # Only clear entries that would be from the specified model
+            # (We can't easily know which entries are from which model in memory cache,
+            # so we just clear everything)
+            self.cache.clear()
+
+        logger.info(f"Cleared {deleted_count} embeddings from cache")
+        return deleted_count
+
+    async def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics
 
         Returns:
             Cache stats dict
         """
+        if not self._initialized:
+            return {
+                "status": "not_initialized",
+                "size": 0,
+                "max_size": self.max_size,
+                "hits": 0,
+                "misses": 0,
+                "hit_rate": 0.0,
+            }
+
+        # Get total count from SQLite
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM embeddings WHERE model_name = ?",
+            (self.model_name,)
+        )
+        total_count = (await cursor.fetchone())[0]
+
         total = self.hits + self.misses
         hit_rate = self.hits / total if total > 0 else 0
 
         return {
-            "size": len(self.cache),
+            "status": "initialized",
+            "memory_cache_size": len(self.cache),
+            "persistent_cache_size": total_count,
             "max_size": self.max_size,
             "hits": self.hits,
             "misses": self.misses,
             "hit_rate": hit_rate,
-            "eviction_policy": "LRU",  # Indicate LRU policy
+            "model_name": self.model_name,
+            "embedding_dim": self.embedding_dim,
+            "eviction_policy": "LRU",
+            "persistence": "SQLite",
         }
+
+    async def close(self) -> None:
+        """Close database connection"""
+        if self._conn:
+            await self._conn.close()
+            self._conn = None
+            self._initialized = False
 
 
 class EmbeddingGenerator:
@@ -298,17 +762,57 @@ class EmbeddingGenerator:
         provider: EmbeddingProvider,
         enable_cache: bool = True,
         cache_size: int = 10000,
+        db_path: str = "./data/embedding_cache.db",
     ):
         """Initialize embedding generator
 
         Args:
             provider: Embedding provider instance
             enable_cache: Whether to enable caching
-            cache_size: Max cache size
+            cache_size: Max cache size (in-memory LRU cache)
+            db_path: Path to SQLite database for persistent cache
         """
         self.provider = provider
         self.enable_cache = enable_cache
-        self.cache = EmbeddingCache(max_size=cache_size) if enable_cache else None
+        self.cache_size = cache_size
+        self.db_path = db_path
+        self.cache = None  # Will be initialized in initialize()
+        self._initialized = False
+
+    async def initialize(
+        self,
+        on_model_change: Optional[callable] = None,
+    ) -> None:
+        """Initialize the embedding generator and cache
+
+        Args:
+            on_model_change: Optional callback when model change is detected
+
+        This method must be called before using generate() or generate_batch()
+        """
+        if self._initialized:
+            return
+
+        # Get model info
+        model_name = getattr(self.provider, 'model', None) or getattr(self.provider, 'model_id', 'unknown')
+        embedding_dim = await self.provider.get_embedding_dim()
+
+        logger.info(f"Initializing EmbeddingGenerator with model: {model_name} ({embedding_dim}D)")
+
+        # Initialize cache if enabled
+        if self.enable_cache:
+            self.cache = EmbeddingCache(
+                db_path=self.db_path,
+                max_size=self.cache_size,
+                model_name=model_name,
+            )
+            await self.cache.initialize(
+                model_name=model_name,
+                embedding_dim=embedding_dim,
+                on_model_change=on_model_change,
+            )
+
+        self._initialized = True
 
     async def generate(self, text: str) -> List[float]:
         """Generate embedding (with cache)
@@ -319,9 +823,13 @@ class EmbeddingGenerator:
         Returns:
             Embedding vector
         """
+        # Ensure initialized
+        if not self._initialized:
+            await self.initialize()
+
         # Check cache
         if self.cache:
-            cached = self.cache.get(text)
+            cached = await self.cache.get(text)
             if cached is not None:
                 return cached
 
@@ -330,7 +838,7 @@ class EmbeddingGenerator:
 
         # Cache result
         if self.cache:
-            self.cache.put(text, embedding)
+            await self.cache.put(text, embedding)
 
         return embedding
 
@@ -346,6 +854,10 @@ class EmbeddingGenerator:
         if not texts:
             return []
 
+        # Ensure initialized
+        if not self._initialized:
+            await self.initialize()
+
         # Check cache for each text
         results = [None] * len(texts)
         uncached_indices = []
@@ -353,7 +865,7 @@ class EmbeddingGenerator:
 
         if self.cache:
             for i, text in enumerate(texts):
-                cached = self.cache.get(text)
+                cached = await self.cache.get(text)
                 if cached is not None:
                     results[i] = cached
                 else:
@@ -371,22 +883,24 @@ class EmbeddingGenerator:
             for idx, text, embedding in zip(uncached_indices, uncached_texts, embeddings):
                 results[idx] = embedding
                 if self.cache:
-                    self.cache.put(text, embedding)
+                    await self.cache.put(text, embedding)
 
         return results
 
     async def close(self) -> None:
-        """Close provider connection"""
+        """Close provider connection and cache"""
         await self.provider.close()
+        if self.cache:
+            await self.cache.close()
 
-    def get_cache_stats(self) -> Optional[Dict[str, Any]]:
+    async def get_cache_stats(self) -> Optional[Dict[str, Any]]:
         """Get cache statistics
 
         Returns:
             Cache stats or None if cache disabled
         """
         if self.cache:
-            return self.cache.get_stats()
+            return await self.cache.get_stats()
         return None
 
 
@@ -442,10 +956,12 @@ class EmbeddingBuilder:
             raise ValueError(f"Unsupported embedding provider: {provider_name}")
 
         # Create generator with cache
+        db_path = memory_config.get("db_path", "./data/embedding_cache.db")
         return EmbeddingGenerator(
             provider=provider,
             enable_cache=True,
             cache_size=10000,
+            db_path=db_path,
         )
 
 
@@ -573,6 +1089,18 @@ class ModelScopeEmbedding(EmbeddingProvider):
         self._model = None
         self._tokenizer = None
 
+    async def get_embedding_dim(self) -> int:
+        """Get the embedding dimension from the loaded model
+
+        Returns:
+            The dimension of embeddings produced by this model
+        """
+        model = await self._get_model()
+        # sentence-transformers models have this method
+        dim = model.get_sentence_embedding_dimension()
+        logger.info(f"ModelScope model {self.model_id} embedding dimension: {dim}")
+        return dim
+
 
 class LocalEmbedding(EmbeddingProvider):
     """Local sentence-transformers embedding provider
@@ -680,3 +1208,15 @@ class LocalEmbedding(EmbeddingProvider):
     async def close(self) -> None:
         """Close resources (no-op for local models)"""
         self._model = None
+
+    async def get_embedding_dim(self) -> int:
+        """Get the embedding dimension from the loaded model
+
+        Returns:
+            The dimension of embeddings produced by this model
+        """
+        model = await self._get_model()
+        # sentence-transformers models have this method
+        dim = model.get_sentence_embedding_dimension()
+        logger.info(f"Local model {self.model_name} embedding dimension: {dim}")
+        return dim

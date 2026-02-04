@@ -226,7 +226,7 @@ class RetrievalConfig:
     # Embedding provider configuration
     provider: str = "modelscope"
     embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
-    embedding_dim: int = 1024  # Qwen3 is 1024 dimensions
+    embedding_dim: int = 1536  # Auto-detected from model, fallback only
     device: str = "cuda"  # "cuda" or "cpu"
 
     # Vector store configuration
@@ -279,7 +279,7 @@ class RetrievalConfig:
             enabled=retrieval_cfg.get("enabled", False),
             provider=retrieval_cfg.get("provider", "modelscope"),
             embedding_model=retrieval_cfg.get("embedding_model", "Qwen/Qwen3-Embedding-0.6B"),
-            embedding_dim=retrieval_cfg.get("embedding_dim", 1024),
+            embedding_dim=retrieval_cfg.get("embedding_dim", 1536),  # Auto-detected, fallback only
             device=retrieval_cfg.get("device", "cuda"),
             vector_store=retrieval_cfg.get("vector_store", "sqlite_vec"),
             db_path=retrieval_cfg.get("db_path", "./data/memory.db"),
