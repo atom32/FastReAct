@@ -62,28 +62,27 @@ class MemoryFlush:
             logger.debug(f"Skipping flush, already flushed in iteration {iteration}")
             return False
 
-        # Calculate thresholds
+        # Get threshold values (these represent USED token counts)
         reserve = self.config.reserve_tokens
         soft_threshold = self.config.memory_flush_soft_threshold
         hard_threshold = self.config.memory_flush_hard_threshold
 
-        # Calculate available space
+        # Validate thresholds
         available = context_window - reserve
-        soft_trigger = available - soft_threshold
-        hard_trigger = available - hard_threshold
 
-        # Check thresholds
-        if current_tokens >= hard_trigger:
+        # Check hard threshold first (more aggressive)
+        if current_tokens >= hard_threshold:
             logger.warning(
-                f"Hard threshold exceeded: {current_tokens} >= {hard_trigger}, "
-                f"forcing memory flush"
+                f"Hard threshold exceeded: {current_tokens} >= {hard_threshold} tokens, "
+                f"forcing memory flush (available: {available}, reserve: {reserve})"
             )
             return True
 
-        if current_tokens >= soft_trigger:
+        # Check soft threshold
+        if current_tokens >= soft_threshold:
             logger.info(
-                f"Soft threshold reached: {current_tokens} >= {soft_trigger}, "
-                f"triggering memory flush"
+                f"Soft threshold reached: {current_tokens} >= {soft_threshold} tokens, "
+                f"triggering memory flush (available: {available}, reserve: {reserve})"
             )
             return True
 

@@ -1,0 +1,18 @@
+{
+  "llm": {
+    "providers": {
+      "siliconflow": {
+        "api_key": "your-siliconflow-api-key",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "model": "deepseek-ai/DeepSeek-V3"
+      }
+    },
+    "default_provider": "siliconflow"
+  },
+
+  "tools": {
+    "tavily": {
+      "api_key": "your-tavily-api-key-here"
+    }
+  }
+}

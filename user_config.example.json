@@ -1,0 +1,50 @@
+# FastReAct User Configuration Template
+#
+# This is the USER configuration (personal API keys)
+#
+# Location: ~/.fastreact/config.json
+#
+# Setup:
+#   mkdir -p ~/.fastreact
+#   cp user_config.example.json ~/.fastreact/config.json
+#   # Edit ~/.fastreact/config.json and add your API keys
+#
+# Security:
+#   - NEVER commit this file to Git
+#   - Already in .gitignore
+#   - Contains personal API keys
+
+{
+  "_comment": "FastReAct user configuration (personal API keys)",
+
+  "llm": {
+    "providers": {
+      "siliconflow": {
+        "api_key": "YOUR_SILICONFLOW_KEY_HERE",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "model": "deepseek-ai/DeepSeek-V3"
+      },
+      "openai": {
+        "enabled": false,
+        "api_key": "YOUR_OPENAI_KEY_HERE",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4"
+      },
+      "ollama": {
+        "enabled": false,
+        "base_url": "http://localhost:11434/v1",
+        "model": "llama3.1"
+      }
+    }
+  },
+
+  "mcp": {
+    "servers": {
+      "github": {
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN_HERE"
+        }
+      }
+    }
+  }
+}

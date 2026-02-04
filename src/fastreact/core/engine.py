@@ -12,6 +12,7 @@ import asyncio
 import json
 import re
 import time
+import anyio
 from collections import deque
 from typing import Any, Callable, Dict, List, Optional, AsyncIterator
 
@@ -74,11 +75,12 @@ def prune_tool_output(result: str, max_lines: int = 100) -> str:
     hidden_count = len(lines) - max_lines
 
     # Build truncated output with guidance for LLM
+    nl = '\n'
     truncated = (
         f"Output (truncated, {len(lines)} total lines):\n"
-        f"{''.join(f'{line}\n' for line in head_lines)}"
+        f"{''.join(f'{line}{nl}' for line in head_lines)}"
         f"... {hidden_count} lines hidden ...\n"
-        f"{''.join(f'{line}\n' for line in tail_lines)}\n"
+        f"{''.join(f'{line}{nl}' for line in tail_lines)}"
         f"[INFO] Output was truncated. Use grep or read specific line ranges to see missing parts."
     )
 
@@ -268,6 +270,41 @@ class FastReAct:
             except Exception as e:
                 logger.warning(f"Failed to initialize Memory Flush: {e}")
 
+        # Progressive Compaction (if enabled)
+        self._compaction = None
+        if context_config and context_config.compaction and context_config.compaction.enabled:
+            try:
+                from ..context import Summarizer, ProgressiveCompaction
+
+                # Create summarizer for compaction (reuse if exists)
+                if context_config.memory_flush_enabled:
+                    # Reuse the summarizer created for Memory Flush
+                    compaction_summarizer = summarizer
+                else:
+                    # Create new summarizer for compaction
+                    compaction_summarizer = Summarizer(
+                        api_key=api_key,
+                        base_url=base_url,
+                        model=model,
+                        temperature=0.3,  # Lower temperature for consistent summaries
+                    )
+
+                # Create progressive compaction
+                self._compaction = ProgressiveCompaction(
+                    summarizer=compaction_summarizer,
+                    base_chunk_ratio=context_config.compaction.base_chunk_ratio,
+                    min_chunk_ratio=context_config.compaction.min_chunk_ratio,
+                    safety_margin=context_config.compaction.safety_margin,
+                    summary_levels=context_config.compaction.summary_levels,
+                )
+                logger.info(
+                    f"Progressive Compaction enabled: "
+                    f"trigger_threshold={context_config.compaction.trigger_threshold_tokens} tokens, "
+                    f"auto_compact={context_config.compaction.auto_compact}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to initialize Progressive Compaction: {e}")
+
         # Memory Retriever (if enabled)
         self._retriever = None
         self._retrieval_config = self._context_config.retrieval if self._context_config else None
@@ -391,6 +428,83 @@ class FastReAct:
             callback: 接收进度消息的回调函数，参数为字符串
         """
         self._progress_callback = callback
+
+    def set_workspace(self, workspace: str, db_path: Optional[str] = None) -> None:
+        """动态切换工作区（多租户支持）
+
+        允许在运行时切换 RAG 检索的工作区，支持多租户场景。
+        切换后，所有后续检索操作将使用新的工作区。
+
+        Args:
+            workspace: 新的工作区路径（支持绝对或相对路径）
+            db_path: 可选的向量数据库路径。如果不提供，将在 workspace 目录下创建 memory.db
+
+        Examples:
+            >>> agent.set_workspace("./tenant_a/docs")
+            >>> agent.set_workspace("/data/tenant_b/knowledge")
+            >>> agent.set_workspace("./tenant_c", db_path="./tenant_c/memory.db")
+
+        Multi-Tenant Usage:
+            >>> # Tenant A
+            >>> agent.set_workspace("./tenants/a/docs")
+            >>> result_a = await agent.run_async("查询 A 的文档")
+            >>>
+            >>> # Tenant B
+            >>> agent.set_workspace("./tenants/b/docs")
+            >>> result_b = await agent.run_async("查询 B 的文档")
+        """
+        import os
+
+        # Convert to absolute path for consistency
+        workspace_abs = os.path.abspath(workspace)
+
+        # Generate db_path if not provided
+        if db_path is None:
+            db_path = os.path.join(workspace_abs, "memory.db")
+
+        # Update workspace attribute
+        self.workspace = workspace_abs
+
+        # Update retrieval config if retriever is enabled
+        if self._retrieval_config:
+            # Update workspace_paths
+            self._retrieval_config.workspace_paths = [workspace_abs]
+
+            # Update db_path
+            self._retrieval_config.db_path = os.path.abspath(db_path)
+
+            logger.info(
+                f"Workspace switched: path={workspace_abs}, "
+                f"db={self._retrieval_config.db_path}"
+            )
+
+            # Re-initialize retriever with new config
+            if self._retriever is not None:
+                try:
+                    # Close old retriever resources
+                    if hasattr(self._retriever, 'close'):
+                        self._retriever.close()
+
+                    # Re-setup retriever with new config
+                    self._setup_retriever()
+
+                    logger.info("Memory Retriever re-initialized with new workspace")
+                except Exception as e:
+                    logger.error(f"Failed to re-initialize retriever: {e}")
+                    # Keep old retriever if re-init fails
+        else:
+            logger.info(
+                f"Workspace updated (RAG disabled): {workspace_abs}. "
+                f"Enable retrieval config to use RAG."
+            )
+
+    def get_workspace(self) -> Optional[str]:
+        """获取当前工作区路径
+
+        Returns:
+            当前工作区的绝对路径，如果未设置则返回 None
+        """
+        return self.workspace
 
     def _get_context_builder(self) -> ContextBuilder:
         """获取或创建 ContextBuilder 实例
@@ -552,29 +666,33 @@ class FastReAct:
                 logger.error(f"Failed to register server '{server_name}': {e}")
 
         # Connect to all servers and fetch tools
+        # Note: We DON'T use auto_connect() as a context manager here
+        # because we need to keep connections alive for the agent's lifetime
         try:
-            async with self._mcp_manager.auto_connect():
-                # Get server status
-                status = self._mcp_manager.get_server_status()
-                connected_count = sum(1 for connected in status.values() if connected)
-                logger.info(f"MCP: Connected to {connected_count}/{len(servers_config)} server(s)")
+            # Connect to all servers
+            await self._mcp_manager.connect_all()
 
-                # Show connection details
-                for server_name, connected in status.items():
-                    status_str = "[OK]" if connected else "[FAILED]"
-                    logger.info(f"  {status_str} {server_name}")
+            # Get server status
+            status = self._mcp_manager.get_server_status()
+            connected_count = sum(1 for connected in status.values() if connected)
+            logger.info(f"MCP: Connected to {connected_count}/{len(servers_config)} server(s)")
 
-                # Fetch and register tools
-                mcp_tools = await self._mcp_manager.get_all_tools()
-                logger.info(f"MCP: Fetched {len(mcp_tools)} tool(s)")
+            # Show connection details
+            for server_name, connected in status.items():
+                status_str = "[OK]" if connected else "[FAILED]"
+                logger.info(f"  {status_str} {server_name}")
 
-                # Register each MCP tool
-                for tool in mcp_tools:
-                    self.register_tool(tool)
-                    logger.info(f"  [+] {tool.name} ({tool.group})")
+            # Fetch and register tools
+            mcp_tools = await self._mcp_manager.get_all_tools()
+            logger.info(f"MCP: Fetched {len(mcp_tools)} tool(s)")
 
-                logger.info(f"MCP: Registered {len(mcp_tools)} tool(s) successfully")
-                self._mcp_loaded = True
+            # Register each MCP tool
+            for tool in mcp_tools:
+                self.register_tool(tool)
+                logger.info(f"  [+] {tool.name} ({tool.group})")
+
+            logger.info(f"MCP: Registered {len(mcp_tools)} tool(s) successfully")
+            self._mcp_loaded = True
 
         except Exception as e:
             error_msg = str(e)
@@ -673,6 +791,84 @@ class FastReAct:
 
                 except Exception as e:
                     logger.error(f"Memory Flush failed, continuing with original history: {e}")
+
+        # ========== Progressive Compaction ==========
+        if history and self._compaction and context_config.compaction.auto_compact:
+            # 计算当前 token 数
+            from ..context import TokenCounter
+            counter = TokenCounter(model=self.model)
+
+            history_tokens = counter.count_messages_tokens(history)
+            system_tokens = counter.count_system_prompt_tokens(system_prompt)
+            query_tokens = counter.count_tokens(query)
+            total_tokens = system_tokens + history_tokens + query_tokens
+
+            # 检查是否需要渐进式压缩（阈值通常比 Memory Flush 高）
+            trigger_threshold = context_config.compaction.trigger_threshold_tokens
+            if total_tokens >= trigger_threshold:
+                logger.info(
+                    f"Progressive Compaction triggered at iteration {iteration}: "
+                    f"{total_tokens} tokens >= {trigger_threshold} threshold"
+                )
+
+                try:
+                    # 计算目标压缩级别（基于超出的 token 数量）
+                    excess_tokens = total_tokens - trigger_threshold
+                    if excess_tokens > 20000:
+                        target_level = 3  # Ultra-compressed
+                    elif excess_tokens > 10000:
+                        target_level = 2  # Compressed
+                    else:
+                        target_level = 1  # Single summary
+
+                    logger.info(f"Compaction target level: {target_level}")
+
+                    # 执行压缩
+                    compaction_result = await self._compaction.compact(
+                        messages=history,
+                        target_level=target_level,
+                        current_tokens=total_tokens,
+                        context_window=self._llm_config.context_window,
+                    )
+
+                    # 将压缩结果转换为消息格式
+                    if compaction_result.compressed_text:
+                        # 创建压缩历史消息
+                        compacted_message = {
+                            "role": "system",
+                            "content": (
+                                f"[Compacted Conversation History - Level {target_level}]\n"
+                                f"Original: {compaction_result.original_tokens} tokens, "
+                                f"Compressed: {compaction_result.compressed_tokens} tokens "
+                                f"({compaction_result.compression_ratio:.1%})\n\n"
+                                f"{compaction_result.compressed_text}"
+                            ),
+                        }
+
+                        # 替换历史为压缩版本
+                        history = [compacted_message]
+
+                        # 存储压缩元数据
+                        if session_context:
+                            if "compaction_metadata" not in session_context:
+                                session_context["compaction_metadata"] = []
+                            session_context["compaction_metadata"].append({
+                                "level": target_level,
+                                "original_tokens": compaction_result.original_tokens,
+                                "compressed_tokens": compaction_result.compressed_tokens,
+                                "compression_ratio": compaction_result.compression_ratio,
+                                "preserved_nodes": compaction_result.preserved_nodes,
+                            })
+
+                        logger.info(
+                            f"Progressive Compaction complete: "
+                            f"{compaction_result.original_tokens} -> "
+                            f"{compaction_result.compressed_tokens} tokens "
+                            f"({compaction_result.compression_ratio:.1%} ratio)"
+                        )
+
+                except Exception as e:
+                    logger.error(f"Progressive Compaction failed, continuing with original history: {e}")
 
         # ========== 记忆检索 ==========
         retrieved_context = ""
@@ -1816,7 +2012,7 @@ class FastReAct:
         """
         同步运行 ReACT 循环（兼容性接口）
 
-        ⚠️ 警告：此方法仅用于简单的同步场景。
+        [WARNING] 警告：此方法仅用于简单的同步场景。
 
         强烈推荐使用异步接口：
         - 在异步代码中：使用 `await run_async(...)`
@@ -1857,8 +2053,19 @@ class FastReAct:
             # 没有运行的事件循环，可以安全使用 asyncio.run
             pass
 
-        # 没有事件循环，使用 asyncio.run
-        return asyncio.run(self.run_async(query, stream_callback, step_callback))
+        # 检查是否启用了 MCP
+        # 如果启用了 MCP，使用 anyio.run() 以修复 Windows 兼容性问题
+        # MCP SDK 的 HTTP 客户端在 Windows 上需要 anyio 事件循环
+        use_anyio = self._mcp_enabled and self.config.get("mcp", {}).get("enabled", False)
+
+        if use_anyio:
+            # 使用 anyio 运行（MCP 兼容模式）
+            async def run_with_anyio():
+                return await self.run_async(query, stream_callback, step_callback)
+            return anyio.run(run_with_anyio)
+        else:
+            # 没有事件循环，使用 asyncio.run（默认模式）
+            return asyncio.run(self.run_async(query, stream_callback, step_callback))
 
     def get_stats(self) -> Dict[str, Any]:
         """获取性能统计"""

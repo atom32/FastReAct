@@ -1,5 +1,11 @@
 """
-Configuration loader with environment variable support
+Configuration loader with multi-layer priority support
+
+Priority (highest to lowest):
+1. Environment variables (ENV) - CI/CD, multi-tenant
+2. User configuration (~/.fastreact/config.json) - Personal API keys
+3. Project configuration (./config.json) - Team shared settings
+4. Default values (code) - Fallback
 """
 
 import os
@@ -7,26 +13,40 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+# Import the new ConfigManager for 4-layer configuration
+try:
+    from fastreact.core.config_manager import ConfigManager
+    _USE_CONFIG_MANAGER = True
+except ImportError:
+    _USE_CONFIG_MANAGER = False
+
 
 def load_config(
     config_path: Optional[str] = None,
     env_prefix: str = "FASTREACT"
 ) -> Dict[str, Any]:
     """
-    Load configuration from file and environment variables
+    Load configuration from multiple sources with priority
 
-    Priority:
-    1. Environment variables (highest)
-    2. Config file
-    3. Default values (lowest)
+    Priority (highest to lowest):
+    1. Environment variables (ENV)
+    2. User configuration (~/.fastreact/config.json)
+    3. Project configuration (./config.json)
+    4. Default values (code)
 
     Args:
-        config_path: Path to config.json (default: ./config.json)
+        config_path: Path to config.json (default: auto-detect)
         env_prefix: Prefix for environment variables (default: FASTREACT)
 
     Returns:
         Merged configuration dictionary
     """
+    # Use new ConfigManager if available (4-layer priority)
+    if _USE_CONFIG_MANAGER:
+        manager = ConfigManager(project_root=Path.cwd())
+        return manager.get_config()
+
+    # Fallback to old 3-layer system
     config = _get_default_config()
 
     # Load from file
@@ -170,27 +190,32 @@ def get_api_key(config: Optional[Dict[str, Any]] = None) -> str:
     if config is None:
         config = load_config()
 
-    # Try config first
-    api_key = config.get("llm", {}).get("api_key")
-    if api_key:
-        return api_key
-
-    # Try provider-specific config
-    default_provider = config.get("llm", {}).get("default_provider", "siliconflow")
-    provider_config = config.get("llm", {}).get("providers", {}).get(default_provider, {})
-    api_key = provider_config.get("api_key")
-
-    if api_key:
-        return api_key
-
-    # Try environment variable
+    # Try environment variable first (highest priority)
     api_key = os.getenv("FASTREACT_API_KEY")
     if api_key:
         return api_key
 
+    # Try provider-specific config (new format from ConfigManager)
+    default_provider = config.get("llm", {}).get("default_provider", "siliconflow")
+    providers = config.get("llm", {}).get("providers", {})
+
+    if providers and default_provider in providers:
+        provider_config = providers[default_provider]
+        api_key = provider_config.get("api_key")
+        if api_key:
+            return api_key
+
+    # Try old format (llm.api_key)
+    api_key = config.get("llm", {}).get("api_key")
+    if api_key:
+        return api_key
+
     raise ValueError(
-        "API key not found. Set FASTREACT_API_KEY environment variable "
-        "or add api_key to config.json"
+        "API key not found. Options:\n"
+        "  1. Set FASTREACT_API_KEY environment variable\n"
+        "  2. Add api_key to ~/.fastreact/config.json (recommended for personal use)\n"
+        "  3. Add api_key to ./config.json (for team use, be careful not to commit)\n"
+        "Run 'python test_config_priority.py' to check your configuration."
     )
 
 
@@ -199,21 +224,23 @@ def get_base_url(config: Optional[Dict[str, Any]] = None) -> str:
     if config is None:
         config = load_config()
 
-    # Try environment
+    # Try environment first (highest priority)
     base_url = os.getenv("FASTREACT_BASE_URL")
     if base_url:
         return base_url
 
-    # Try config
-    base_url = config.get("llm", {}).get("base_url")
-    if base_url:
-        return base_url
-
-    # Try provider config
+    # Try provider-specific config (new format from ConfigManager)
     default_provider = config.get("llm", {}).get("default_provider", "siliconflow")
-    provider_config = config.get("llm", {}).get("providers", {}).get(default_provider, {})
-    base_url = provider_config.get("base_url")
+    providers = config.get("llm", {}).get("providers", {})
 
+    if providers and default_provider in providers:
+        provider_config = providers[default_provider]
+        base_url = provider_config.get("base_url")
+        if base_url:
+            return base_url
+
+    # Try old format (llm.base_url)
+    base_url = config.get("llm", {}).get("base_url")
     if base_url:
         return base_url
 
@@ -225,21 +252,23 @@ def get_model(config: Optional[Dict[str, Any]] = None) -> str:
     if config is None:
         config = load_config()
 
-    # Try environment
+    # Try environment first (highest priority)
     model = os.getenv("FASTREACT_MODEL")
     if model:
         return model
 
-    # Try config
-    model = config.get("llm", {}).get("model")
-    if model:
-        return model
-
-    # Try provider config
+    # Try provider-specific config (new format from ConfigManager)
     default_provider = config.get("llm", {}).get("default_provider", "siliconflow")
-    provider_config = config.get("llm", {}).get("providers", {}).get(default_provider, {})
-    model = provider_config.get("model")
+    providers = config.get("llm", {}).get("providers", {})
 
+    if providers and default_provider in providers:
+        provider_config = providers[default_provider]
+        model = provider_config.get("model")
+        if model:
+            return model
+
+    # Try old format (llm.model)
+    model = config.get("llm", {}).get("model")
     if model:
         return model
 

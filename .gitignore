@@ -48,11 +48,25 @@ Thumbs.db
 *.log
 *.db
 
-# Sensitive configuration
+# Sensitive configuration (CRITICAL: Never commit API keys!)
 config.json
-config.*.json
+config.local.json
+# Exception: Allow example files
+!config.example.json
+!user_config.example.json
+
+# User configuration (personal API keys)
+.fastreact/
+# Exception: Allow example files in user config dir
+!.fastreact/*.example
+!.fastreact/*.example.json
+
+# Other configuration templates
 !.env.example
-!.config.example.json
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/settings.*.json
 
 # Claude Code local settings
 .claude/settings.local.json
@@ -62,7 +76,8 @@ config.*.json
 test_*.py
 test_*.json
 verify_*.py
-# Exception: Keep MCP verification suite
+# Exceptions: Keep important test scripts
+!test_config_priority.py
 !tests/mcp_verification/verify_*.py
 
 # Temporary MCP configs
