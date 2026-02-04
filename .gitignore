@@ -62,6 +62,8 @@ config.*.json
 test_*.py
 test_*.json
 verify_*.py
+# Exception: Keep MCP verification suite
+!tests/mcp_verification/verify_*.py
 
 # Temporary MCP configs
 mcp_config*.json
