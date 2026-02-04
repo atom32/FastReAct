@@ -12,6 +12,7 @@ Interactive REPL - 交互式命令行界面
 import sys
 import os
 import asyncio
+import anyio
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -155,15 +156,17 @@ class REPLState:
 class InteractiveREPL:
     """交互式 REPL"""
 
-    def __init__(self, use_prompt_toolkit: bool = None):
+    def __init__(self, use_prompt_toolkit: bool = None, session_to_load: Optional[Path] = None):
         """
         初始化 REPL
 
         Args:
             use_prompt_toolkit: 是否使用 prompt_toolkit (None=自动检测)
+            session_to_load: 要加载的会话文件路径 (可选)
         """
         self.state = REPLState()
         self.running = True
+        self.session_to_load = session_to_load
 
         # 自动检测是否使用 prompt_toolkit
         if use_prompt_toolkit is None:
@@ -242,7 +245,8 @@ class InteractiveREPL:
                 "FastReAct Interactive Shell\n\n"
                 "Type 'help' for available commands\n"
                 "Type 'exit' or 'quit' to exit\n"
-                "Type Ctrl+D to exit",
+                "Type Ctrl+D to exit\n"
+                "Start with ''' for multi-line input",
                 title="FastReAct",
                 border_style="cyan"
             ))
@@ -254,6 +258,7 @@ class InteractiveREPL:
             print("=" * 60)
             print("Type 'help' for available commands")
             print("Type 'exit' or 'quit' to exit")
+            print("Start with ''' for multi-line input")
             print()
 
     def print_output(self, text: str, style: str = "") -> None:
@@ -381,6 +386,15 @@ class InteractiveREPL:
             filename = cmd[5:].strip()
             return await self.cmd_load_session(filename)
 
+        # /workspace - 切换工作区（多租户支持）
+        elif cmd.startswith('workspace '):
+            path = cmd[10:].strip()
+            return await self.cmd_workspace(path)
+
+        # /workspace - 查看当前工作区
+        elif cmd == 'workspace':
+            return await self.cmd_workspace(None)
+
         else:
             self.print_error(f"Unknown quick command: /{cmd}")
             self.print_output("Quick commands: /r, /!, /s, /t, /c, /save <file>, /load <file>")
@@ -402,6 +416,7 @@ class InteractiveREPL:
             basic = [
                 ("run <query>", "Execute a query (keeps context)"),
                 ("chat", "Interactive chat mode"),
+                ('">>>" or """', "Multi-line input mode"),
                 ("help", "Show this help"),
                 ("exit/quit", "Exit the shell"),
             ]
@@ -417,6 +432,7 @@ class InteractiveREPL:
                 ("/s", "Toggle streaming output"),
                 ("/t", "Toggle show thoughts"),
                 ("/c", "Toggle compact mode"),
+                ("/workspace [path]", "Switch or view workspace"),
                 ("/save <file>", "Save session"),
                 ("/load <file>", "Load session"),
             ]
@@ -464,6 +480,7 @@ class InteractiveREPL:
             basic = [
                 ("run <query>", "Execute a query"),
                 ("chat", "Interactive chat mode"),
+                ('">>>" or """', "Multi-line input mode"),
                 ("help", "Show help"),
                 ("exit/quit", "Exit"),
             ]
@@ -1047,6 +1064,68 @@ class InteractiveREPL:
 
         return True
 
+    async def cmd_workspace(self, args: str) -> bool:
+        """切换或查看工作区（多租户支持）"""
+        import os
+
+        agent = self.state.get_or_create_agent()
+        if agent is None:
+            self.print_error("No active agent")
+            return True
+
+        # View current workspace
+        if args is None or args == "":
+            current = agent.get_workspace()
+            if current:
+                self.print_output(f"Current workspace: {current}")
+                # Show retrieval status
+                if agent._retrieval_config and agent._retrieval_config.enabled:
+                    self.print_output(f"  - RAG: enabled")
+                    self.print_output(f"  - DB: {agent._retrieval_config.db_path}")
+                    self.print_output(f"  - Workspaces: {agent._retrieval_config.workspace_paths}")
+                else:
+                    self.print_output(f"  - RAG: disabled (enable in config.json to use)")
+            else:
+                self.print_output("No workspace set (using defaults)")
+            return True
+
+        # Switch workspace
+        path = args.strip()
+
+        # Check if path exists
+        if not os.path.exists(path):
+            self.print_error(f"Path does not exist: {path}")
+            self.print_output("Hint: Create the directory first: mkdir " + path)
+            return True
+
+        try:
+            # Get absolute path
+            abs_path = os.path.abspath(path)
+
+            # Switch workspace
+            agent.set_workspace(abs_path)
+
+            self.print_success(f"Workspace switched to: {abs_path}")
+
+            # Show what's in the new workspace
+            try:
+                files = os.listdir(abs_path)
+                if files:
+                    self.print_output(f"  - Found {len(files)} items in workspace")
+                else:
+                    self.print_output(f"  - Workspace is empty")
+            except Exception as e:
+                self.print_output(f"  - Cannot list contents: {e}")
+
+            # Show RAG status
+            if agent._retrieval_config and agent._retrieval_config.enabled:
+                self.print_output(f"  - RAG retriever re-initialized")
+
+        except Exception as e:
+            self.print_error(f"Failed to switch workspace: {e}")
+
+        return True
+
     async def _auto_save_session(self):
         """自动保存会话（最新）"""
         try:
@@ -1073,9 +1152,42 @@ class InteractiveREPL:
     # 主循环
     # ========================================================================
 
+    async def _load_session_on_startup(self):
+        """Load session at startup (without interactive prompts)"""
+        import json
+
+        try:
+            with open(self.session_to_load, 'r', encoding='utf-8') as f:
+                session_data = json.load(f)
+
+            # Restore conversation history
+            self.state.conversation_history = session_data.get("conversation", [])
+
+            # Restore variables
+            self.state.variables = session_data.get("variables", {})
+
+            # Restore config
+            self.state.config.update(session_data.get("config", {}))
+
+            self.print_success(f"Session restored: {self.session_to_load.name}")
+            self.print_output(f"  - {len(self.state.conversation_history)} messages")
+            self.print_output(f"  - {len(self.state.variables)} variables")
+
+            # Recreate agent if there's conversation history
+            if self.state.conversation_history and not self.state.agent:
+                self.state.get_or_create_agent()
+
+        except Exception as e:
+            self.print_error(f"Failed to load session: {e}")
+            self.print_output("Starting fresh session...")
+
     async def run_async(self):
         """运行 REPL（异步）"""
         self.print_welcome()
+
+        # Load session if provided
+        if self.session_to_load:
+            await self._load_session_on_startup()
 
         if self.use_prompt_toolkit:
             await self._run_with_prompt_toolkit()
@@ -1090,6 +1202,7 @@ class InteractiveREPL:
             key_bindings=self.key_bindings,
             history=FileHistory('.fastreact_history'),
             auto_suggest=AutoSuggestFromHistory(),
+            multiline=False  # 默认单行
         )
 
         while self.running:
@@ -1100,6 +1213,15 @@ class InteractiveREPL:
                         style=self.style
                     )
 
+                # 检测多行输入模式（支持多种触发方式）
+                command_stripped = command.strip()
+                if command_stripped == '"""' or command_stripped.startswith('"""\n'):
+                    # 多行输入模式
+                    command = self._read_multiline_input(session)
+                elif command_stripped == '>>>':
+                    # >>> 也是多行模式触发器（更直观）
+                    command = self._read_multiline_input(session)
+
                 if command.strip():
                     self.running = await self.execute_command(command)
 
@@ -1107,6 +1229,45 @@ class InteractiveREPL:
                 break
             except KeyboardInterrupt:
                 continue
+
+    def _read_multiline_input(self, session: 'PromptSession') -> str:
+        """读取多行输入"""
+        lines = []
+        first_line = True
+
+        self.print_output("[MULTI-LINE MODE] Enter your text (end with empty line or '''):")
+
+        while True:
+            try:
+                if first_line:
+                    # 跳过第一行的 """
+                    first_line = False
+                    prompt = HTML('<style fg="ansiyellow">... </style>')
+                else:
+                    prompt = HTML('<style fg="ansiyellow">... </style>')
+
+                line = session.prompt(
+                    prompt,
+                    style=self.style
+                )
+
+                # 检查结束标记
+                if line.strip() == "'''":
+                    break
+                if line.strip() == '':
+                    # 空行也结束（方便快速输入）
+                    break
+
+                lines.append(line)
+
+            except EOFError:
+                break
+            except KeyboardInterrupt:
+                # Ctrl+C 取消多行输入
+                self.print_output("[CANCELLED] Multi-line input cancelled")
+                return ''
+
+        return '\n'.join(lines)
 
     async def _run_basic(self):
         """基础输入模式"""
@@ -1128,6 +1289,11 @@ class InteractiveREPL:
             try:
                 command = input(self.get_prompt())
 
+                # 检测多行输入模式
+                command_stripped = command.strip()
+                if command_stripped == '"""' or command_stripped == '>>>':
+                    command = self._read_multiline_input_basic()
+
                 if command.strip():
                     self.running = await self.execute_command(command)
 
@@ -1137,11 +1303,70 @@ class InteractiveREPL:
                 print()
                 continue
 
+    def _read_multiline_input_basic(self) -> str:
+        """读取多行输入（basic 模式）"""
+        lines = []
+        self.print_output("[MULTI-LINE MODE] Enter your text (end with empty line or '''):")
+
+        while True:
+            try:
+                line = input('... ')
+
+                # 检查结束标记
+                if line.strip() == "'''":
+                    break
+                if line.strip() == '':
+                    # 空行也结束
+                    break
+
+                lines.append(line)
+
+            except EOFError:
+                break
+            except KeyboardInterrupt:
+                # Ctrl+C 取消多行输入
+                self.print_output("[CANCELLED] Multi-line input cancelled")
+                return ''
+
+        return '\n'.join(lines)
+
 
 def run_repl():
     """启动 REPL"""
-    repl = InteractiveREPL()
-    asyncio.run(repl.run_async())
+    # Check for existing sessions before starting
+    from .session_detector import should_resume_session
+
+    should_resume, session_file = should_resume_session()
+
+    if not should_resume and session_file is not None:
+        # User chose not to resume, but session exists
+        print("Starting fresh session...")
+    elif session_file is not None:
+        # User chose to resume
+        print(f"Resuming session from: {session_file.name}")
+
+    repl = InteractiveREPL(session_to_load=session_file)
+
+    # 检查是否启用了 MCP
+    # 如果启用了 MCP，使用 anyio.run() 以修复 Windows 兼容性问题
+    config_path = Path(__file__).parent.parent.parent / "config.json"
+    mcp_enabled = False
+
+    if config_path.exists():
+        import json
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                mcp_enabled = config.get("mcp", {}).get("enabled", False)
+        except:
+            pass  # 如果读取配置失败，使用默认值
+
+    if mcp_enabled:
+        # 使用 anyio 运行（MCP 兼容模式）
+        anyio.run(repl.run_async)
+    else:
+        # 使用 asyncio 运行（默认模式）
+        asyncio.run(repl.run_async())
 
 
 # ============================================================================

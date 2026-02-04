@@ -31,13 +31,13 @@ def print_section(title):
 async def main():
     """主函数"""
 
-    print_section("🔍 FastReAct 调试模式")
+    print_section("[SEARCH] FastReAct 调试模式")
 
     # 加载配置
     config = get_config()
     llm_config = config.get_llm_config()
 
-    print(f"\n🔧 配置:")
+    print(f"\n[CONFIG] 配置:")
     print(f"  模型: {llm_config.get('model')}")
     print(f"  API: {llm_config.get('base_url')}")
 
@@ -52,7 +52,7 @@ async def main():
     ) as react:
 
         query = "帮我计算 (25 + 35) * 2 - 40"
-        print(f"\n📝 查询: {query}")
+        print(f"\n[NOTE] 查询: {query}")
 
         # 详细回调
         def debug_callback(step):
@@ -67,12 +67,12 @@ async def main():
             # Tool Calls
             if 'tool_calls' in step:
                 if step['tool_calls']:
-                    print(f"\n🔧 解析到的工具调用:")
+                    print(f"\n[CONFIG] 解析到的工具调用:")
                     for tc in step['tool_calls']:
                         print(f"   - {tc['name']}")
                         print(f"     参数: {tc['parameters']}")
                 else:
-                    print(f"\n⚠️  没有工具调用")
+                    print(f"\n[WARNING]  没有工具调用")
 
             # Observation
             if 'observation' in step:
@@ -81,7 +81,7 @@ async def main():
 
             # Final Answer
             if step.get('is_final'):
-                print(f"\n🎯 最终答案:")
+                print(f"\n[TARGET] 最终答案:")
                 print(f"   {step['answer']}")
 
         # 运行
@@ -91,7 +91,7 @@ async def main():
                 step_callback=debug_callback
             )
 
-            print_section("📊 执行统计")
+            print_section("[STATS] 执行统计")
             stats = result['stats']
             print(f"  总迭代: {stats['total_calls']}")
             print(f"  工具调用: {stats['tool_calls']}")
@@ -99,10 +99,10 @@ async def main():
             print(f"  缓存命中: {stats['cache_hits']}")
             print(f"  缓存未命中: {stats['cache_misses']}")
 
-            print(f"\n✅ 最终答案: {result['answer']}")
+            print(f"\n[OK] 最终答案: {result['answer']}")
 
         except Exception as e:
-            print(f"\n❌ 错误: {e}")
+            print(f"\n[ERROR] 错误: {e}")
             import traceback
             traceback.print_exc()
 
@@ -111,8 +111,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n\n⚠️  测试被中断")
+        print("\n\n[WARNING]  测试被中断")
     except Exception as e:
-        print(f"\n\n❌ 错误: {e}")
+        print(f"\n\n[ERROR] 错误: {e}")
         import traceback
         traceback.print_exc()

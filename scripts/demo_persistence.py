@@ -33,13 +33,13 @@ async def demo_persistence():
         print(f"\n📂 数据库路径: {db_path}")
 
         # ========== 步骤 1: 初始化存储 ==========
-        print("\n✨ 步骤 1: 初始化存储...")
+        print("\n[NEW] 步骤 1: 初始化存储...")
         storage = SQLiteSessionStorage(db_path)
         await storage.initialize()
-        print("✅ 存储初始化成功")
+        print("[OK] 存储初始化成功")
 
         # ========== 步骤 2: 创建会话 ==========
-        print("\n✨ 步骤 2: 创建会话并添加消息...")
+        print("\n[NEW] 步骤 2: 创建会话并添加消息...")
         session_id = "demo_session_123"
 
         await storage.save_session(session_id, {
@@ -73,31 +73,31 @@ async def demo_persistence():
             }
         })
 
-        print(f"✅ 会话已保存: {session_id}")
+        print(f"[OK] 会话已保存: {session_id}")
         print(f"   - 标题: AI 研究讨论")
         print(f"   - 消息数: 4")
 
         # ========== 步骤 3: 查看存储统计 ==========
-        print("\n✨ 步骤 3: 查看存储统计...")
+        print("\n[NEW] 步骤 3: 查看存储统计...")
         stats = await storage.get_session_stats()
-        print(f"📊 存储统计:")
+        print(f"[STATS] 存储统计:")
         print(f"   - 总会话数: {stats['total_sessions']}")
         print(f"   - 总消息数: {stats['total_messages']}")
         print(f"   - 活跃会话: {stats['active_sessions']}")
 
         # ========== 步骤 4: 模拟重启 - 创建新的存储实例 ==========
-        print("\n✨ 步骤 4: 模拟 Gateway 重启...")
+        print("\n[NEW] 步骤 4: 模拟 Gateway 重启...")
         print("   (创建新的存储实例，模拟重启)")
         storage2 = SQLiteSessionStorage(db_path)
         await storage2.initialize()
-        print("✅ 新存储实例已初始化")
+        print("[OK] 新存储实例已初始化")
 
         # ========== 步骤 5: 加载会话 ==========
-        print("\n✨ 步骤 5: 从数据库加载会话...")
+        print("\n[NEW] 步骤 5: 从数据库加载会话...")
         loaded_session = await storage2.load_session(session_id)
 
         if loaded_session:
-            print(f"✅ 会话加载成功!")
+            print(f"[OK] 会话加载成功!")
             print(f"   - 会话ID: {loaded_session['session_id']}")
             print(f"   - 用户ID: {loaded_session['user_id']}")
             print(f"   - 标题: {loaded_session['title']}")
@@ -113,38 +113,38 @@ async def demo_persistence():
                 content = msg['content'][:50] + "..." if len(msg['content']) > 50 else msg['content']
                 print(f"   {i}. [{role}] {content}")
         else:
-            print("❌ 会话加载失败")
+            print("[ERROR] 会话加载失败")
             return
 
         # ========== 步骤 6: 添加新消息 ==========
-        print("\n✨ 步骤 6: 继续对话，添加新消息...")
+        print("\n[NEW] 步骤 6: 继续对话，添加新消息...")
         await storage2.add_message(session_id, {
             "role": "user",
             "content": "谢谢你的解释！",
             "timestamp": "2026-01-28T10:01:00"
         })
 
-        print("✅ 新消息已添加")
+        print("[OK] 新消息已添加")
 
         # 验证消息数量
         updated_session = await storage2.load_session(session_id)
         print(f"   - 当前消息数: {len(updated_session['messages'])}")
 
         # ========== 步骤 7: 列出所有会话 ==========
-        print("\n✨ 步骤 7: 列出所有会话...")
+        print("\n[NEW] 步骤 7: 列出所有会话...")
         sessions = await storage2.list_sessions()
         print(f"📋 找到 {len(sessions)} 个会话:")
         for session in sessions:
             print(f"   - {session['session_id']}: {session['title']}")
 
         # ========== 步骤 8: 更新元数据 ==========
-        print("\n✨ 步骤 8: 更新会话元数据...")
+        print("\n[NEW] 步骤 8: 更新会话元数据...")
         await storage2.update_session_metadata(session_id, {
             "tags": ["AI", "研究", "讨论"],
             "priority": "high",
             "archived": False
         })
-        print("✅ 元数据已更新")
+        print("[OK] 元数据已更新")
 
         # 验证元数据
         final_session = await storage2.load_session(session_id)
@@ -152,28 +152,28 @@ async def demo_persistence():
         print(f"   - 优先级: {final_session['metadata'].get('priority')}")
 
         # ========== 步骤 9: 健康检查 ==========
-        print("\n✨ 步骤 9: 存储健康检查...")
+        print("\n[NEW] 步骤 9: 存储健康检查...")
         is_healthy = await storage2.health_check()
-        print(f"{'✅' if is_healthy else '❌'} 存储状态: {'健康' if is_healthy else '异常'}")
+        print(f"{'[OK]' if is_healthy else '[ERROR]'} 存储状态: {'健康' if is_healthy else '异常'}")
 
         # ========== 步骤 10: 清理演示 ==========
-        print("\n✨ 步骤 10: 清理演示...")
+        print("\n[NEW] 步骤 10: 清理演示...")
         deleted = await storage2.delete_session(session_id)
-        print(f"✅ 会话已删除: {deleted}")
+        print(f"[OK] 会话已删除: {deleted}")
 
         # 验证删除
         stats_after = await storage2.get_session_stats()
         print(f"   - 剩余会话数: {stats_after['total_sessions']}")
 
     print("\n" + "=" * 60)
-    print("🎉 演示完成！会话持久化功能正常工作")
+    print("[SUCCESS] 演示完成！会话持久化功能正常工作")
     print("=" * 60)
-    print("\n💡 关键特性:")
-    print("   ✅ 数据持久化到 SQLite")
-    print("   ✅ 重启后自动恢复")
-    print("   ✅ 增量保存消息")
-    print("   ✅ 元数据管理")
-    print("   ✅ 健康检查")
+    print("\n[INFO] 关键特性:")
+    print("   [OK] 数据持久化到 SQLite")
+    print("   [OK] 重启后自动恢复")
+    print("   [OK] 增量保存消息")
+    print("   [OK] 元数据管理")
+    print("   [OK] 健康检查")
     print()
 
 

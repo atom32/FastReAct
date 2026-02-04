@@ -73,7 +73,7 @@ def create_production_agent():
     base_url = get_base_url(config)
     model = get_model(config)
 
-    print(f"🚀 Initializing FastReAct Agent")
+    print(f"[START] Initializing FastReAct Agent")
     print(f"   Model: {model}")
     print(f"   Base URL: {base_url}")
     print()
@@ -112,7 +112,7 @@ def create_production_agent():
         from fastreact.core import ApprovalResponse
 
         print(f"\n{'='*60}")
-        print(f"⚠️  Tool Execution Request")
+        print(f"[WARNING]  Tool Execution Request")
         print(f"{'='*60}")
         print(f"Tool: {request.tool_name}")
         print(f"Risk Level: {request.risk_level.name}")
@@ -178,11 +178,11 @@ def main():
         print("=" * 60)
         print()
         print("Features enabled:")
-        print("  ✅ Context Pruning (50% token reduction)")
-        print("  ✅ Tool Policy (security control)")
-        print("  ✅ Approval Workflow (user confirmation)")
-        print("  ✅ Tool Display (formatted output)")
-        print("  ✅ LRU Cache (performance)")
+        print("  [OK] Context Pruning (50% token reduction)")
+        print("  [OK] Tool Policy (security control)")
+        print("  [OK] Approval Workflow (user confirmation)")
+        print("  [OK] Tool Display (formatted output)")
+        print("  [OK] LRU Cache (performance)")
         print()
         print("Enter your queries (or 'quit' to exit):")
         print("-" * 60)
@@ -200,17 +200,17 @@ def main():
                     break
 
                 # Process query
-                print(f"\n🤖 Processing: {query}")
+                print(f"\n[BOT] Processing: {query}")
                 print("-" * 60)
 
                 result = agent.run(query)
 
-                print("\n✅ Answer:")
+                print("\n[OK] Answer:")
                 print(result["answer"])
 
                 if "stats" in result:
                     stats = result["stats"]
-                    print(f"\n📊 Stats:")
+                    print(f"\n[STATS] Stats:")
                     print(f"   Iterations: {stats.get('iterations', 0)}")
                     print(f"   Tool Calls: {stats.get('tool_calls', 0)}")
                     print(f"   Tokens Used: {stats.get('tokens_used', 0)}")
@@ -219,12 +219,12 @@ def main():
                 print("\n\n👋 Interrupted. Goodbye!")
                 break
             except Exception as e:
-                print(f"\n❌ Error: {e}")
+                print(f"\n[ERROR] Error: {e}")
                 import traceback
                 traceback.print_exc()
 
     except ValueError as e:
-        print(f"\n❌ Configuration Error: {e}")
+        print(f"\n[ERROR] Configuration Error: {e}")
         print("\nPlease check:")
         print("  1. .env file exists")
         print("  2. FASTREACT_API_KEY is set")
@@ -234,7 +234,7 @@ def main():
         sys.exit(1)
 
     except Exception as e:
-        print(f"\n❌ Fatal Error: {e}")
+        print(f"\n[ERROR] Fatal Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

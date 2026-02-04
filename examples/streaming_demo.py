@@ -243,7 +243,7 @@ async def main():
         config = load_config()
         api_key = get_api_key(config)
         if not api_key:
-            print("\n⚠️  警告: 请配置 API Key")
+            print("\n[WARNING]  警告: 请配置 API Key")
             print("   方式 1: 设置 FASTREACT_API_KEY 环境变量")
             print("   方式 2: 在 ~/.fastreact/config.json 中配置")
             return
@@ -253,7 +253,7 @@ async def main():
         print(f"  Model: {model}")
         print(f"  Base URL: {get_base_url(config)}")
     except Exception as e:
-        print(f"\n❌ 配置加载失败: {e}")
+        print(f"\n[ERROR] 配置加载失败: {e}")
         return
 
     try:
@@ -270,7 +270,7 @@ async def main():
         print("=" * 70)
 
     except Exception as e:
-        print(f"\n❌ 错误: {e}")
+        print(f"\n[ERROR] 错误: {e}")
         import traceback
         traceback.print_exc()
 

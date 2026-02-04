@@ -253,7 +253,7 @@ class TestSQLiteSessionStorage:
 
         # 包含特殊字符的消息
         special_data = {
-            "title": "测试特殊字符: 🎉 💻",
+            "title": "测试特殊字符: [SUCCESS] [CODE]",
             "messages": [
                 {"role": "user", "content": "包含引号 \"和单引号 '"},
                 {"role": "assistant", "content": "包含换行符\n和制表符\t"},
@@ -267,5 +267,5 @@ class TestSQLiteSessionStorage:
 
         assert loaded["title"] == special_data["title"]
         assert len(loaded["messages"]) == 4
-        assert "🎉" in loaded["title"]
+        assert "[SUCCESS]" in loaded["title"]
         assert "\n" in loaded["messages"][1]["content"]

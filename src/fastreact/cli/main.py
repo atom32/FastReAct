@@ -32,7 +32,7 @@ import click
 
 # 尝试导入 FastReAct
 try:
-    from fastreact import FastReAct
+    from fastreact import FastReAct, __version__
     from fastreact.bootstrap import init_workspace
     from .rich_ui import (
         console, print_header, print_status,
@@ -45,7 +45,7 @@ except ImportError:
 
 
 @click.group()
-@click.version_option(version="1.0.0", prog_name="fastreact")
+@click.version_option(version=__version__, prog_name="fastreact")
 def cli():
     """
     FastReAct - 生产级 ReAct Agent 框架
@@ -363,7 +363,7 @@ def gateway(action: str, port: int, host: str):
 @cli.command()
 def version():
     """显示版本信息"""
-    click.echo("FastReAct v1.0.0")
+    click.echo(f"FastReAct v{__version__}")
     click.echo()
     click.echo("Features:")
     click.echo("  [+] ReAct loop with transparent reasoning")

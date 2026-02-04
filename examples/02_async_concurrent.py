@@ -42,7 +42,7 @@ async def main():
     3. 搜索Python最新版本信息
     """
 
-    print(f"\n📝 查询: {query}\n")
+    print(f"\n[NOTE] 查询: {query}\n")
     print("-" * 60)
 
     # 记录开始时间
@@ -51,10 +51,10 @@ async def main():
     # 定义步骤回调
     def on_step(step):
         if step.get("is_final"):
-            print(f"\n✅ 完成！")
+            print(f"\n[OK] 完成！")
         else:
             if "tool_calls" in step:
-                print(f"\n🔧 并发调用 {len(step['tool_calls'])} 个工具:")
+                print(f"\n[CONFIG] 并发调用 {len(step['tool_calls'])} 个工具:")
                 for tc in step["tool_calls"]:
                     print(f"   - {tc['name']}")
 
@@ -69,7 +69,7 @@ async def main():
 
     # 3. 显示结果
     print("\n" + "=" * 60)
-    print("📊 性能对比")
+    print("[STATS] 性能对比")
     print("=" * 60)
     print(f"实际耗时: {elapsed:.2f}秒")
 

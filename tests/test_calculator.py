@@ -25,7 +25,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="2 + 2")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "4" in result
 
     @pytest.mark.asyncio
@@ -34,7 +34,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="10 - 5")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "5" in result
 
     @pytest.mark.asyncio
@@ -43,7 +43,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="3 * 4")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "12" in result
 
     @pytest.mark.asyncio
@@ -52,7 +52,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="20 / 4")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "5" in result
 
     @pytest.mark.asyncio
@@ -61,7 +61,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="(15 + 25) * 2")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "80" in result
 
     @pytest.mark.asyncio
@@ -70,7 +70,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="2 ** 8")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "256" in result
 
     @pytest.mark.asyncio
@@ -79,7 +79,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="pow(2, 10)")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "1024" in result
 
     @pytest.mark.asyncio
@@ -88,7 +88,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="abs(-5)")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "5" in result
 
     @pytest.mark.asyncio
@@ -97,7 +97,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="min(1, 2, 3, 4, 5)")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "1" in result
 
     @pytest.mark.asyncio
@@ -106,7 +106,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="max(1, 2, 3, 4, 5)")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "5" in result
 
     @pytest.mark.asyncio
@@ -115,7 +115,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="sum([1, 2, 3, 4, 5])")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "15" in result
 
     @pytest.mark.asyncio
@@ -124,7 +124,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="round(3.14159, 2)")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "3.14" in result
 
     @pytest.mark.asyncio
@@ -133,7 +133,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="10 / 0")
 
-        assert "❌" in result
+        assert "[ERROR]" in result
         assert "除零错误" in result
 
     @pytest.mark.asyncio
@@ -142,7 +142,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="2 + * 3")
 
-        assert "❌" in result
+        assert "[ERROR]" in result
         assert "计算错误" in result
 
     @pytest.mark.asyncio
@@ -151,7 +151,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="")
 
-        assert "❌" in result
+        assert "[ERROR]" in result
         assert "计算错误" in result
 
     @pytest.mark.asyncio
@@ -160,7 +160,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="-5 + 3")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "-2" in result
 
     @pytest.mark.asyncio
@@ -169,7 +169,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="3.14 * 2")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "6.28" in result
 
     @pytest.mark.asyncio
@@ -179,12 +179,12 @@ class TestCalculatorTool:
 
         # 乘法优先于加法
         result1 = await calc.execute_async(expression="2 + 3 * 4")
-        assert "✅" in result1
+        assert "[OK]" in result1
         assert "14" in result1
 
         # 括号改变优先级
         result2 = await calc.execute_async(expression="(2 + 3) * 4")
-        assert "✅" in result2
+        assert "[OK]" in result2
         assert "20" in result2
 
     @pytest.mark.asyncio
@@ -193,7 +193,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="((2 + 3) * (4 - 1))")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "15" in result
 
     @pytest.mark.asyncio
@@ -204,7 +204,7 @@ class TestCalculatorTool:
             expression="(pow(2, 3) + abs(-5)) * max(1, 2, 3)"
         )
 
-        assert "✅" in result
+        assert "[OK]" in result
         # (8 + 5) * 3 = 39
         assert "39" in result
 
@@ -216,7 +216,7 @@ class TestCalculatorTool:
         # 尝试使用危险函数（应该失败）
         result = await calc.execute_async(expression="__import__('os').system('ls')")
 
-        assert "❌" in result
+        assert "[ERROR]" in result
         assert "计算错误" in result
 
     @pytest.mark.asyncio
@@ -227,7 +227,7 @@ class TestCalculatorTool:
         # 尝试直接访问builtins（应该失败）
         result = await calc.execute_async(expression="print('hello')")
 
-        assert "❌" in result
+        assert "[ERROR]" in result
         assert "计算错误" in result
 
     def test_sync_execution(self):
@@ -235,7 +235,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = calc.execute(expression="5 + 5")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "10" in result
 
     def test_parameters_schema(self):
@@ -265,7 +265,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="999999 * 999999")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "999998000001" in result
 
     @pytest.mark.asyncio
@@ -274,7 +274,7 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="0.1 + 0.2")
 
-        assert "✅" in result
+        assert "[OK]" in result
         # Python浮点数精度问题
         assert "0.3" in result or "0.300" in result
 
@@ -284,5 +284,5 @@ class TestCalculatorTool:
         calc = CalculatorTool()
         result = await calc.execute_async(expression="10 % 3")
 
-        assert "✅" in result
+        assert "[OK]" in result
         assert "1" in result

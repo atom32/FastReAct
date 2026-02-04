@@ -302,16 +302,16 @@ async def main():
     print("总结")
     print("=" * 60)
     print("""
-✅ FastReAct 支持 MCP 客户端功能
-✅ 可以连接到外部 MCP 服务器
-✅ 自动发现和注册工具
-✅ 与 Agent 无缝集成
+[OK] FastReAct 支持 MCP 客户端功能
+[OK] 可以连接到外部 MCP 服务器
+[OK] 自动发现和注册工具
+[OK] 与 Agent 无缝集成
 
-⚠️ 当前问题:
+[WARNING] 当前问题:
    - @chirag127/date-and-time-mcp-server 包无法直接安装
    - 可能需要手动安装或使用其他方式运行
 
-💡 建议:
+[INFO] 建议:
    1. 尝试其他 MCP 服务器（如 filesystem, memory）
    2. 等待该服务器修复 npm 发布问题
    3. 或使用 FastReAct 内置的时间工具

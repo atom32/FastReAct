@@ -34,18 +34,18 @@ async def main():
     # 2. 运行查询
     query = "帮我计算 (15 + 25) * 2 - 10"
 
-    print(f"\n📝 查询: {query}\n")
+    print(f"\n[NOTE] 查询: {query}\n")
     print("-" * 60)
 
     # 定义步骤回调（显示每一步）
     def on_step(step):
         if step.get("is_final"):
-            print(f"\n✅ 最终答案: {step['answer']}")
+            print(f"\n[OK] 最终答案: {step['answer']}")
         else:
             print(f"\n🔄 步骤 {step['iteration'] + 1}")
             if "tool_calls" in step:
                 for tc in step["tool_calls"]:
-                    print(f"   🔧 调用工具: {tc['name']}")
+                    print(f"   [CONFIG] 调用工具: {tc['name']}")
                     print(f"   📋 参数: {tc['parameters']}")
             if "observation" in step:
                 print(f"   👀 观察: {step['observation'][:100]}...")
@@ -58,7 +58,7 @@ async def main():
 
     # 3. 显示统计信息
     print("\n" + "=" * 60)
-    print("📊 性能统计")
+    print("[STATS] 性能统计")
     print("=" * 60)
     stats = result["stats"]
     print(f"总调用次数: {stats['total_calls']}")
@@ -76,7 +76,7 @@ async def main():
 if __name__ == "__main__":
     # 检查API密钥
     if "your-api-key" in open(__file__).read():
-        print("⚠️ 请先设置你的OpenAI API密钥！")
+        print("[WARNING] 请先设置你的OpenAI API密钥！")
         print("编辑此文件，将 'your-api-key' 替换为你的实际API密钥")
     else:
         asyncio.run(main())

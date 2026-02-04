@@ -117,7 +117,7 @@ class EmailTool(Tool):
         """异步发送邮件"""
         await asyncio.sleep(0.1)  # 模拟发送延迟
 
-        return f"""✅ 邮件已发送
+        return f"""[OK] 邮件已发送
 
 📧 收件人: {to}
 📋 主题: {subject}
@@ -150,12 +150,12 @@ async def main():
     ]
 
     for query in queries:
-        print(f"\n📝 查询: {query}\n")
+        print(f"\n[NOTE] 查询: {query}\n")
         print("-" * 60)
 
         result = await react.run_async(query=query)
 
-        print(f"\n✅ 答案: {result['answer']}")
+        print(f"\n[OK] 答案: {result['answer']}")
 
     await react.close()
 

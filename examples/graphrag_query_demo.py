@@ -41,14 +41,14 @@ def print_step(step: Dict[str, Any]) -> None:
     # 检查是否是最终答案
     if is_final:
         answer = step.get("answer", "")
-        print(f"\n🎯 Final Answer:")
+        print(f"\n[TARGET] Final Answer:")
         print(f"   {answer}")
         return
 
     # Tool calls
     tool_calls = step.get("tool_calls", [])
     if tool_calls:
-        print(f"\n🔧 Action:")
+        print(f"\n[CONFIG] Action:")
         for call in tool_calls:
             name = call.get("name", "")
             params = call.get("parameters", {})
@@ -67,9 +67,9 @@ def print_step(step: Dict[str, Any]) -> None:
 
 async def demo_simple_query():
     """示例1：简单GraphRAG查询"""
-    print("\n" + "🚀" * 35)
+    print("\n" + "[START]" * 35)
     print("示例1: 简单GraphRAG查询")
-    print("🚀" * 35)
+    print("[START]" * 35)
 
     # 使用上下文管理器自动管理资源
     async with FastReAct(
@@ -89,7 +89,7 @@ async def demo_simple_query():
         # 查询
         query = "查询Alice的兴趣爱好"
 
-        print(f"\n❓ 用户查询: {query}")
+        print(f"\n[QUESTION] 用户查询: {query}")
 
         # 执行ReAct循环
         result = await agent.run_async(
@@ -99,7 +99,7 @@ async def demo_simple_query():
 
         # 打印结果
         print(f"\n\n{'='*70}")
-        print("📊 执行统计")
+        print("[STATS] 执行统计")
         print(f"{'='*70}")
         stats = result.get("stats", {})
         print(f"  总调用次数: {stats.get('total_calls', 0)}")
@@ -114,9 +114,9 @@ async def demo_simple_query():
 
 async def demo_complex_reasoning():
     """示例2：复杂多跳推理"""
-    print("\n\n" + "🚀" * 35)
+    print("\n\n" + "[START]" * 35)
     print("示例2: 复杂多跳推理")
-    print("🚀" * 35)
+    print("[START]" * 35)
 
     # 使用上下文管理器
     async with FastReAct(
@@ -134,7 +134,7 @@ async def demo_complex_reasoning():
         # 复杂查询
         query = "Alice和Bob有什么共同兴趣？他们如何认识彼此的？"
 
-        print(f"\n❓ 用户查询: {query}")
+        print(f"\n[QUESTION] 用户查询: {query}")
 
         # 执行ReAct循环
         result = await agent.run_async(
@@ -142,14 +142,14 @@ async def demo_complex_reasoning():
             step_callback=print_step,
         )
 
-        print(f"\n\n✅ 最终答案: {result.get('answer', '未能完成')}")
+        print(f"\n\n[OK] 最终答案: {result.get('answer', '未能完成')}")
 
 
 async def demo_multi_entity_analysis():
     """示例3：多实体关系分析"""
-    print("\n\n" + "🚀" * 35)
+    print("\n\n" + "[START]" * 35)
     print("示例3: 多实体关系分析")
-    print("🚀" * 35)
+    print("[START]" * 35)
 
     # 使用上下文管理器
     async with FastReAct(
@@ -167,7 +167,7 @@ async def demo_multi_entity_analysis():
         # 多实体查询
         query = "分析Alice、Bob和Charlie三人之间的关系网络，找出谁是连接中心"
 
-        print(f"\n❓ 用户查询: {query}")
+        print(f"\n[QUESTION] 用户查询: {query}")
 
         # 执行ReAct循环
         result = await agent.run_async(
@@ -175,14 +175,14 @@ async def demo_multi_entity_analysis():
             step_callback=print_step,
         )
 
-        print(f"\n\n✅ 最终答案: {result.get('answer', '未能完成')}")
+        print(f"\n\n[OK] 最终答案: {result.get('answer', '未能完成')}")
 
 
 async def demo_with_streaming():
     """示例4：流式输出"""
-    print("\n\n" + "🚀" * 35)
+    print("\n\n" + "[START]" * 35)
     print("示例4: 流式输出")
-    print("🚀" * 35)
+    print("[START]" * 35)
 
     # 使用上下文管理器
     async with FastReAct(
@@ -199,7 +199,7 @@ async def demo_with_streaming():
 
         query = "简单查询：Python是什么？"
 
-        print(f"\n❓ 用户查询: {query}")
+        print(f"\n[QUESTION] 用户查询: {query}")
 
         # 流式回调
         def stream_callback(text: str):
@@ -213,7 +213,7 @@ async def demo_with_streaming():
             step_callback=print_step,
         )
 
-        print(f"\n\n✅ 完成")
+        print(f"\n\n[OK] 完成")
 
 
 async def main():
@@ -224,7 +224,7 @@ async def main():
 
     # 检查环境变量
     if not os.getenv("OPENAI_API_KEY"):
-        print("\n⚠️  警告: 未设置OPENAI_API_KEY环境变量")
+        print("\n[WARNING]  警告: 未设置OPENAI_API_KEY环境变量")
         print("   请设置: export OPENAI_API_KEY='your-api-key'")
         print("   使用模拟模式运行...")
 
@@ -242,7 +242,7 @@ async def main():
     except KeyboardInterrupt:
         print("\n\n⏹️  用户中断")
     except Exception as e:
-        print(f"\n\n❌ 错误: {e}")
+        print(f"\n\n[ERROR] 错误: {e}")
         import traceback
 
         traceback.print_exc()

@@ -33,8 +33,8 @@ enable_groups = ['file_ops', 'web', 'math', 'ai', 'code', 'system']
 
 api_key = llm_config.get("api_key")
 if not api_key or api_key == "YOUR_API_KEY_HERE":
-    print("❌ 错误: 请在 config.json 中设置 api_key")
-    print("💡 编辑 config.json 文件，填入你的 API Key")
+    print("[ERROR] 错误: 请在 config.json 中设置 api_key")
+    print("[INFO] 编辑 config.json 文件，填入你的 API Key")
     sys.exit(1)
 
 base_url = llm_config.get("base_url", "https://api.openai.com/v1")
@@ -46,19 +46,19 @@ storage_path = os.getenv("STORAGE_PATH", "./data/sessions.db")
 auto_save = os.getenv("AUTO_SAVE", "true").lower() == "true"
 
 print("=" * 60)
-print("🚀 FastReAct WebSocket Gateway")
+print("[START] FastReAct WebSocket Gateway")
 print("=" * 60)
 print(f"📡 提供商: {provider_name}")
-print(f"🌐 API: {base_url}")
-print(f"🤖 模型: {model}")
-print(f"🔧 工具: 函数式自动加载")
+print(f"[WEB] API: {base_url}")
+print(f"[BOT] 模型: {model}")
+print(f"[CONFIG] 工具: 函数式自动加载")
 print(f"💾 存储: SQLite ({storage_path})")
 print(f"🔄 自动保存: {auto_save}")
 print(f"📄 配置: config.json")
 print("=" * 60)
 
-# 🔥 使用工具分组系统
-print("\n📦 使用工具分组系统加载工具...")
+# [HOT] 使用工具分组系统
+print("\n[PACKAGE] 使用工具分组系统加载工具...")
 
 agent = FastReAct(
     api_key=api_key,
@@ -73,7 +73,7 @@ agent = FastReAct(
     enable_deduplication=True,
 )
 
-print(f"✅ 成功加载 {len(agent.tools)} 个工具:")
+print(f"[OK] 成功加载 {len(agent.tools)} 个工具:")
 for tool_name in agent.tools.keys():
     print(f"   - {tool_name}")
 
@@ -93,9 +93,9 @@ if __name__ == "__main__":
         # 初始化存储
         try:
             await gateway.startup()
-            print("\n✅ 存储初始化成功")
+            print("\n[OK] 存储初始化成功")
         except Exception as e:
-            print(f"\n❌ 存储初始化失败: {e}")
+            print(f"\n[ERROR] 存储初始化失败: {e}")
             sys.exit(1)
 
         # 配置 uvicorn
@@ -108,10 +108,10 @@ if __name__ == "__main__":
         )
         server = uvicorn.Server(config)
 
-        print(f"\n✅ 服务器启动中...")
+        print(f"\n[OK] 服务器启动中...")
         print(f"📍 WebSocket: ws://localhost:{port}/ws/{{session_id}}")
-        print(f"🌐 前端页面: 打开 public/index.html")
-        print(f"📊 健康检查: http://localhost:{port}/health")
+        print(f"[WEB] 前端页面: 打开 public/index.html")
+        print(f"[STATS] 健康检查: http://localhost:{port}/health")
         print(f"📋 会话列表: http://localhost:{port}/sessions")
         print("\n按 Ctrl+C 停止服务器")
         print("=" * 60)

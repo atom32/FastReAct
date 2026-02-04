@@ -1,124 +1,48 @@
-# FastReAct Development Log
+# FastReAct Development Rules & Constraints
 
-## 2026-02-04: Integration Test Suite & TODO #15 Completion - 4/4 ALL PASSING
-
-### Milestone Achievement
-FastReAct has completed the transition from "fragile prototype" to "robust system" with all 4 integration tests passing (1.00/1.00 on Test 4).
+This file contains the critical rules and constraints for FastReAct development. For chronological development history, see [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md).
 
 ---
 
-## TODO #15: Persistent Embedding Cache with SQLite (COMPLETED)
+## IMPORTANT: Architecture Iron Rules
 
-### Core Implementation
-1. **Auto-detect embedding dimension from model**
-   - Added `get_embedding_dim()` abstract method to EmbeddingProvider
-   - Implemented in ModelScopeEmbedding, OpenAIEmbedding, LocalEmbedding
-   - Removed hardcoded `embedding_dim` from config.json
+### 1. Transport Layer Iron Rule
+**All external MCP connections MUST go through `SimpleMCP-Stdio` isolation driver.**
 
-2. **SQLite dual-layer caching**
-   - In-memory LRU cache for fast access
-   - SQLite persistent storage for cross-session retrieval
-   - Vector serialization using struct.pack/unpack
-   - Model metadata tracking (model_name, embedding_dim)
+**FORBIDDEN**: Directly importing official MCP SDK logic containing `anyio` into the main event loop.
 
-3. **Model change detection on startup**
-   - `create_model_change_callback()` for mismatch handling
-   - CLI yellow warning (ANSI for Unix, plain text for Windows)
-   - Interactive prompt: keep/clear/cancel options
-   - Integrated into engine initialization
+**RATIONALE**: Official SDK's `anyio` conflicts with FastAPI's async event loop on Windows, causing graceful shutdown failures.
 
-4. **Configuration fixes**
-   - Fixed device: "cuda" → "cpu" (user's system lacks CUDA)
-   - Fixed vector_store: "sqlite_vec" → "apsw" (Windows compatibility)
-   - Fixed context_config parameter passing in engine.py
-   - Fixed retrieve() call parameters
+```python
+# CORRECT:
+from fastreact.mcp.protocol import SimpleMCPStdio
+mcp_client = SimpleMCPStdio(server_command="...")
 
----
+# FORBIDDEN:
+from mcp import ClientSession, StdioServerParameters
+# This imports anyio and breaks the main event loop
+```
 
-## Integration Test Suite: 4/4 PASSING
+### 2. Stateless Orchestration Rule
+**Agent task execution MUST be idempotent and recoverable via `memory.json`.**
 
-### Test 1: Audit & Fix Loop (PASSED)
-- **Validates**: Cross-domain tool chain + RAG persistence
-- **Score**: 12 embedding cache items created
-- **Result**: Agent successfully audits code, searches docs, fixes issues, and remembers across restart
+**REQUIREMENTS**:
+- Session state persisted to `memory.json` after each tool execution
+- Failure recovery via `SESSION_RESUME` mechanism
+- No state held only in memory during long-running tasks
 
-### Test 2: Context Stress Test (PASSED)
-- **Validates**: Long conversation pruning + System prompt retention
-- **Method**: 50 rounds garbage conversation → complex task → verify identity
-- **Result**: Agent correctly identifies as "FastReAct" after token overload
-- **Key Insight**: Problem was prompt clarity, NOT pruning. System Prompt Anchor (P0 priority) works perfectly.
+**RATIONALE**: Prevents task interruption from causing complete state loss.
 
-### Test 3: Brain Reload Test (PASSED)
-- **Validates**: Cross-session knowledge transfer
-- **Method**: Session A creates class/data → restart → Session B retrieves from cache
-- **Result**: 13 cache items, successful information retrieval
-- **Significance**: FastReAct now has "long-term memory warehouse"
+### 3. Cross-Platform File System Rule
+**All path operations MUST use `pathlib.Path`, never hardcoded slashes.**
 
-### Test 4: Tool Graph & Dependency Test (PASSED - 1.00/1.00)
-- **Validates**: Tool topology logic constraints
-- **Score**: 1.00/1.00 (perfect)
-  - Logic Order: 1.00 (ls_repo → cd_repo → read_file path)
-  - Data Flow: 1.00 (correct parameter passing)
-  - No Loops: 1.00 (argument fingerprinting works)
+**REQUIREMENTS**:
+- Use `Path.cwd()` for current directory
+- Use `Path /` operator for path joining
+- Never use `"C:\\"` or `"/Users/"` literals
+- Always specify `encoding='utf-8'` for file I/O
 
-**Bug Fixes During Testing**:
-- Fixed parameter key mapping: `'args'` → `'parameters'`
-- Fixed parameter names: `'file_path'` → `'path'`
-- Added `cd_repo` to valid tool patterns
-- Fixed asyncio issues in test 3
-
----
-
-## Key Insights from Testing
-
-### 1. Attention vs Memory (Test 2)
-System Prompt wasn't being pruned—it was being "drowned out" by garbage conversation. Clear instructions (explicit sequence, direct system name) reactivated LLM's attention to P0-level directives.
-
-### 2. Engineering Rigor (Test 4)
-Perfect 1.00 score proves Agent's logic is sound. Previous low score was due to interface contract mismatches (parameter naming), NOT algorithmic issues. Parameter naming consistency > complex reinforcement learning.
-
-### 3. Long-Task Capability (Tests 1 & 3)
-FastReAct is no longer a "fire-and-forget" chatbot, but a digital employee with persistent memory. Ready for production coding tasks.
-
----
-
-## Files Modified (TODO #15)
-
-- `src/fastreact/memory/embeddings.py`: Complete EmbeddingCache rewrite (+800 lines)
-- `src/fastreact/core/engine.py`: Config fixes, dimension auto-detection
-- `src/fastreact/context/config.py`: Model change callback support
-- `src/fastreact/memory/__init__.py`: Exported create_model_change_callback
-
-## Files Added (Test Suite)
-
-- `run_integration_tests.py`: Main test runner with --test and --check options
-- `INTEGRATION_TESTS.md`: Detailed test documentation
-- `TEST_SUITE_SUMMARY.md`: Overview and quick start guide
-- `test_integration_1_audit_fix.py`: Test 1
-- `test_integration_2_context_stress.py`: Test 2 (fixed prompt clarity)
-- `test_integration_3_brain_reload.py`: Test 3 (fixed asyncio)
-- `test_integration_4_tool_graph.py`: Test 4 (fixed parameter mapping)
-
----
-
-## Breaking Changes
-
-- `embedding_dim` removed from config.json (now auto-detected from model)
-- Vector store backend changed to "apsw" for Windows sqlite-vec compatibility
-
----
-
-## Git Commits
-
-1. `8198bdd` - feat: Complete TODO #15 - Persistent Embedding Cache with SQLite
-2. `7d93ee8` - test: Add comprehensive integration test suite with 4 tests
-
----
-
-## 2026-02-04: Progress Feedback System & Encoding Fixes (EARLIER TODAY)
-
-### Overview
-Implemented a comprehensive progress feedback system for long-running tools (especially Deep Research) across CLI, Gateway, and Web UI. Also fixed Windows encoding issues by removing all emojis from codebase.
+**RATIONALE**: Ensures semantic consistency between Windows host and Docker containers.
 
 ---
 
@@ -136,142 +60,210 @@ Implemented a comprehensive progress feedback system for long-running tools (esp
 
 ---
 
-## New Features
+## IMPORTANT: Documentation Management
 
-### 1. Progress Feedback System
+### Documentation Principles
 
-#### Components Implemented
+**Core Guidelines**:
+1. **No emojis in docs** - Same as code, use text markers: `[OK]`, `[ERROR]`, `[WARNING]`
+2. **Single source of truth** - Keep one canonical doc per topic
+3. **Archive historical docs** - Move old docs to `docs_archive/` instead of deleting
+4. **Update index** - Maintain `DOCS_INDEX.md` when adding/modifying docs
 
-##### a) DeepResearchEngine (`src/fastreact/tools/deep_research.py`)
-- Added `progress_callback` parameter to `__init__`
-- Added `_report_progress()` helper method
-- Reports progress at key research phases
+### Documentation Structure
 
-##### b) Tool Factory (`src/fastreact/tools/fn_registry.py`)
-- Modified `create_deep_research_tool()` to accept `progress_callback`
-
-##### c) Core Engine (`src/fastreact/core/engine.py`)
-- Added `_progress_callback` attribute
-- Added `set_progress_callback()` method
-- Modified `_execute_tool_async()` to inject callback
-
-##### d) CLI REPL (`src/fastreact/cli/repl.py`)
-- Displays progress in dim cyan color
-- Configurable via `FASTREACT_SHOW_PROGRESS` env var
-
-##### e) Gateway Server (`src/fastreact/gateway/server.py`)
-- Sends `progress` events via WebSocket
-
-##### f) Web Frontend
-- `lib/types.ts` - Added `'progress'` to EventType
-- `event-card.tsx` - Added progress display with spinning icon
-
----
-
-## Bug Fixes
-
-### 1. Windows Console Encoding
-Fixed UnicodeEncodeError by removing ALL emojis from:
-- `src/fastreact/cli/main.py`
-- `src/fastreact/core/prompt_builder.py`
-- `src/fastreact/tools/deep_research.py`
-- `src/fastreact/tools/calculator.py`
-- `src/fastreact/tools/edit_tool.py`
-- `src/fastreact/tools/http.py`
-- `src/fastreact/core/callbacks.py`
-- `src/fastreact/core/tool_display.py`
-- `src/fastreact/core/engine.py`
-
-### 2. Missing Import
-- Added `Callable` to `deep_research.py` imports
-
-### 3. Gateway Import Errors
-- Fixed relative imports in `streaming.py` and `websocket.py`
-
-### 4. Gateway Tool Loading
-- `scripts/run_gateway.py` now uses tool groups system
-
----
-
-## Configuration Changes
-
-### Web Frontend Port
-Changed from 3000 to 3001 in `package.json`
-
----
-
-## API Changes
-
-### FastReAct Class
-**New Method**:
-```python
-def set_progress_callback(self, callback: Optional[Callable[[str], None]])
+```
+FastReAct/
+├── DOCS_INDEX.md               # Master index (update when adding docs)
+├── README.md                    # Project homepage
+├── CLAUDE.md                    # This file - Development rules
+├── DEVELOPMENT_LOG.md           # Chronological development history
+│
+├── [User Docs]
+│   ├── INSTALLATION.md
+│   └── CONFIG.md
+│
+├── [Feature Docs] - One per major feature
+│   ├── MULTI_TENANT_WORKSPACE.md
+│   ├── SESSION_RESUME.md
+│   ├── MCP_INTEGRATION_SUCCESS.md
+│   └── WORKSPACE_ISOLATION.md
+│
+├── [Technical Docs]
+│   ├── VERSION_MANAGEMENT.md
+│   ├── IEL.md
+│   └── SECURITY.md
+│
+└── docs_archive/               # Historical docs (read-only)
+    ├── INDEX.md
+    └── ...
 ```
 
-**New Attribute**:
+### Adding New Documentation
+
+**Steps**:
+1. Check `DOCS_INDEX.md` for similar existing docs
+2. Create new doc with clear name: `FEATURE_NAME.md`
+3. Add to appropriate category in `DOCS_INDEX.md`
+4. Run `python scripts/quick_check.py` to verify no emojis
+5. Commit with descriptive message
+
+**Naming Conventions**:
+- User docs: `TOPIC.md` (e.g., `INSTALLATION.md`)
+- Feature docs: `FEATURE_NAME.md` (e.g., `MULTI_TENANT_WORKSPACE.md`)
+- Technical docs: `TOPIC.md` (e.g., `VERSION_MANAGEMENT.md`)
+
+### What Belongs Where
+
+**Root Directory (keep minimal)**:
+- `README.md` - Project overview, quick start
+- `DOCS_INDEX.md` - Documentation navigation
+- `CLAUDE.md` - Development rules (this file)
+- `CHANGELOG.md` - Version history
+
+**Feature Docs (keep one per feature)**:
+- Complete implementation guide
+- Usage examples
+- API documentation
+
+**Archive (move when obsolete)**:
+- Development process docs
+- Old test reports
+- Superseded docs
+
+**Delete (avoid completely)**:
+- Duplicate content
+- Empty placeholder docs
+- Outdated quickstarts
+
+### Quality Checklist
+
+Before committing documentation:
+- [ ] No emojis (use `[OK]`, `[ERROR]`, etc.)
+- [ ] UTF-8 encoding (for Chinese content)
+- [ ] Links work (test `./` relative links)
+- [ ] No hardcoded paths (use `pathlib` or `config`)
+- [ ] Cross-platform compatible (no Windows/Mac specific paths)
+- [ ] Updated `DOCS_INDEX.md` if needed
+
+---
+
+## Cross-Platform Compatibility
+
+### Path Handling
+
+**Always use `pathlib.Path`**:
 ```python
-self._progress_callback: Optional[Callable[[str], None]] = None
+from pathlib import Path
+
+config_path = Path("config.json")
+workspace = Path.cwd() / ".fastreact"
+```
+
+**Never hardcode paths**:
+```python
+# AVOID THESE:
+config_path = "D:\\FastReAct\\config.json"  # Windows only
+config_path = "/Users/user/config.json"    # Mac only
+```
+
+### File Encoding
+
+**Always specify UTF-8**:
+```python
+# CORRECT:
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+# AVOID:
+with open(path, 'r') as f:
+    content = f.read()
+```
+
+### Version Management
+
+**Single source of truth**: `src/fastreact/__init__.py`
+
+```python
+__version__ = "1.1.0"
+```
+
+**Read dynamically in other files**:
+- `pyproject.toml`: `dynamic = ["version"]` with `[tool.setuptools.dynamic]`
+- `setup.py`: `get_version()` function
+- CLI: `from fastreact import __version__`
+
+---
+
+## Code Conventions
+
+### Progress Callbacks
+
+When implementing long-running tools:
+1. Add optional `progress_callback` parameter
+2. Check existence before calling
+3. Use concise messages with category tags
+
+```python
+def __init__(self, progress_callback: Optional[Callable[[str], None]] = None):
+    self._progress_callback = progress_callback
+
+def _report_progress(self, message: str):
+    if self._progress_callback:
+        self._progress_callback(f"[Category] {message}")
+```
+
+### Error Handling
+
+**Use text markers, not emojis**:
+```python
+# CORRECT:
+print("[OK] Success")
+print("[ERROR] Failed")
+print("[WARNING] Warning")
+
+# AVOID:
+print("✅ Success")    # Windows encoding issues
+print("❌ Failed")     # Cross-platform problems
 ```
 
 ---
 
 ## Testing
 
-### Verified Components
-- [x] Progress callback mechanism
-- [x] DeepResearchEngine accepts callback
-- [x] Engine injects callback into tools
-- [x] REPL displays progress
-- [x] Gateway sends progress events
-- [x] Web UI displays progress
-- [x] No encoding errors on Windows
-- [x] Tool groups load correctly
-- [x] All imports resolve
+### Quick Verification
 
----
-
-## Running Services
-
-- **Gateway**: http://localhost:8080
-- **Web UI**: http://localhost:3001
-
----
-
-## Usage Examples
-
-### CLI
 ```bash
-python -m fastreact.cli.main shell
-# Use English to avoid encoding issues
+# Verify code quality
+python scripts/quick_check.py
+
+# Expected output:
+# [SUCCESS] No issues found!
+# Code is clean and cross-platform compatible
 ```
 
-### Programmatic
-```python
-agent = FastReAct(api_key="...", model="gpt-4", enable_groups=['ai'])
-agent.set_progress_callback(lambda msg: print(f"Progress: {msg}"))
-result = await agent.run_async("Research topic")
+### Version Consistency
+
+```bash
+# Check version consistency
+python test_version_consistency.py
+
+# Expected output:
+# [SUCCESS] All versions are consistent!
+# Current version: 1.1.0
 ```
 
 ---
 
-## File Changes Summary
+## Important Reminders
 
-18 files modified:
-- CLI: main.py, repl.py
-- Core: engine.py, prompt_builder.py, callbacks.py, tool_display.py
-- Tools: deep_research.py, fn_registry.py, calculator.py, edit_tool.py, http.py
-- Gateway: server.py, streaming.py, websocket.py
-- Scripts: run_gateway.py
-- Web: package.json, lib/types.ts, components/chat/event-card.tsx
+1. **No emojis** - Use text markers everywhere (code, docs, output)
+2. **No hardcoded paths** - Use pathlib and configuration
+3. **UTF-8 encoding** - Specify explicitly for file operations
+4. **Version in one place** - Only `__init__.py` defines `__version__`
+5. **Update docs index** - Keep `DOCS_INDEX.md` in sync
+6. **Archive, don't delete** - Move old docs to `docs_archive/`
 
 ---
 
-## Important Notes
-
-### Windows Console Encoding
-Recommendation: Use English queries when testing via CLI on Windows.
-
-### Progress Callback Best Practices
-1. Add optional `progress_callback` parameter
-2. Check existence before calling
-3. Use concise messages with category tags
+**For chronological development history, see [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)**

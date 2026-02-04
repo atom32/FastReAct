@@ -62,7 +62,7 @@ def demo_permissive_mode():
 
     for tool in test_tools:
         decision = policy.check_tool_access(tool)
-        status = "✅ ALLOWED" if decision.allowed else "❌ DENIED"
+        status = "[OK] ALLOWED" if decision.allowed else "[ERROR] DENIED"
         print(f"{status}: {tool:20s} | Risk: {decision.risk_level.name:8s} | {decision.reason}")
 
 
@@ -88,7 +88,7 @@ def demo_restrictive_mode():
 
     for tool in test_tools:
         decision = policy.check_tool_access(tool)
-        status = "✅ ALLOWED" if decision.allowed else "❌ DENIED"
+        status = "[OK] ALLOWED" if decision.allowed else "[ERROR] DENIED"
         print(f"{status}: {tool:20s} | Risk: {decision.risk_level.name:8s} | {decision.reason}")
 
 
@@ -148,8 +148,8 @@ def demo_custom_rules():
 
     for tool in test_tools:
         decision = policy.check_tool_access(tool)
-        status = "✅ ALLOWED" if decision.allowed else "❌ DENIED"
-        approval = " 🔒 APPROVAL" if decision.requires_approval else ""
+        status = "[OK] ALLOWED" if decision.allowed else "[ERROR] DENIED"
+        approval = " [LOCK] APPROVAL" if decision.requires_approval else ""
         print(f"{status}{approval}: {tool:20s} | Risk: {decision.risk_level.name:8s}")
         if decision.reason:
             print(f"                      Reason: {decision.reason}")
@@ -181,7 +181,7 @@ def demo_execution_limits():
     print("Testing tool-specific limit:")
     for i in range(5):
         decision = policy.check_tool_access("limited_tool")
-        status = "✅ ALLOWED" if decision.allowed else "❌ DENIED (limit reached)"
+        status = "[OK] ALLOWED" if decision.allowed else "[ERROR] DENIED (limit reached)"
         print(f"  Execution {i+1}: {status}")
         if decision.allowed:
             policy.record_execution("limited_tool")
@@ -195,13 +195,13 @@ def demo_execution_limits():
         policy.record_execution(f"tool_{i}")
 
     decision = policy.check_tool_access("any_tool")
-    status = "✅ ALLOWED" if decision.allowed else "❌ DENIED"
+    status = "[OK] ALLOWED" if decision.allowed else "[ERROR] DENIED"
     print(f"  After 9 executions: {status}")
 
     policy.record_execution("tool_9")
 
     decision = policy.check_tool_access("any_tool")
-    status = "✅ ALLOWED" if decision.allowed else "❌ DENIED (limit reached)"
+    status = "[OK] ALLOWED" if decision.allowed else "[ERROR] DENIED (limit reached)"
     print(f"  After 10 executions: {status}")
 
 
@@ -240,16 +240,16 @@ def demo_approval_workflow():
         decision = policy.check_tool_access(tool)
 
         if decision.requires_approval:
-            print(f"🔒 {tool:20s} ({description})")
+            print(f"[LOCK] {tool:20s} ({description})")
             print(f"   Risk Level: {decision.risk_level.name}")
             print(f"   Status: PENDING APPROVAL")
             print(f"   Reason: {decision.reason}")
         elif decision.allowed:
-            print(f"✅ {tool:20s} ({description})")
+            print(f"[OK] {tool:20s} ({description})")
             print(f"   Risk Level: {decision.risk_level.name}")
             print(f"   Status: ALLOWED (no approval needed)")
         else:
-            print(f"❌ {tool:20s} ({description})")
+            print(f"[ERROR] {tool:20s} ({description})")
             print(f"   Status: DENIED")
             print(f"   Reason: {decision.reason}")
         print()
@@ -329,10 +329,10 @@ def demo_config_from_dict():
 
     print("\nTesting with loaded configuration:")
     decision = policy.check_tool_access("bash_exec")
-    print(f"  bash_exec: {'✅ ALLOWED' if decision.allowed else '❌ DENIED'} | Approval: {decision.requires_approval}")
+    print(f"  bash_exec: {'[OK] ALLOWED' if decision.allowed else '[ERROR] DENIED'} | Approval: {decision.requires_approval}")
 
     decision = policy.check_tool_access("file_delete")
-    print(f"  file_delete: {'✅ ALLOWED' if decision.allowed else '❌ DENIED'}")
+    print(f"  file_delete: {'[OK] ALLOWED' if decision.allowed else '[ERROR] DENIED'}")
 
 
 def main():
