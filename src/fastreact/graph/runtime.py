@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StepEvent:
     """步进执行事件"""
-    type: str  # "STEP_START", "STEP_COMPLETE", "INTERVENTION", "ERROR"
+    type: str  # "STEP_START", "STEP_COMPLETE", "INTERVENTION", "ERROR", "APPROVAL_REQUIRED"
     node_id: str
     tool_name: str
     level: int = 0
@@ -30,6 +30,11 @@ class StepEvent:
     status: str = ""
     result: Optional[Dict[str, Any]] = None
     message: str = ""
+
+    # Sprint 3.5: 审批相关字段
+    risk_level: Optional[str] = None  # "LOW", "MEDIUM", "HIGH", "CRITICAL"
+    approval_required: bool = False  # 是否需要审批
+    tool_params: Optional[Dict[str, Any]] = None  # 工具参数（用于显示）
 
 
 
@@ -51,12 +56,19 @@ class ExecutionConfig:
         timeout: 全局超时时间（秒）
         retry_failed: 是否自动重试失败节点
         continue_on_error: 遇错是否继续
+        tool_policy: 工具策略配置（Sprint 3.5）
+        approval_enabled: 是否启用审批（Sprint 3.5）
     """
     max_parallel: int = 3
     strategy: ExecutionStrategy = ExecutionStrategy.LEVEL_BASED
     timeout: float = 300.0
     retry_failed: bool = False
     continue_on_error: bool = False
+
+    # Sprint 3.5: 审批系统
+    tool_policy: Optional[Any] = None  # ToolPolicy 实例
+    approval_enabled: bool = False
+    approval_queue: Optional["asyncio.Queue"] = None  # 审批响应队列
 
 
 @dataclass
@@ -312,6 +324,35 @@ class ToolRuntime:
             if not level_nodes:
                 continue
 
+            # Sprint 3.5: 策略检查 - 分离自动批准和需要审批的节点
+            auto_approve_nodes = []
+            approval_nodes = []
+
+            if self.config.approval_enabled and self.config.tool_policy:
+                from fastreact.core.tool_policy import RiskLevel
+
+                for node in level_nodes:
+                    # 检查工具策略
+                    decision = self.config.tool_policy.check_tool_access(
+                        node.tool.name,
+                        context={"node_id": node.id}
+                    )
+
+                    if decision.requires_approval:
+                        approval_nodes.append((node, decision))
+                    else:
+                        auto_approve_nodes.append((node, decision))
+
+                # 记录策略检查
+                if approval_nodes:
+                    logger.info(
+                        f"[POLICY] Level {level}: {len(auto_approve_nodes)} auto-approve, "
+                        f"{len(approval_nodes)} require approval"
+                    )
+            else:
+                # 未启用审批，全部自动批准
+                auto_approve_nodes = [(node, None) for node in level_nodes]
+
             # Yield step start
             yield StepEvent(
                 type="STEP_START",
@@ -322,8 +363,67 @@ class ToolRuntime:
                 message=f"Executing level {level+1}/{max_level+1} ({len(level_nodes)} nodes)"
             )
 
-            # 并行执行当前层级
-            level_results = await self._execute_parallel(level_nodes, graph)
+            # Sprint 3.5: 先并行执行自动批准的节点
+            level_results = {}
+            if auto_approve_nodes:
+                auto_nodes = [node for node, _ in auto_approve_nodes]
+                auto_results = await self._execute_parallel(auto_nodes, graph)
+                level_results.update(auto_results)
+
+            # Sprint 3.5: 串行处理需要审批的节点
+            for node, decision in approval_nodes:
+                # Yield 审批请求事件
+                yield StepEvent(
+                    type="APPROVAL_REQUIRED",
+                    node_id=node.id,
+                    tool_name=node.tool.name,
+                    level=level,
+                    total_levels=max_level,
+                    risk_level=decision.risk_level.name,
+                    approval_required=True,
+                    tool_params=node.inputs,
+                    message=f"Waiting approval for {node.tool.name} ({decision.risk_level.name} risk)"
+                )
+
+                # 等待审批响应（从审批队列获取）
+                if self.config.approval_queue:
+                    response = await self.config.approval_queue.get()
+
+                    if response == "deny":
+                        # 用户拒绝，标记为失败
+                        level_results[node.id] = NodeResult(
+                            node_id=node.id,
+                            status=NodeStatus.FAILED,
+                            error="User denied approval"
+                        )
+                        logger.info(f"[POLICY] Node {node.id} execution denied by user")
+                        continue
+                    elif response == "stop":
+                        # 用户停止执行
+                        yield StepEvent(
+                            type="INTERVENTION",
+                            node_id=node.id,
+                            tool_name=node.tool.name,
+                            message="User stopped execution"
+                        )
+                        return
+                    # response == "allow" 或其他，继续执行
+
+                # 执行节点
+                result = await self._execute_node(node, graph)
+                level_results[node.id] = result
+
+                # Yield 单个节点完成
+                yield StepEvent(
+                    type="STEP_COMPLETE",
+                    node_id=node.id,
+                    tool_name=node.tool.name,
+                    level=level,
+                    total_levels=max_level,
+                    status=result.status.value,
+                    result=result.outputs,
+                    message=f"Node {node.id}: {result.status.value}"
+                )
 
             # Yield step complete
             for node_id, result in level_results.items():

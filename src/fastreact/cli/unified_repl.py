@@ -967,13 +967,27 @@ Type /help for commands""",
                 self.print_info("Execution cancelled by user")
                 return True
 
-            # 创建Runtime
+            # Sprint 3.5: 加载工具策略配置
+            from fastreact.tools.sprint35_policy_config import get_sprint35_policy
+            from fastreact.core.tool_policy import ToolPolicy
+
+            tool_policy_config = get_sprint35_policy()
+            tool_policy = ToolPolicy(tool_policy_config)
+
+            # Sprint 3.5: 创建审批队列
+            approval_queue = asyncio.Queue()
+
+            # 创建Runtime（注入策略和审批队列）
             runtime = ToolRuntime(
                 config=ExecutionConfig(
                     strategy=ExecutionStrategy.LEVEL_BASED,
                     max_parallel=3,
                     timeout=300.0,
                     continue_on_error=False,
+                    # Sprint 3.5: 注入策略系统
+                    tool_policy=tool_policy,
+                    approval_enabled=True,
+                    approval_queue=approval_queue,
                 ),
                 state=None,  # Create new GraphState for this execution
             )
@@ -1008,6 +1022,51 @@ Type /help for commands""",
                         if not is_running:
                             # User stopped execution
                             break
+
+                        # Sprint 3.5: 处理审批请求事件
+                        if event.type == "APPROVAL_REQUIRED":
+                            # 显示风险提示
+                            risk_color = {
+                                "MEDIUM": "yellow",
+                                "HIGH": "red",
+                                "CRITICAL": "bold red"
+                            }.get(event.risk_level, "yellow")
+
+                            if self.console:
+                                self.console.print(f"[{risk_color}][APPROVAL] {event.tool_name} ({event.risk_level} risk)[/{risk_color}]")
+                                self.console.print(f"[dim]Node: {event.node_id}[/dim]")
+                                if event.tool_params:
+                                    self.console.print(f"[dim]Params: {event.tool_params}[/dim]")
+                            else:
+                                print(f"[APPROVAL] {event.tool_name} ({event.risk_level} risk)")
+                                print(f"Node: {event.node_id}")
+
+                            # 获取用户输入
+                            with patch_stdout():
+                                user_input = await prompt_session.prompt_async(
+                                    f"Allow {event.tool_name}? [Y/n/stop]: "
+                                )
+
+                            # 处理用户决定
+                            if user_input.lower() in ["y", "yes"]:
+                                await approval_queue.put("allow")
+                                if self.console:
+                                    self.console.print("[green][OK] Approved[/green]")
+                            elif user_input.lower() in ["n", "no"]:
+                                await approval_queue.put("deny")
+                                if self.console:
+                                    self.console.print("[yellow][DENIED] Operation denied[/yellow]")
+                            elif user_input.lower() in ["stop", "abort"]:
+                                await approval_queue.put("stop")
+                                if self.console:
+                                    self.console.print("[red][STOPPED] Execution stopped[/red]")
+                                break
+                            else:
+                                await approval_queue.put("deny")
+                                if self.console:
+                                    self.console.print("[yellow][DENIED] Invalid input, denied[/yellow]")
+
+                            continue  # 处理完审批请求，继续下一个事件
 
                         # Sprint 3.6: 收集详细结果用于统一显示
                         if event.type == "STEP_COMPLETE":
