@@ -8,9 +8,14 @@ FastReAct 文档已经整理，分为核心文档、功能文档和技术文档�
 
 ## 📚 Core Documentation
 
+### Must Read
+- **[README.md](README.md)** - 项目概述，快速开始 ⭐ UPDATED
+- **[TECHNICAL_HIGHLIGHTS.md](TECHNICAL_HIGHLIGHTS.md)** - 技术亮点、架构设计、创新点 ⭐ NEW!
+- **[NEW_ENVIRONMENT_SETUP.md](NEW_ENVIRONMENT_SETUP.md)** - 新环境配置指南 ⭐ NEW!
+
 ### User-Facing
-- **[README.md](README.md)** - 项目主页，快速了解 FastReAct
 - **[INSTALLATION.md](INSTALLATION.md)** - 安装指南
+- **[CONFIG_PRIORITY.md](CONFIG_PRIORITY.md)** - 配置优先级系统
 
 ### Developer-Facing
 - **[CLAUDE.md](CLAUDE.md)** - 开发规则和约束（Development Rules & Constraints）
@@ -29,7 +34,11 @@ FastReAct 文档已经整理，分为核心文档、功能文档和技术文档�
 
 ### MCP Integration
 - **[MCP_INTEGRATION_SUCCESS.md](MCP_INTEGRATION_SUCCESS.md)** - MCP 集成完整历程
-- **[GITHUB_MCP_INTEGRATION.md](GITHUB_MCP_INTEGRATION.md)** - GitHub MCP 集成指南 (TODO #16)
+- **[GITHUB_MCP_INTEGRATION.md](GITHUB_MCP_INTEGRATION.md)** - GitHub MCP 集成指南
+
+### UI Enhancements
+- **[MULTILINE_INPUT.md](MULTILINE_INPUT.md)** - 多行输入支持 ⭐ NEW!
+- **[GATEWAY_WEB_EVALUATION.md](GATEWAY_WEB_EVALUATION.md)** - Gateway 和 Web UI 评估 ⭐ NEW!
 
 ### Cross-Platform
 - **[CROSS_PLATFORM_SUMMARY.md](CROSS_PLATFORM_SUMMARY.md)** - 跨平台兼容性总结
@@ -41,9 +50,14 @@ FastReAct 文档已经整理，分为核心文档、功能文档和技术文档�
 
 ## 🔧 Technical Documentation
 
+### Memory Systems
+- **[MEMORY_SYSTEMS_INTEGRATION.md](MEMORY_SYSTEMS_INTEGRATION.md)** - 记忆系统整合 ⭐ NEW!
+- **[MEMORY_FLUSH_COMPACTION_INTERACTION.md](MEMORY_FLUSH_COMPACTION_INTERACTION.md)** - 上下文压缩配合 ⭐ NEW!
+- **[MEMORY_FLUSH_BUG_ANALYSIS.md](MEMORY_FLUSH_BUG_ANALYSIS.md)** - Memory Flush BUG 修复 ⭐ NEW!
+
 ### Configuration
 - **[CONFIG.md](CONFIG.md)** - 配置文件说明
-- **[CONFIG_PRIORITY.md](CONFIG_PRIORITY.md)** - 配置优先级管理（多层配置）
+- **[CONFIG_PRIORITY.md](CONFIG_PRIORITY.md)** - 配置优先级管理（四层配置）
 
 ### Development Process
 - **[IEL.md](IEL.md)** - IEL (Interactive Execution Loop) 完整指南
