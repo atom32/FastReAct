@@ -19,6 +19,20 @@ from .state import GraphState, create_graph_state
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class StepEvent:
+    """步进执行事件"""
+    type: str  # "STEP_START", "STEP_COMPLETE", "INTERVENTION", "ERROR"
+    node_id: str
+    tool_name: str
+    level: int = 0
+    total_levels: int = 0
+    status: str = ""
+    result: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+
 class ExecutionStrategy(Enum):
     """执行策略"""
     TOPOLOGICAL = "topological"  # 拓扑排序顺序执行
@@ -198,6 +212,218 @@ class ToolRuntime:
         )
 
         return report
+
+    async def execute_steppable(
+        self,
+        graph: ToolGraph,
+        initial_inputs: Optional[Dict[str, Any]] = None,
+        intervention_queue: Optional["asyncio.Queue"] = None,
+    ):
+        """
+        可步进执行 - 支持干预的异步生成器
+
+        Args:
+            graph: 工具图
+            initial_inputs: 初始输入
+            intervention_queue: 用户干预指令队列
+
+        Yields:
+            StepEvent: 每步执行事件，包含节点信息和状态
+        """
+        start_time = time.time()
+        logger.info(f"[STEPPABLE] Starting execution: {graph.name}")
+
+        # 设置初始输入
+        if initial_inputs:
+            self.state.context.update(initial_inputs)
+
+        # 验证图
+        is_valid, errors = graph.validate()
+        if not is_valid:
+            yield StepEvent(
+                type="ERROR",
+                node_id="validation",
+                tool_name="validation",
+                message=f"Graph validation failed: {errors}"
+            )
+            return
+
+        # 选择执行策略
+        if self.config.strategy == ExecutionStrategy.TOPOLOGICAL:
+            logger.info("[STEPPABLE] Using TOPOLOGICAL strategy")
+            executor = self._execute_topological_steppable
+        elif self.config.strategy == ExecutionStrategy.LEVEL_BASED:
+            logger.info("[STEPPABLE] Using LEVEL_BASED strategy")
+            executor = self._execute_level_based_steppable
+        elif self.config.strategy == ExecutionStrategy.MAX_PARALLEL:
+            logger.info("[STEPPABLE] Using MAX_PARALLEL strategy")
+            executor = self._execute_max_parallel_steppable
+        else:
+            yield StepEvent(
+                type="ERROR",
+                node_id="strategy",
+                tool_name="strategy",
+                message=f"Unknown strategy: {self.config.strategy}"
+            )
+            return
+
+        # 执行并yield事件
+        async for event in executor(graph, intervention_queue):
+            yield event
+
+        # 最终报告
+        execution_time = time.time() - start_time
+        logger.info(f"[STEPPABLE] Execution completed in {execution_time:.2f}s")
+
+    async def _execute_level_based_steppable(
+        self,
+        graph: ToolGraph,
+        intervention_queue: Optional["asyncio.Queue"] = None,
+    ):
+        """
+        按层级步进执行（支持yield）
+        """
+        levels = self._compute_node_levels(graph)
+        max_level = max(levels.values()) if levels else 0
+
+        for level in range(max_level + 1):
+            # 检查干预队列
+            if intervention_queue and not intervention_queue.empty():
+                intervention = await intervention_queue.get()
+                yield StepEvent(
+                    type="INTERVENTION",
+                    node_id=f"level_{level}",
+                    tool_name="intervention",
+                    level=level,
+                    total_levels=max_level,
+                    message=f"User intervention: {intervention}"
+                )
+                # 根据干预决定是否继续
+                if intervention.lower() in ["stop", "abort", "exit"]:
+                    logger.info("[STEPPABLE] Execution stopped by user")
+                    break
+
+            # 获取当前层级的节点
+            level_nodes = [
+                node for node in graph.nodes.values()
+                if levels.get(node.id, 0) == level
+            ]
+
+            if not level_nodes:
+                continue
+
+            # Yield step start
+            yield StepEvent(
+                type="STEP_START",
+                node_id=f"level_{level}",
+                tool_name=", ".join([n.tool.name for n in level_nodes]),
+                level=level,
+                total_levels=max_level,
+                message=f"Executing level {level+1}/{max_level+1} ({len(level_nodes)} nodes)"
+            )
+
+            # 并行执行当前层级
+            level_results = await self._execute_parallel(level_nodes, graph)
+
+            # Yield step complete
+            for node_id, result in level_results.items():
+                yield StepEvent(
+                    type="STEP_COMPLETE",
+                    node_id=node_id,
+                    tool_name=graph.nodes[node_id].tool.name,
+                    level=level,
+                    total_levels=max_level,
+                    status=result.status.value,
+                    result=result.outputs,
+                    message=f"Node {node_id}: {result.status.value}"
+                )
+
+                # 如果失败且不继续，停止执行
+                if result.status == NodeStatus.FAILED and not self.config.continue_on_error:
+                    return
+
+    async def _execute_topological_steppable(self, graph, intervention_queue):
+        """拓扑排序步进执行（简化实现）"""
+        sorted_nodes = graph.topological_sort()
+        total = len(sorted_nodes)
+
+        for idx, node in enumerate(sorted_nodes):
+            if intervention_queue and not intervention_queue.empty():
+                intervention = await intervention_queue.get()
+                yield StepEvent(
+                    type="INTERVENTION",
+                    node_id=node.id,
+                    tool_name=node.tool.name,
+                    message=f"User intervention: {intervention}"
+                )
+                if intervention.lower() in ["stop", "abort"]:
+                    break
+
+            yield StepEvent(
+                type="STEP_START",
+                node_id=node.id,
+                tool_name=node.tool.name,
+                message=f"Executing step {idx+1}/{total}"
+            )
+
+            result = await self._execute_node(node, graph)
+
+            yield StepEvent(
+                type="STEP_COMPLETE",
+                node_id=node.id,
+                tool_name=node.tool.name,
+                status=result.status.value,
+                result=result.outputs,
+                message=f"Node {node.id}: {result.status.value}"
+            )
+
+            if result.status == NodeStatus.FAILED and not self.config.continue_on_error:
+                return
+
+    async def _execute_max_parallel_steppable(self, graph, intervention_queue):
+        """最大并行度步进执行（简化实现）"""
+        pending = set(graph.nodes.keys())
+        completed = 0
+        total = len(pending)
+
+        while pending:
+            if intervention_queue and not intervention_queue.empty():
+                intervention = await intervention_queue.get()
+                yield StepEvent(
+                    type="INTERVENTION",
+                    node_id="parallel",
+                    tool_name="intervention",
+                    message=f"User intervention: {intervention}"
+                )
+                if intervention.lower() in ["stop", "abort"]:
+                    break
+
+            ready_nodes = [
+                graph.nodes[node_id]
+                for node_id in pending
+                if self.state.check_dependencies(graph.nodes[node_id].get_dependencies())
+            ]
+
+            if not ready_nodes:
+                break
+
+            batch = ready_nodes[:self.config.max_parallel]
+            batch_results = await self._execute_parallel(batch, graph)
+
+            for node_id, result in batch_results.items():
+                completed += 1
+                yield StepEvent(
+                    type="STEP_COMPLETE",
+                    node_id=node_id,
+                    tool_name=graph.nodes[node_id].tool.name,
+                    status=result.status.value,
+                    result=result.outputs,
+                    message=f"Node {node_id}: {result.status.value} ({completed}/{total})"
+                )
+
+                pending.discard(node_id)
+                if result.status == NodeStatus.FAILED and not self.config.continue_on_error:
+                    pending.clear()
 
     async def _execute_topological(
         self,

@@ -133,8 +133,12 @@ class ToolNode:
         self.outputs = outputs or {}
         self.config = config or NodeConfig()
 
-        # 推断工具类型（检查tool.execute，不是tool本身）
-        if hasattr(tool, 'execute'):
+        # 推断工具类型（优先检查 execute_async，再检查 execute）
+        if hasattr(tool, 'execute_async'):
+            # 有 execute_async 方法，标记为异步
+            self.is_async = True
+        elif hasattr(tool, 'execute'):
+            # 检查 execute 是否是协程函数
             self.is_async = inspect.iscoroutinefunction(tool.execute)
         else:
             self.is_async = False
@@ -201,8 +205,10 @@ class ToolNode:
             # 合并默认输入
             resolved_inputs = {**self.inputs, **inputs}
 
-            # 执行工具
-            if self.is_async:
+            # 执行工具（优先使用 execute_async）
+            if hasattr(self.tool, 'execute_async'):
+                outputs = await self.tool.execute_async(**resolved_inputs)
+            elif self.is_async:
                 outputs = await self.tool.execute(**resolved_inputs)
             else:
                 outputs = self.tool.execute(**resolved_inputs)

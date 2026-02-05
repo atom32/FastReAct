@@ -52,11 +52,59 @@ try:
     from rich.text import Text
     from rich.live import Live
     from rich.spinner import Spinner
+    from rich.console import Console as RichConsole
 
-    console = Console()
+    # Sprint 3.6: 智能终端检测 - 检测是否支持ANSI颜色
+    import os
+    import sys
+
+    def _supports_ansi():
+        """检测终端是否支持ANSI颜色码"""
+        # Windows Terminal, VS Code, PowerShell 7+ 支持ANSI
+        if os.environ.get("WT_SESSION"):  # Windows Terminal
+            return True
+        if os.environ.get("TERM_PROGRAM"):  # VS Code, iTerm等
+            return True
+
+        # PowerShell 7+ 支持 ANSI
+        if "pwsh" in os.environ.get("PSModulePath", ""):
+            return True
+
+        # 检测Windows版本（Windows 10 build 14931+ 支持ANSI）
+        if sys.platform == "win32":
+            try:
+                import platform
+                version = platform.version()
+                # Windows 10 build 14931+ 支持ANSI
+                if int(version.split(".")[-1]) >= 14931:
+                    return True
+            except:
+                pass
+
+        # 其他情况保守估计不支持
+        return False
+
+    # 根据终端支持情况初始化Console
+    if _supports_ansi():
+        console = RichConsole()  # 支持颜色
+    else:
+        console = RichConsole(force_terminal=True, legacy_windows=True)  # 兼容模式
 except ImportError:
     console = None
     Live = None
+
+# ============================================================================
+# Sprint 3: Non-blocking IEL support
+# ============================================================================
+
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.patch_stdout import patch_stdout
+    PROMPT_TOOLKIT_AVAILABLE = True
+except ImportError:
+    PROMPT_TOOLKIT_AVAILABLE = False
+    PromptSession = None
+    patch_stdout = None
 
 # ============================================================================
 # Reuse existing components
@@ -520,6 +568,9 @@ class UnifiedAgentREPL:
         # Console
         self.console = console
 
+        # 强制文本模式标志（用于不支持ANSI的终端）
+        self.force_text_mode = os.environ.get("FASTREACT_TEXT_MODE", "").lower() in ("1", "true", "yes")
+
         # 命令映射
         self.commands = {
             'help': self.cmd_help,
@@ -859,6 +910,272 @@ Type /help for commands""",
         return True
 
     # ========================================================================
+    # Sprint 3: Non-blocking IEL (Dual-Track REPL)
+    # ========================================================================
+
+    async def _run_graph_agent_non_blocking(self, query: str) -> bool:
+        """
+        Phase 4: 非阻塞GraphAgent执行 - 真正的双轨并发架构
+
+        Sprint 3.6: 添加ContextMonitor和完整结果显示，与阻塞模式UI对齐
+
+        双轨架构：
+        - Agent轨道：执行计划，每步yield控制权
+        - 用户轨道：异步输入，随时可以干预
+        - 使用 asyncio.gather 实现真正的并发
+        """
+        if not PROMPT_TOOLKIT_AVAILABLE:
+            self.print_error("prompt_toolkit not available, falling back to blocking mode")
+            return await self._run_graph_agent(query)
+
+        import asyncio
+        import time
+        from fastreact.graph.runtime import ToolRuntime, ExecutionConfig, ExecutionStrategy
+        from fastreact.graph.runtime import StepEvent
+
+        self.state.stats["graph_agent_queries"] += 1
+
+        if self.console:
+            self.console.print(f"[cyan][GRAPHAGENT 模式 (Non-blocking IEL)][/cyan]")
+            self.console.print()
+
+        try:
+            # 创建干预队列
+            intervention_queue = asyncio.Queue()
+
+            # Sprint 3.6: 显示初始 ContextMonitor（简化版，文本模式）
+            from fastreact.context import get_context_monitor
+            monitor_initial = get_context_monitor()
+            # 使用print而不是console.print避免ANSI问题
+            print(f"\n[Context Monitor] {monitor_initial.get_status_text()}")
+
+            # 生成执行计划
+            agent = await self._get_or_create_graph_agent()
+
+            # Sprint 3.6: 添加计划生成提示（避免看起来"卡住"）
+            if self.console:
+                with self.console.status("[bold cyan]Planning execution...[/bold cyan]", spinner="dots2"):
+                    plan = await agent._generate_plan(query)
+            else:
+                plan = await agent._generate_plan(query)
+
+            # 显示执行计划
+            self._display_plan(plan)
+
+            # 用户确认
+            if not self._confirm_plan():
+                self.print_info("Execution cancelled by user")
+                return True
+
+            # 创建Runtime
+            runtime = ToolRuntime(
+                config=ExecutionConfig(
+                    strategy=ExecutionStrategy.LEVEL_BASED,
+                    max_parallel=3,
+                    timeout=300.0,
+                    continue_on_error=False,
+                ),
+                state=None,  # Create new GraphState for this execution
+            )
+
+            # 转换计划为图
+            graph = agent._plan_to_graph(plan)
+
+            # Sprint 3.6: 显示执行开始消息
+            if self.console:
+                self.console.print()
+                self.print_info("[bold green]执行中...[/bold green] (Type 'stop' to interrupt)")
+                self.console.print("")
+
+            # 运行状态标志
+            is_running = True
+            start_time = time.time()
+
+            # ====================================================================
+            # Track 2: Agent执行任务（消费者生成器）
+            # ====================================================================
+            async def agent_task():
+                """Agent轨道：执行并yield事件"""
+                nonlocal is_running
+                final_result = None
+                all_results = []
+                completed_nodes = 0
+                failed_nodes = 0
+                total_nodes = len(graph.nodes)
+
+                try:
+                    async for event in runtime.execute_steppable(graph, initial_inputs=None, intervention_queue=intervention_queue):
+                        if not is_running:
+                            # User stopped execution
+                            break
+
+                        # Sprint 3.6: 收集详细结果用于统一显示
+                        if event.type == "STEP_COMPLETE":
+                            completed_nodes += 1
+                            if event.result:
+                                all_results.append(event.result)
+                                # 最后一个节点的结果作为最终结果
+                                final_result = event.result.get('result') if isinstance(event.result, dict) else event.result
+
+                        # 渲染事件到屏幕
+                        self._render_step_event(event)
+
+                    # Sprint 3.6: 执行完成 - 显示最终统计和结果（文本模式）
+                    execution_time = time.time() - start_time
+
+                    # 显示执行统计
+                    print("")
+                    print(f"[执行统计] 总节点: {total_nodes}, 完成: {completed_nodes}, 失败: {failed_nodes}, 耗时: {execution_time:.2f}s")
+
+                    # 显示最终结果
+                    if final_result or all_results:
+                        print(f"\n[最终答案]\n{final_result or str(all_results[-1]) if all_results else '执行完成'}\n")
+
+                except Exception as e:
+                    # Agent execution error
+                    self._render_step_event(StepEvent(
+                        type="ERROR",
+                        node_id="agent",
+                        tool_name="agent",
+                        message=f"Execution failed: {str(e)}"
+                    ))
+                finally:
+                    is_running = False
+
+            # ====================================================================
+            # Track 1: 用户输入任务（生产者指令）
+            # ====================================================================
+            async def user_input_task():
+                """用户轨道：异步输入，始终活跃"""
+                prompt_session = PromptSession("FastReAct[interrupt] >> ")
+
+                while is_running:
+                    try:
+                        # patch_stdout 确保日志不会打断输入行
+                        with patch_stdout():
+                            user_input = await prompt_session.prompt_async("")
+
+                        if not user_input or not user_input.strip():
+                            continue
+
+                        # 将用户输入放入干预队列
+                        await intervention_queue.put(user_input)
+
+                        # 检查退出命令 - 不要立即break，等待agent处理
+                        if user_input.strip().lower() in ["exit", "quit", "stop", "abort"]:
+                            if self.console:
+                                self.console.print("[yellow][INTERRUPT] Stop command sent. Waiting for agent to process...[/yellow]")
+                            # Don't break - let agent process the stop command and set is_running=False
+                            # Just continue checking is_running in the while loop condition
+
+                    except (EOFError, KeyboardInterrupt):
+                        # EOF in non-interactive mode - wait for agent to complete
+                        # Don't exit, just sleep and check is_running again
+                        await asyncio.sleep(0.1)
+                        continue
+                    except Exception:
+                        # Input error - don't exit, just wait for agent
+                        await asyncio.sleep(0.1)
+                        continue
+
+                # User input loop ended (agent completed)
+
+            # ====================================================================
+            # Phase 4 核心：并发启动双轨
+            # ====================================================================
+
+            # 创建任务列表
+            tasks = [
+                asyncio.create_task(agent_task(), name="agent"),
+                asyncio.create_task(user_input_task(), name="input"),
+            ]
+
+            # 显示开始信息
+            if self.console:
+                self.console.print("[cyan][bold]Non-blocking IEL mode activated[/bold][/cyan]")
+                self.console.print("[dim]Input bar is always active. Type 'stop' to interrupt.[/dim]")
+                self.console.print("")
+
+            # 并发执行，等待任意一个完成
+            done, pending = await asyncio.wait(
+                tasks,
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            # 取消未完成的任务
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+            # 显示完成信息
+            self.print_success("[bold green]执行完成[/bold green]")
+
+            return True
+
+        except Exception as e:
+            self.print_error(f"GraphAgent non-blocking execution failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _render_step_event(self, event: StepEvent):
+        """
+        Phase 4: 漂亮的事件渲染
+
+        Args:
+            event: 步进执行事件
+        """
+        # 检查是否强制使用文本模式（环境变量或终端不支持）
+        if self.force_text_mode or not self.console:
+            # 简单文本模式
+            if event.type == "STEP_START":
+                print(f"[START] {event.message}")
+            elif event.type == "STEP_COMPLETE":
+                status_symbol = "[OK]" if event.status == "completed" else "[FAIL]"
+                print(f"{status_symbol} {event.message}")
+            elif event.type == "INTERVENTION":
+                print(f"[INTERRUPT] {event.message}")
+            elif event.type == "ERROR":
+                print(f"[ERROR] {event.message}")
+            return
+
+        # Rich UI 模式 - 使用漂亮的格式（Sprint 3.6: 添加渲染失败回退）
+        try:
+            if event.type == "STEP_START":
+                from rich.text import Text
+                self.console.print(Text("➤ ", style="bold blue") + Text(event.message, style="dim"))
+
+            elif event.type == "STEP_COMPLETE":
+                if event.status == "completed":
+                    from rich.text import Text
+                    self.console.print(Text("✔ ", style="bold green") + Text(event.message, style="green"))
+                else:
+                    from rich.text import Text
+                    self.console.print(Text("✖ ", style="bold red") + Text(event.message, style="red"))
+
+            elif event.type == "INTERVENTION":
+                from rich.text import Text
+                self.console.print(Text("[INTERRUPT] ", style="bold yellow") + Text(f"{event.message}", style="yellow"))
+
+            elif event.type == "ERROR":
+                from rich.text import Text
+                self.console.print(Text("[ERROR] ", style="bold red") + Text(event.message, style="red"))
+        except Exception:
+            # Sprint 3.6: Rich渲染失败（终端不支持ANSI），回退到文本模式
+            if event.type == "STEP_START":
+                print(f"[START] {event.message}")
+            elif event.type == "STEP_COMPLETE":
+                status_symbol = "[OK]" if event.status == "completed" else "[FAIL]"
+                print(f"{status_symbol} {event.message}")
+            elif event.type == "INTERVENTION":
+                print(f"[INTERRUPT] {event.message}")
+            elif event.type == "ERROR":
+                print(f"[ERROR] {event.message}")
+
+    # ========================================================================
     # 核心命令：RUN
     # ========================================================================
 
@@ -892,7 +1209,13 @@ Type /help for commands""",
             if mode == "react":
                 return await self._run_react(query)
             elif mode == "graph_agent":
-                return await self._run_graph_agent(query)
+                # Sprint 3: Check if we should use non-blocking IEL mode
+                # For now, use non-blocking mode when prompt_toolkit is available
+                # TODO: Add --step-mode flag to control this behavior
+                if PROMPT_TOOLKIT_AVAILABLE and os.environ.get("FASTREACT_STEPPABLE", "").lower() in ["1", "true", "yes"]:
+                    return await self._run_graph_agent_non_blocking(query)
+                else:
+                    return await self._run_graph_agent(query)
             elif mode == "iel":
                 return await self._run_iel(query)
             else:
@@ -1098,6 +1421,12 @@ Type /help for commands""",
             base_url = get_base_url(config)
             model = get_model(config)
 
+            # 确保 llm_driver 存在（延迟初始化）
+            # 修复：手动 /graph 时跳过复杂度评估，需要手动创建 llm_driver
+            if not hasattr(self, 'llm_driver') or self.llm_driver is None:
+                from fastreact.llm import create_llm_driver_from_config
+                self.llm_driver = create_llm_driver_from_config(config)
+
             # 创建内建工具（修复：确保 Agent 可以使用所有工具）
             builtin_tools = create_builtin_tools(config=config, model=model)
 
@@ -1139,7 +1468,7 @@ Type /help for commands""",
             self.print_context_monitor(monitor)
 
         # 创建 GraphAgent
-        agent = self._get_or_create_graph_agent()
+        agent = await self._get_or_create_graph_agent()
 
         # ====================================================================
         # Step 1: Plan Generation - Thinking phase
@@ -1208,16 +1537,33 @@ Type /help for commands""",
 
         return True
 
-    def _get_or_create_graph_agent(self):
-        """获取或创建 GraphAgent"""
+    async def _get_or_create_graph_agent(self):
+        """获取或创建 GraphAgent（Sprint 3.5: 异步方法以支持MCP工具加载）"""
         if self.state.graph_agent is None:
             from fastreact.graph import GraphAgent, AgentConfig
             from fastreact.graph.runtime import ExecutionStrategy
 
             react_agent = self._get_or_create_react_agent()
+
+            # Sprint 3.5 Hotfix: 强制加载MCP工具
+            # 确保GraphAgent也能使用MCP工具（GitHub、Apollo等）
+            if hasattr(react_agent, '_mcp_enabled') and react_agent._mcp_enabled:
+                if not react_agent._mcp_loaded:
+                    if self.console:
+                        self.print_info("[GraphAgent] Loading MCP tools...")
+                    try:
+                        await react_agent._load_mcp_tools()
+                        if self.console:
+                            self.print_success(f"[GraphAgent] Loaded {len(react_agent.tools) - 13} MCP tools")
+                    except Exception as e:
+                        if self.console:
+                            self.print_warning(f"[GraphAgent] MCP loading failed: {e}")
+                        else:
+                            print(f"[WARNING] MCP loading failed: {e}")
+
             self.state.graph_agent = GraphAgent(
                 llm_driver=self.llm_driver,  # 使用 LLMDriver 而不是 llm_client
-                tools=react_agent.tools,
+                tools=react_agent.tools,  # 现在包含 MCP 工具了！
                 config=AgentConfig(
                     execution_strategy=ExecutionStrategy.LEVEL_BASED,  # ← 使用枚举，不是字符串！
                     max_parallel=3,
