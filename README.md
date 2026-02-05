@@ -79,6 +79,42 @@ python scripts/run_gateway.py
 
 详细指南: [INSTALLATION.md](INSTALLATION.md) | [NEW_ENVIRONMENT_SETUP.md](NEW_ENVIRONMENT_SETUP.md)
 
+### 环境变量控制
+
+FastReAct 支持通过环境变量控制执行模式和行为：
+
+```bash
+# 启用非阻塞 IEL 模式（渐进式交互执行）
+# 特点：输入框始终可用，可随时输入 'stop' 中断执行
+export FASTREACT_STEPPABLE=1
+# Windows PowerShell: $env:FASTREACT_STEPPABLE="1"
+
+# 强制文本模式（避免 ANSI 颜色码在旧终端显示为乱码）
+export FASTREACT_TEXT_MODE=1
+# Windows PowerShell: $env:FASTREACT_TEXT_MODE="1"
+
+# 强制执行模式（禁用自动复杂度评估）
+export FASTREACT_MODE=auto|react|graph_agent|iel
+# Windows PowerShell: $env:FASTREACT_MODE="graph_agent"
+```
+
+**使用示例**（Windows PowerShell）:
+```powershell
+# 启用非阻塞 IEL 模式 + 文本模式
+$env:FASTREACT_STEPPABLE="1"
+$env:FASTREACT_TEXT_MODE="1"
+python -m fastreact.cli.unified_repl
+```
+
+**使用示例**（Linux/Mac）:
+```bash
+# 启用非阻塞 IEL 模式
+export FASTREACT_STEPPABLE=1
+python -m fastreact.cli.unified_repl
+```
+
+详细技术说明: [IEL_TECHNICAL_DEEP_DIVE.md](IEL_TECHNICAL_DEEP_DIVE.md)
+
 ---
 
 ## 功能概览
