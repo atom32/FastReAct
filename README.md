@@ -126,43 +126,152 @@ python scripts/run_gateway.py
 
 ## 架构
 
-### 双模式执行引擎
+### 系统流程
 
-FastReAct 提供两种执行模式，根据任务复杂度自动选择：
-
-#### 模式 A：标准 ReAct 循环（默认）
-
-适用于简单查询和单步任务：
 ```
-用户查询 → LLM 推理 → 工具执行 → 观察结果 → 循环/结束
+┌─────────────────────────────────────────────────────────────┐
+│  用户输入层                                                   │
+│  CLI REPL / Python API / WebSocket Gateway                  │
+└────────────┬────────────────────────────────────────────────┘
+             │
+             ├──────────────────────────────────────────┐
+             │                                         │
+             ▼                                         ▼
+┌──────────────────────────┐              ┌──────────────────────────┐
+│  方式 A：直接使用         │              │  方式 B：手动构建 Graph   │
+│  FastReAct.run_async()   │              │  (高级用法)              │
+└──────────┬───────────────┘              └──────────┬───────────────┘
+           │                                             │
+           ▼                                             ▼
+┌──────────────────────────┐              ┌──────────────────────────┐
+│  ReAct 循环引擎          │              │  ToolGraph 构建           │
+│  (标准模式)              │              │  - 定义节点和边          │
+│                          │              │  - 设置依赖关系          │
+│  1. LLM 推理 (Thought)   │              │  - 声明式 API            │
+│  2. 解析工具调用         │              └──────────┬───────────────┘
+│  3. 并发执行工具         │                         │
+│  4. 观察结果 (Observation)│                        ▼
+│  5. 循环或返回答案       │              ┌──────────────────────────┐
+│                          │              │  执行引擎选择            │
+│  适合：简单查询、对话    │              ├──────────┬───────────────┤
+└──────────┬───────────────┘              │          │               │
+           │                             │          ▼               ▼
+           │                             │   ┌──────────┐  ┌─────────────┐
+           │                             │   │ToolRuntime│  │IELLoop     │
+           │                             │   │(DAG执行) │  │(交互式)    │
+           │                             │   │          │  │            │
+           │                             │   │-拓扑排序 │  │-动态重规划  │
+           │                             │   │-并行执行 │  │-用户中断   │
+           │                             │   │          │  │-快照回滚   │
+           │                             │   └────┬─────┘  └──────┬──────┘
+           │                             │        │              │
+           └─────────────────────────────┴────────┴──────────────┘
+                                     │
+                                     ▼
+                          ┌──────────────────────┐
+                          │  工具层              │
+                          │  ┌────────────────┐  │
+                          │  │ Builtin Tools  │  │
+                          │  │ (13 个工具)    │  │
+                          │  └────────────────┘  │
+                          │  ┌────────────────┐  │
+                          │  │ MCP Servers    │  │
+                          │  │ (GitHub, etc)  │  │
+                          │  └────────────────┘  │
+                          └──────────┬───────────┘
+                                     │
+                                     ▼
+                          ┌──────────────────────┐
+                          │  基础设施层          │
+                          │  LLM / Config / Store│
+                          └──────────────────────┘
 ```
+
+### 两种使用方式
+
+#### 方式 A：ReAct 模式（REPL 的默认方式）
+
+```python
+from fastreact import FastReAct
+
+agent = FastReAct(api_key="your-key")
+result = await agent.run_async("帮我搜索最新的 AI 新闻")
+
+# 内部流程：
+# 1. LLM 推理：决定调用 TavilySearch 工具
+# 2. 执行工具：调用搜索 API
+# 3. 观察结果：获得搜索结果
+# 4. LLM 总结：返回最终答案
+```
+
+**使用场景**：
+- 简单问答
+- 单步工具调用
+- REPL 交互
 
 **特点**：
-- 轻量级、响应快
-- 适合对话式问答
-- REPL 的默认模式
+- 自动循环直到得到答案
+- 无需手动规划
+- 快速、轻量
 
-#### 模式 B：IEL + ToolGraph（高级）
+#### 方式 B：ToolGraph/IEL 模式（高级编程）
 
-适用于复杂多步骤任务：
+```python
+from fastreact.graph import (
+    create_tool_node, ToolGraph, create_pipeline
+)
+from fastreact.graph import IELLoop, IELExecutionContext
+from fastreact.graph import StepExecutor, Replanner
+
+# 1. 定义工作流图
+node1 = create_tool_node(id="search", tool=search_tool)
+node2 = create_tool_node(id="analyze", tool=analyze_tool)
+node3 = create_tool_node(id="report", tool=report_tool)
+
+graph = ToolGraph("my_workflow")
+graph.add_node(node1).add_node(node2).add_node(node3)
+graph.connect("search", "analyze")
+graph.connect("analyze", "report")
+
+# 2. 选择执行方式
+
+# 方式 B1：DAG 执行（简单）
+from fastreact.graph import ToolRuntime, execute_graph
+result = await execute_graph(graph, inputs={"query": "AI news"})
+
+# 方式 B2：IEL 循环（高级，支持重规划）
+context = IELExecutionContext(graph, initial_inputs={"query": "AI news"})
+executor = StepExecutor(tools=tool_registry)
+replanner = Replanner(llm_client=client)
+loop = IELLoop(executor, replanner)
+
+result = await loop.run(context)
 ```
-Tool Graph (DAG) → IEL 执行循环 → 动态重规划 → 快照回滚
-```
+
+**使用场景**：
+- 复杂多步骤工作流
+- 需要动态重规划
+- 需要 human-in-the-loop
+- 需要快照回滚
 
 **特点**：
-- 支持复杂工作流编排
-- 动态图修改（插入/替换节点）
-- Human-in-the-loop（用户中断）
-- 失败重试和回滚机制
+- 完全控制执行流程
+- 可视化工作流
+- 支持失败恢复
 
-**组件**：
-- `IELLoop` - 交互式执行循环
-- `IELExecutionContext` - 可变状态管理
-- `ToolGraph` - DAG 图执行
-- `Replanner` - 反思和重规划
-- `StepExecutor` - 步进执行
+### 关键区别
 
-### 系统架构
+| 特性 | ReAct 模式 | ToolGraph/IEL 模式 |
+|------|-----------|-------------------|
+| **入口** | `FastReAct.run_async()` | 手动构建 `ToolGraph` |
+| **规划** | LLM 自动决策（隐式） | 用户显式定义 DAG |
+| **执行** | 循环直到答案 | 按图结构执行 |
+| **重规划** | 无 | IEL 支持动态修改 |
+| **中断** | 不支持 | 支持用户输入/中断 |
+| **回滚** | 无 | 快照和回滚机制 |
+| **适用** | 90% 的简单任务 | 10% 的复杂工作流 |
+
+### 分层架构
 
 ```
 ┌─────────────────────────────────────────┐
@@ -171,10 +280,10 @@ Tool Graph (DAG) → IEL 执行循环 → 动态重规划 → 快照回滚
 └──────────────┬──────────────────────────┘
                │
 ┌──────────────▼──────────────────────────┐
-│  双模式执行引擎                          │
+│  执行引擎层                              │
 │  ┌────────────────┐  ┌───────────────┐ │
-│  │ ReAct Loop     │  │ IEL + ToolGraph│ │
-│  │ (默认/简单)    │  │ (高级/复杂)   │ │
+│  │ FastReAct      │  │ ToolGraph/IEL │ │
+│  │ (ReAct Loop)   │  │ (可选)        │ │
 │  └────────────────┘  └───────────────┘ │
 │  - 上下文管理 (Memory Flush)            │
 └──────────────┬──────────────────────────┘
@@ -193,15 +302,9 @@ Tool Graph (DAG) → IEL 执行循环 → 动态重规划 → 快照回滚
 └─────────────────────────────────────────┘
 ```
 
-### 何时使用哪种模式？
-
-| 场景 | 推荐模式 | 示例 |
-|------|---------|------|
-| 简单问答 | ReAct | "2+2=?" |
-| 单步工具 | ReAct | "搜索最新 AI 新闻" |
-| 复杂工作流 | IEL + ToolGraph | 多步骤数据分析 |
-| 需要重规划 | IEL + ToolGraph | 代码生成→测试→修复 |
-| Human-in-loop | IEL + ToolGraph | 需要用户审批的流程 |
+**注意**：
+- **FastReAct (ReAct)**：用于 90% 的简单任务，REPL 的默认方式
+- **ToolGraph/IEL**：用于 10% 的复杂工作流，需要手动构建
 
 ---
 
