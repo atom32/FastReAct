@@ -38,27 +38,49 @@ class GraphAgent:
     4. 返回结果
 
     Attributes:
-        llm_client: LLM 客户端
+        llm_driver: LLMDriver 实例（统一 LLM 调用中间层）
         tools: 工具列表
         config: Agent 配置
     """
 
     def __init__(
         self,
-        llm_client,
-        tools: Dict[str, Any],
+        llm_client=None,  # Deprecated: Use llm_driver instead
+        llm_driver=None,
+        tools: Optional[Dict[str, Any]] = None,
         config: Optional[AgentConfig] = None,
     ):
         """
         初始化 GraphAgent
 
         Args:
-            llm_client: LLM 客户端（需要 chat.completions.create 接口）
+            llm_client: [DEPRECATED] LLM 客户端，请使用 llm_driver 代替
+            llm_driver: LLMDriver 实例
             tools: 工具字典 {name: tool_function}
             config: Agent 配置
         """
-        self.llm_client = llm_client
-        self.tools = tools
+        # 兼容旧代码：优先使用 llm_driver
+        if llm_driver is not None:
+            self.llm_driver = llm_driver
+            self._use_driver = True
+        elif llm_client is not None:
+            # 兼容旧方式：包装为 driver（简单包装，不处理重试）
+            from fastreact.llm import LLMDriver, LLMDriverConfig
+            self.llm_driver = LLMDriver(
+                api_key=getattr(llm_client, 'api_key', None),
+                base_url=getattr(llm_client, 'base_url', None),
+                config=LLMDriverConfig(
+                    model=getattr(llm_client, 'model', None) or "gpt-4",
+                    log_requests=False,  # 旧代码不期望日志
+                    enable_cache=False,  # 旧代码不期望缓存
+                    max_retries=0,  # 旧代码自己处理重试
+                )
+            )
+            self._use_driver = True
+        else:
+            raise ValueError("必须提供 llm_driver 或 llm_client（已废弃）")
+
+        self.tools = tools or {}
         self.config = config or AgentConfig()
 
         # 创建计划解析器
@@ -138,19 +160,20 @@ class GraphAgent:
             tool_list=tool_list,
         )
 
-        # 调用 LLM
+        # 调用 LLM（使用 LLMDriver）
         try:
-            response = await self.llm_client.chat.completions.create(
-                model=self.llm_client.model or "gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are an expert at planning multi-step workflows."},
-                    {"role": "user", "content": prompt},
-                ],
+            messages = [
+                {"role": "system", "content": "You are an expert at planning multi-step workflows."},
+                {"role": "user", "content": prompt},
+            ]
+
+            response = await self.llm_driver.chat(
+                messages=messages,
                 temperature=0.5,
                 max_tokens=2000,
             )
 
-            llm_output = response.choices[0].message.content or ""
+            llm_output = response.content
 
             # 解析计划
             plan = self.parser.parse(llm_output)
@@ -248,17 +271,18 @@ Provide a clear, helpful response that:
 """
 
         try:
-            response = await self.llm_client.chat.completions.create(
-                model=self.llm_client.model or "gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that summarizes task execution results."},
-                    {"role": "user", "content": prompt},
-                ],
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant that summarizes task execution results."},
+                {"role": "user", "content": prompt},
+            ]
+
+            response = await self.llm_driver.chat(
+                messages=messages,
                 temperature=0.7,
                 max_tokens=1000,
             )
 
-            return response.choices[0].message.content or "Execution completed."
+            return response.content or "Execution completed."
 
         except Exception as e:
             logger.error(f"Failed to generate response: {e}")
@@ -325,19 +349,21 @@ Provide a clear, helpful response that:
 
 
 def create_graph_agent(
-    llm_client,
-    tools: Dict[str, Any],
+    llm_client=None,  # Deprecated
+    llm_driver=None,
+    tools: Optional[Dict[str, Any]] = None,
     config: Optional[AgentConfig] = None,
 ) -> GraphAgent:
     """
     创建 GraphAgent
 
     Args:
-        llm_client: LLM 客户端
+        llm_client: [DEPRECATED] LLM 客户端，请使用 llm_driver
+        llm_driver: LLMDriver 实例
         tools: 工具字典
         config: Agent 配置
 
     Returns:
         GraphAgent 实例
     """
-    return GraphAgent(llm_client=llm_client, tools=tools, config=config)
+    return GraphAgent(llm_client=llm_client, llm_driver=llm_driver, tools=tools, config=config)

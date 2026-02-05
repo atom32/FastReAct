@@ -69,18 +69,19 @@ FastReAct[AUTO] >> 分析项目代码并重构异常处理逻辑
 
 ---
 
-### Phase 2: 核心组件 ⏳ (TODO)
+### Phase 2: 核心组件 ✅ (DONE)
 
 **组件**: `GraphAgent`, `Replanner`
 
 **风险**: 中等（对 Prompt 结构要求高）
 
-**计划**:
+**状态**: ✅ 已完成
 
-#### 2.1 GraphAgent 迁移
+**提交**: `[待提交]`
 
+**改动**:
 ```python
-# Before
+# Before - GraphAgent
 class GraphAgent:
     def __init__(self, llm_client, tools, config):
         self.llm_client = llm_client
@@ -88,46 +89,71 @@ class GraphAgent:
     async def _generate_plan(self, query):
         response = await self.llm_client.chat.completions.create(...)
 
-# After
+# After - GraphAgent
 class GraphAgent:
-    def __init__(self, llm_driver, tools, config):
-        self.llm_driver = llm_driver
+    def __init__(self, llm_driver=None, llm_client=None, tools=None, config=None):
+        # 兼容旧代码：优先使用 llm_driver
+        if llm_driver is not None:
+            self.llm_driver = llm_driver
+        elif llm_client is not None:
+            # 包装为 driver
+            self.llm_driver = LLMDriver(...)
+        self.tools = tools or {}
+        self.config = config or AgentConfig()
 
     async def _generate_plan(self, query):
         response = await self.llm_driver.chat(
             messages=[...],
             temperature=0.5,
+            max_tokens=2000,
         )
+        return self.parser.parse(response.content)
 ```
 
-#### 2.2 Replanner 迁移
-
 ```python
-# Before
+# Before - Replanner
 class Replanner:
-    def __init__(self, llm_client, ...):
+    def __init__(self, llm_client, tool_registry, model="gpt-4"):
         self.llm_client = llm_client
 
-    async def reflect_and_patch(self, ...):
+    async def _analyze_failure(self, context, failure, history):
         response = await self.llm_client.chat.completions.create(...)
 
-# After
+# After - Replanner
 class Replanner:
-    def __init__(self, llm_driver, ...):
-        self.llm_driver = llm_driver
+    def __init__(self, llm_driver=None, llm_client=None, tool_registry=None, model="gpt-4"):
+        # 兼容旧代码：优先使用 llm_driver
+        if llm_driver is not None:
+            self.llm_driver = llm_driver
+        elif llm_client is not None:
+            # 包装为 driver
+            self.llm_driver = LLMDriver(...)
+        self.tool_registry = tool_registry or {}
 
-    async def reflect_and_patch(self, ...):
+    async def _analyze_failure(self, context, failure, history):
         response = await self.llm_driver.chat(
             messages=[...],
             temperature=0.3,
+            max_tokens=1000,
         )
+        return self._parse_reflection(response.content, failure)
+```
+
+**测试**:
+```bash
+python test_llm_driver_migration.py
+
+# 应该看到：
+# [OK] LLMDriver created
+# [OK] GraphAgent created with LLMDriver
+# [OK] Plan generated
+# [OK] Cache is working (significant speedup)
+# [PASS] GraphAgent successfully migrated to LLMDriver
 ```
 
 ---
 
 ### Phase 3: 主循环 ⏳ (TODO)
-
-**组件**: `FastReAct._chat()`
 
 **风险**: 高（核心引擎，所有查询都经过）
 
@@ -190,12 +216,14 @@ class FastReAct:
 - [x] 自动重试工作
 - [x] Fallback 机制工作
 
-### Phase 2 验证 ⏳
+### Phase 2 验证 ✅
 
-- [ ] GraphAgent 使用 LLMDriver
-- [ ] Replanner 使用 LLMDriver
-- [ ] 计划生成正确
-- [ ] 重规划功能正常
+- [x] GraphAgent 使用 LLMDriver
+- [x] Replanner 使用 LLMDriver
+- [x] 计划生成正确
+- [x] 重规划功能正常
+- [x] 缓存功能正常
+- [x] 向后兼容（llm_client 仍可使用）
 
 ### Phase 3 验证 ⏳
 
@@ -250,4 +278,4 @@ FastReAct ─────────────┘
 ---
 
 **最后更新**: 2025-02-05
-**当前状态**: Phase 1 完成，Phase 2-4 待实施
+**当前状态**: Phase 1-2 完成，Phase 3-4 待实施

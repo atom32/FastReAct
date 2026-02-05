@@ -144,7 +144,7 @@ class Replanner:
     4. Handle user interrupts with replanning
 
     Usage:
-        replanner = Replanner(llm_client=client, tool_registry=tools)
+        replanner = Replanner(llm_driver=driver, tool_registry=tools)
 
         # On failure
         patch = await replanner.reflect_and_patch(context, failed_result)
@@ -159,20 +159,42 @@ class Replanner:
 
     def __init__(
         self,
-        llm_client,
-        tool_registry: Dict[str, Any],
+        llm_client=None,  # Deprecated: Use llm_driver instead
+        llm_driver=None,
+        tool_registry: Optional[Dict[str, Any]] = None,
         model: str = "gpt-4",
     ):
         """
         Initialize Replanner
 
         Args:
-            llm_client: LLM client for reflection and planning
+            llm_client: [DEPRECATED] LLM 客户端，请使用 llm_driver
+            llm_driver: LLMDriver 实例
             tool_registry: Available tools dictionary
-            model: Model name
+            model: Model name（用于 LLMDriver）
         """
-        self.llm_client = llm_client
-        self.tool_registry = tool_registry
+        # 兼容旧代码：优先使用 llm_driver
+        if llm_driver is not None:
+            self.llm_driver = llm_driver
+            self._use_driver = True
+        elif llm_client is not None:
+            # 兼容旧方式：包装为 driver
+            from fastreact.llm import LLMDriver, LLMDriverConfig
+            self.llm_driver = LLMDriver(
+                api_key=getattr(llm_client, 'api_key', None),
+                base_url=getattr(llm_client, 'base_url', None),
+                config=LLMDriverConfig(
+                    model=model,
+                    log_requests=False,
+                    enable_cache=False,
+                    max_retries=0,
+                )
+            )
+            self._use_driver = True
+        else:
+            raise ValueError("必须提供 llm_driver 或 llm_client（已废弃）")
+
+        self.tool_registry = tool_registry or {}
         self.model = model
 
         # Replanning stats
@@ -290,24 +312,25 @@ class Replanner:
         )
 
         try:
-            # Call LLM for reflection
-            response = await self.llm_client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at analyzing execution failures and determining the best recovery strategy."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+            # Call LLM for reflection（使用 LLMDriver）
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing execution failures and determining the best recovery strategy."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+
+            response = await self.llm_driver.chat(
+                messages=messages,
                 temperature=0.3,  # Lower temperature for consistent analysis
                 max_tokens=1000,
             )
 
-            analysis = response.choices[0].message.content or ""
+            analysis = response.content
 
             # Parse analysis
             return self._parse_reflection(analysis, failure)
@@ -569,17 +592,18 @@ Respond in JSON:
 """
 
         try:
-            response = await self.llm_client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are an expert at modifying execution plans based on user feedback."},
-                    {"role": "user", "content": prompt}
-                ],
+            messages = [
+                {"role": "system", "content": "You are an expert at modifying execution plans based on user feedback."},
+                {"role": "user", "content": prompt}
+            ]
+
+            response = await self.llm_driver.chat(
+                messages=messages,
                 temperature=0.5,
                 max_tokens=1500,
             )
 
-            content = response.choices[0].message.content or ""
+            content = response.content
             return self._parse_patch_response(content)
 
         except Exception as e:
