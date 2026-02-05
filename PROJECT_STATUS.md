@@ -132,6 +132,51 @@
 
 ---
 
+### ✅ 高级执行模式（IEL + ToolGraph）
+
+#### IEL (Interactive Execution Loop)
+**状态**: 完全实现，可选使用
+**代码位置**:
+- `src/fastreact/graph/iel_loop.py` - 主执行循环
+- `src/fastreact/graph/iel_context.py` - 执行上下文
+- `src/fastreact/graph/step_executor.py` - 步进执行器
+- `src/fastreact/graph/replanner.py` - 动态重规划器
+
+**功能**:
+- Plan → Execute → Reflect → (Replan | Continue) 循环
+- 动态图修改（插入/删除/替换节点）
+- Human-in-the-loop（用户中断和输入）
+- 快照和回滚机制
+- 失败重试和自动修复
+
+**使用场景**:
+- 复杂多步骤工作流
+- 需要动态重规划的任务
+- 需要用户交互的流程
+- 代码生成→测试→修复循环
+
+**与标准 ReAct 的关系**:
+- **并行存在，不是替代**
+- ReAct 用于简单查询（默认）
+- IEL 用于复杂任务（可选）
+
+#### ToolGraph 系统
+**状态**: 完全实现
+**代码位置**:
+- `src/fastreact/graph/graph.py` - DAG 图结构
+- `src/fastreact/graph/runtime.py` - 图执行引擎
+- `src/fastreact/graph/node.py` - 工具节点
+
+**功能**:
+- 声明式工作流定义（`node1 >> node2 >> node3`）
+- 并行执行（`(node1 | node2) >> node3`）
+- 拓扑排序和依赖解析
+- 条件执行和循环
+
+**验证**: 完整实现，可用于生产
+
+---
+
 ### ⚠️ 已实现但未完全集成的功能
 
 #### 1. Progressive Compaction (渐进式压缩)

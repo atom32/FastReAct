@@ -30,7 +30,7 @@ FastReAct 文档已精简，只保留核心和诚实的文档。
 - **[MCP_INTEGRATION_SUCCESS.md](MCP_INTEGRATION_SUCCESS.md)** - MCP 集成历史
 
 ### Technical Details
-- **[IEL.md](IEL.md)** - IEL (Interactive Execution Loop) 完整指南
+- **[IEL.md](IEL.md)** - IEL (Interactive Execution Loop) 完整指南 ⭐ 已实现
 - **[VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md)** - 版本管理
 - **[DOCKER_QUICKREF.md](DOCKER_QUICKREF.md)** - Docker 快速参考
 

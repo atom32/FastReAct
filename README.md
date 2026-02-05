@@ -1,6 +1,6 @@
 # FastReAct
 
-> **企业级 AI Agent 基础设施框架** - 基于标准 ReAct 架构
+> **企业级 AI Agent 基础设施框架** - 双模式执行引擎（ReAct + IEL）
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,10 +11,13 @@
 
 ## 项目简介
 
-**FastReAct** 是一个基于 ReAct (Reasoning and Acting) 架构的 AI Agent 框架，支持大语言模型驱动的工具调用。
+**FastReAct** 是一个支持双模式执行的 AI Agent 框架：
+- **标准 ReAct 模式**：适用于简单查询和单步任务
+- **高级 IEL 模式**：适用于复杂工作流和动态重规划
 
 ### 设计目标
 
+- **双模式执行**: ReAct（轻量）+ IEL/ToolGraph（高级）
 - **隐私优先**: 支持完全离线部署，数据不离开本地环境
 - **模型灵活**: 支持任何 OpenAI-compatible API
 - **成本可控**: 通过智能上下文管理优化 Token 使用
@@ -73,11 +76,22 @@ python scripts/run_gateway.py
 
 ### 已实现功能
 
-#### 1. ReAct 核心引擎
-- 推理-行动循环 (Thought → Action → Observation)
+#### 1. 双模式执行引擎
+
+**模式 A：标准 ReAct 循环**
+- 推理-行动-观察循环 (Thought → Action → Observation)
 - 异步工具执行
 - 错误处理和重试机制
 - 会话管理
+- **默认模式，用于简单查询**
+
+**模式 B：IEL + ToolGraph（高级）**
+- **IEL (Interactive Execution Loop)**: Plan → Execute → Reflect → Replan
+- **ToolGraph**: DAG 工作流编排
+- 动态图修改（插入/删除/替换节点）
+- Human-in-the-loop（用户中断）
+- 快照和回滚机制
+- **可选模式，用于复杂工作流**
 
 #### 2. 智能上下文管理
 - **Memory Flush**: 自动总结长对话（50k tokens 触发）
@@ -102,6 +116,7 @@ python scripts/run_gateway.py
 
 ### 开发中功能
 
+- Progressive Compaction 完全集成
 - 多 Agent 协作（规划 v2.0.0）
 - Agent 编排（规划 v2.0.0）
 - 自动工具发现（规划 v2.0.0）
@@ -111,6 +126,44 @@ python scripts/run_gateway.py
 
 ## 架构
 
+### 双模式执行引擎
+
+FastReAct 提供两种执行模式，根据任务复杂度自动选择：
+
+#### 模式 A：标准 ReAct 循环（默认）
+
+适用于简单查询和单步任务：
+```
+用户查询 → LLM 推理 → 工具执行 → 观察结果 → 循环/结束
+```
+
+**特点**：
+- 轻量级、响应快
+- 适合对话式问答
+- REPL 的默认模式
+
+#### 模式 B：IEL + ToolGraph（高级）
+
+适用于复杂多步骤任务：
+```
+Tool Graph (DAG) → IEL 执行循环 → 动态重规划 → 快照回滚
+```
+
+**特点**：
+- 支持复杂工作流编排
+- 动态图修改（插入/替换节点）
+- Human-in-the-loop（用户中断）
+- 失败重试和回滚机制
+
+**组件**：
+- `IELLoop` - 交互式执行循环
+- `IELExecutionContext` - 可变状态管理
+- `ToolGraph` - DAG 图执行
+- `Replanner` - 反思和重规划
+- `StepExecutor` - 步进执行
+
+### 系统架构
+
 ```
 ┌─────────────────────────────────────────┐
 │  用户接口层                              │
@@ -118,10 +171,11 @@ python scripts/run_gateway.py
 └──────────────┬──────────────────────────┘
                │
 ┌──────────────▼──────────────────────────┐
-│  Agent 引擎层 (ReAct Loop)              │
-│  - 推理 (Thought)                       │
-│  - 行动 (Action)                        │
-│  - 观察 (Observation)                   │
+│  双模式执行引擎                          │
+│  ┌────────────────┐  ┌───────────────┐ │
+│  │ ReAct Loop     │  │ IEL + ToolGraph│ │
+│  │ (默认/简单)    │  │ (高级/复杂)   │ │
+│  └────────────────┘  └───────────────┘ │
 │  - 上下文管理 (Memory Flush)            │
 └──────────────┬──────────────────────────┘
                │
@@ -138,6 +192,16 @@ python scripts/run_gateway.py
 │  LLM 抽象 / 配置系统 / 存储层            │
 └─────────────────────────────────────────┘
 ```
+
+### 何时使用哪种模式？
+
+| 场景 | 推荐模式 | 示例 |
+|------|---------|------|
+| 简单问答 | ReAct | "2+2=?" |
+| 单步工具 | ReAct | "搜索最新 AI 新闻" |
+| 复杂工作流 | IEL + ToolGraph | 多步骤数据分析 |
+| 需要重规划 | IEL + ToolGraph | 代码生成→测试→修复 |
+| Human-in-loop | IEL + ToolGraph | 需要用户审批的流程 |
 
 ---
 
@@ -179,25 +243,44 @@ npm run dev
 
 ## 技术亮点
 
-### 1. Memory Flush (自动上下文管理)
+### 1. 双模式执行架构
+- **ReAct 循环**: 轻量级、快速响应，适合简单任务
+- **IEL + ToolGraph**: 复杂工作流、动态重规划、Human-in-loop
+- 根据任务复杂度自动选择
+- 两种模式可独立使用，也可组合
+
+### 2. IEL (Interactive Execution Loop)
+- Plan → Execute → Reflect → Replan 循环
+- 动态图修改（运行时插入/替换节点）
+- 快照和回滚机制
+- 用户中断和输入处理
+- 失败自动重试和修复
+
+### 3. ToolGraph 系统
+- 声明式工作流定义（`node1 >> node2`）
+- DAG 执行和依赖解析
+- 并行执行（`(node1 | node2) >> node3`）
+- 条件执行和循环支持
+
+### 4. Memory Flush (自动上下文管理)
 - 触发阈值: 50000 (soft) / 55000 (hard) tokens
 - 自动总结旧消息
 - 压缩比约 70%
 - 已实现并集成
 
-### 2. MCP 协议集成
+### 5. MCP 协议集成
 - 标准化工具协议
 - 支持 GitHub MCP、Apollo Core
 - 100+ 社区 MCP servers 可用
 - 已实现并可用
 
-### 3. 4 层配置优先级
+### 6. 4 层配置优先级
 - ENV > USER > PROJECT > DEFAULT
 - 支持多租户场景
 - 敏感信息隔离
 - 已实现并验证
 
-### 4. 工具策略控制
+### 7. 工具策略控制
 - 风险分级（HIGH/MEDIUM/LOW）
 - 执行审批机制
 - 动态策略控制
