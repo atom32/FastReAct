@@ -427,19 +427,24 @@ def create_write_file_tool() -> Tool:
 
 
 def create_read_file_tool() -> Tool:
-    """创建文件读取工具"""
+    """
+    创建文件读取工具（Sprint 3.5: 智能路由）
+
+    小文件（<300行）：返回全文
+    大文件（>300行）：返回前100行 + 提示使用 view_file
+    """
     from pathlib import Path
 
     async def execute(path: str, encoding: str = "utf-8") -> str:
         """
-        读取文件内容
+        智能读取文件内容
 
         Args:
             path: 文件路径（相对或绝对）
             encoding: 文件编码（默认 utf-8）
 
         Returns:
-            文件内容
+            文件内容或预览
         """
         try:
             file_path = Path(path)
@@ -447,14 +452,30 @@ def create_read_file_tool() -> Tool:
             if not file_path.exists():
                 return f"[ERROR] File not found: {file_path}"
 
-            content = file_path.read_text(encoding=encoding)
+            # 读取文件
+            with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+                lines = f.readlines()
 
-            # 限制返回长度
-            max_length = 10000
-            if len(content) > max_length:
-                content = content[:max_length] + f"\n... (truncated, total {len(content)} chars)"
+            total_lines = len(lines)
 
-            return f"[OK] File: {file_path}\n{content}"
+            # Sprint 3.5: 智能路由
+            max_full_lines = 300
+            preview_lines = 100
+
+            if total_lines <= max_full_lines:
+                # 小文件：返回全文
+                content = ''.join(lines).rstrip()
+                return f"[OK] File: {file_path} ({total_lines} lines)\n{content}"
+            else:
+                # 大文件：返回预览 + 提示
+                preview = ''.join(lines[:preview_lines]).rstrip()
+                return (
+                    f"[INFO] File is too large ({total_lines} lines). "
+                    f"Showing first {preview_lines} lines.\n"
+                    f"Use view_file(path='{path}', start_line=1, end_line={preview_lines + 100}) to read more.\n"
+                    f"--- File: {file_path} (preview) ---\n{preview}\n"
+                    f"... ({total_lines - preview_lines} more lines)"
+                )
 
         except Exception as e:
             return f"[ERROR] Failed to read file: {str(e)}"
@@ -462,7 +483,7 @@ def create_read_file_tool() -> Tool:
     return Tool(
         name="read_file",
         label="Read File",
-        description="读取文件内容。适用于查看代码、配置文件、日志等。返回前 10000 字符。",
+        description="智能读取文件内容。小文件返回全文，大文件返回预览并提示使用 view_file。",
         group="file_ops",
         parameters={
             "type": "object",
@@ -470,9 +491,6 @@ def create_read_file_tool() -> Tool:
                 "path": {
                     "type": "string",
                     "description": "文件路径（相对或绝对）"
-                    # NOTE: Parameter name is 'path', NOT 'file_path' or 'file'
-                    # This is consistent with engine.py which returns 'parameters' key
-                    # Test suite validates: test_integration_4_tool_graph.py
                 },
                 "encoding": {
                     "type": "string",

@@ -59,6 +59,17 @@ from fastreact.tools.fn_registry import (
     get_tool_function_schema,
 )
 
+# Sprint 3.5: 精细化工具
+from fastreact.tools.precision_tools import (
+    create_view_file_tool,
+    create_smart_read_tool,
+    create_grep_code_tool,
+    create_precision_tools,
+    view_file,
+    smart_read,
+    grep_code,
+)
+
 # moltbot 风格扩展工具
 from fastreact.tools.moltbot_tools import (
     create_code_exec_tool,
