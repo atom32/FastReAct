@@ -153,12 +153,17 @@ python test_llm_driver_migration.py
 
 ---
 
-### Phase 3: 主循环 ⏳ (TODO)
+### Phase 3: 主循环 ✅ (DONE)
+
+**组件**: `FastReAct._chat()`
 
 **风险**: 高（核心引擎，所有查询都经过）
 
-**计划**:
+**状态**: ✅ 已完成
 
+**提交**: `[待提交]`
+
+**改动**:
 ```python
 # Before
 class FastReAct:
@@ -172,26 +177,58 @@ class FastReAct:
         client = self._get_client()
         response = await client.chat.completions.create(...)
 
-# After
+# After - 双轨并行（向后兼容）
 class FastReAct:
-    def __init__(self, llm_driver=None, ...):
+    def __init__(self, ..., llm_driver=None):
         # 优先使用传入的 driver
         if llm_driver is not None:
             self._llm_driver = llm_driver
+            self._use_driver = True
         else:
-            # 兼容旧方式：创建 driver
-            self._llm_driver = create_llm_driver_from_config(self.config)
+            # 兼容旧方式
+            self._llm_driver = None
+            self._use_driver = False
 
     async def _chat(self, messages):
-        # 使用 LLMDriver
-        response = await self._llm_driver.chat(messages=messages)
+        if self._use_driver and self._llm_driver is not None:
+            return await self._chat_with_driver(messages)
+        else:
+            return await self._chat_with_client(messages)
 
-        # 转换为旧格式（向后兼容）
-        return {
-            "content": response.content,
-            "tool_calls": response.tool_calls,
-        }
+    async def _chat_with_driver(self, messages):
+        """新路径：使用 LLMDriver"""
+        tools_schema = self._build_tools_schema() if self.tools else None
+        response = await self._llm_driver.chat(
+            messages=messages,
+            tools=tools_schema,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        return {"content": response.content, "tool_calls": response.tool_calls}
+
+    async def _chat_with_client(self, messages):
+        """旧路径：直接调用 OpenAI 客户端（向后兼容）"""
+        # ... 原有代码 ...
 ```
+
+**测试**:
+```bash
+python test_phase3_heart_surgery.py
+
+# 应该看到：
+# Test 1: Simple Conversation - [SUCCESS]
+# Test 2: Tool Calling - [OK] Tool calling metadata validated
+# Test 3: Multi-turn Context - [SUCCESS]
+# Test 4: Streaming with Tools - [SUCCESS]
+# Test 5: Error Handling - [SUCCESS]
+# Test 6: LLMDriver Path - [SUCCESS] LLMDriver integration validated
+# [SUCCESS] All Phase 3 tests passed!
+# [INFO] Both old and new code paths work correctly
+```
+
+---
+
+### Phase 4: 清理 ⏳ (TODO)
 
 ---
 
@@ -225,12 +262,14 @@ class FastReAct:
 - [x] 缓存功能正常
 - [x] 向后兼容（llm_client 仍可使用）
 
-### Phase 3 验证 ⏳
+### Phase 3 验证 ✅
 
-- [ ] FastReAct 使用 LLMDriver
-- [ ] ReAct 循环正常
-- [ ] 工具调用正常
-- [ ] 流式输出正常
+- [x] FastReAct 使用 LLMDriver（双轨并行）
+- [x] ReAct 循环正常
+- [x] 工具调用正常
+- [x] tool_calls 元数据完整透传
+- [x] 多轮对话上下文连贯
+- [x] 向后兼容（旧代码路径仍可用）
 
 ### Phase 4 验证 ⏳
 
@@ -278,4 +317,4 @@ FastReAct ─────────────┘
 ---
 
 **最后更新**: 2025-02-05
-**当前状态**: Phase 1-2 完成，Phase 3-4 待实施
+**当前状态**: Phase 1-3 完成，Phase 4 待实施

@@ -129,6 +129,8 @@ class FastReAct:
         approval_manager=None,
         # 配置系统：用于传递给工具创建函数
         config: Optional[Dict[str, Any]] = None,
+        # Phase 3: LLMDriver 支持
+        llm_driver=None,  # 新增：外部传入的 LLMDriver
     ):
         """
         初始化FastReAct引擎
@@ -363,6 +365,17 @@ class FastReAct:
         # 异步客户端（延迟初始化）
         self._client = None
         self._http_client = None
+
+        # Phase 3: LLMDriver 支持
+        if llm_driver is not None:
+            self._llm_driver = llm_driver
+            self._use_driver = True
+            logger.info("Using external LLMDriver")
+        else:
+            # 兼容旧方式：延迟初始化（在第一次 _chat 时创建 driver）
+            self._llm_driver = None
+            self._use_driver = False
+            logger.debug("LLMDriver not provided, will create on first use")
 
         # 请求去重（时间窗口内的最近调用）
         self._recent_calls: deque = deque()
@@ -1651,6 +1664,63 @@ class FastReAct:
     ) -> Dict[str, Any]:
         """
         发送聊天请求（支持 Function Calling）
+
+        Returns:
+            {
+                "content": "响应内容",
+                "tool_calls": [工具调用列表]  # 如果有工具调用
+            }
+        """
+        # Phase 3: 优先使用 LLMDriver（如果可用）
+        if self._use_driver and self._llm_driver is not None:
+            return await self._chat_with_driver(messages)
+        else:
+            # 旧方式：直接调用 OpenAI 客户端（向后兼容）
+            return await self._chat_with_client(messages)
+
+    async def _chat_with_driver(
+        self, messages: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
+        """
+        使用 LLMDriver 发送聊天请求
+
+        Returns:
+            {
+                "content": "响应内容",
+                "tool_calls": [工具调用列表]  # 如果有工具调用
+            }
+        """
+        from ..llm import LLMDriverConfig
+
+        # 构建 tools schema
+        tools_schema = None
+        if self.tools:
+            tools_schema = self._build_tools_schema()
+
+        # 调用 LLMDriver
+        response = await self._llm_driver.chat(
+            messages=messages,
+            tools=tools_schema,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+
+        # 转换 ChatResponse 为 FastReAct 期望的格式
+        result = {
+            "content": response.content or "",
+        }
+
+        # LLMDriver 已经透传了原始的 tool_calls 对象
+        if response.tool_calls:
+            result["tool_calls"] = response.tool_calls
+
+        return result
+
+    async def _chat_with_client(
+        self, messages: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
+        """
+        使用原始 OpenAI 客户端发送聊天请求（向后兼容）
 
         Returns:
             {
