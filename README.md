@@ -58,8 +58,11 @@ export FASTREACT_API_KEY=your-api-key-here
 ### 使用
 
 ```bash
-# 交互式对话
+# 方式 1：标准 REPL（ReAct 模式）
 python -m fastreact.cli.main shell
+
+# 方式 2：GraphAgent REPL（智能规划）⭐ 新增
+python scripts/run_graph_repl
 
 # 单次查询
 python -m fastreact.cli.main run "帮我计算 25 * 34"
@@ -67,6 +70,12 @@ python -m fastreact.cli.main run "帮我计算 25 * 34"
 # 启动 Gateway
 python scripts/run_gateway.py
 ```
+
+**GraphAgent REPL 特点**：
+- ✅ 自动评估任务复杂度
+- ✅ GraphAgent 自动生成执行计划
+- ✅ 用户确认后再执行
+- ✅ 实时进度反馈
 
 详细指南: [INSTALLATION.md](INSTALLATION.md) | [NEW_ENVIRONMENT_SETUP.md](NEW_ENVIRONMENT_SETUP.md)
 
