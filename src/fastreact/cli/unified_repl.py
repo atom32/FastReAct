@@ -64,27 +64,231 @@ from fastreact.observability.events import (
 )
 
 # ============================================================================
-# Complexity Evaluator - 任务复杂度评估
+# Complexity Evaluator - LLM 驱动的任务复杂度评估
 # ============================================================================
 
 class ComplexityEvaluator:
     """
     评估任务复杂度，决定使用哪种执行模式
 
-    复用原则：不要重复造轮子
+    设计原则：
+    1. LLM 为主（智能评估）
+    2. 硬编码为 fallback（当 LLM 不可用时）
+    3. 缓存结果（避免重复调用）
     """
+
+    def __init__(self, llm_client=None):
+        """
+        初始化评估器
+
+        Args:
+            llm_client: LLM 客户端（可选，为 None 时使用 fallback）
+        """
+        self.llm_client = llm_client
+        self.cache = {}  # 查询缓存
 
     async def evaluate(self, query: str) -> Dict[str, Any]:
         """
         评估查询复杂度
+
+        优先使用 LLM 评估，fallback 到硬编码规则
 
         Returns:
             {
                 "complexity": "simple" | "medium" | "complex",
                 "score": 0.0-1.0,
                 "reasons": [...],
-                "suggested_mode": "react" | "graph_agent" | "iel"
+                "suggested_mode": "react" | "graph_agent" | "iel",
+                "method": "llm" | "fallback"
             }
+        """
+        # 检查缓存
+        cache_key = hash(query)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        # 尝试 LLM 评估
+        if self.llm_client is not None:
+            try:
+                result = await self._evaluate_with_llm(query)
+                self.cache[cache_key] = result
+                return result
+            except Exception as e:
+                if console:
+                    console.print(f"[WARNING] LLM evaluation failed: {e}, using fallback")
+                # Fallback 到硬编码规则
+                pass
+
+        # Fallback：硬编码规则评估
+        result = await self._evaluate_with_rules(query)
+        result["method"] = "fallback"
+        self.cache[cache_key] = result
+        return result
+
+    async def _evaluate_with_llm(self, query: str) -> Dict[str, Any]:
+        """
+        使用 LLM 评估复杂度
+
+        让 LLM 判断：
+        1. 任务复杂度（simple/medium/complex）
+        2. 需要的工具数量
+        3. 是否需要多步骤执行
+        4. 推荐的执行模式
+
+        Returns:
+            评估结果字典
+        """
+        import json
+
+        # 构造提示词
+        prompt = f"""你是一个任务复杂度评估专家。请分析用户查询的复杂度。
+
+用户查询：{query}
+
+请从以下维度评估：
+
+1. **步骤数量**：需要多少个独立步骤？
+   - 1-2 步：简单
+   - 3-5 步：中等
+   - 6+ 步：复杂
+
+2. **依赖关系**：步骤之间是否有依赖？
+   - 无依赖：简单
+   - 简单依赖：中等
+   - 复杂依赖（条件/循环）：复杂
+
+3. **工具调用**：需要调用多少个工具？
+   - 0-1 个：简单
+   - 2-3 个：中等
+   - 4+ 个：复杂
+
+4. **不确定性**：任务是否需要动态调整？
+   - 确定性：简单
+   - 部分不确定：中等
+   - 高度不确定：复杂
+
+请返回 JSON 格式：
+{{
+    "complexity": "simple" | "medium" | "complex",
+    "score": 0.0-1.0,
+    "estimated_steps": 数字,
+    "estimated_tools": 数字,
+    "reasons": ["原因1", "原因2", ...],
+    "suggested_mode": "react" | "graph_agent" | "iel"
+}}
+
+模式选择规则：
+- simple → react
+- medium → graph_agent
+- complex → iel
+"""
+
+        try:
+            # 调用 LLM
+            response = await self.llm_client.chat.completions.create(
+                model=self.llm_client.model or "gpt-4",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是一个任务复杂度评估专家。请严格按照 JSON 格式返回结果。"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=500,
+            )
+
+            # 提取响应
+            llm_output = response.choices[0].message.content or ""
+
+            # 解析 JSON
+            # 尝试提取 JSON（可能被包裹在 ```json 中）
+            import re
+
+            json_match = re.search(r'```json\s*(.*?)\s*```', llm_output, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # 尝试直接解析
+                json_str = llm_output.strip()
+
+            result = json.loads(json_str)
+
+            # 验证和标准化
+            result = self._validate_and_normalize(result)
+
+            # 添加方法标记
+            result["method"] = "llm"
+
+            return result
+
+        except json.JSONDecodeError as e:
+            if console:
+                console.print(f"[WARNING] Failed to parse LLM response: {e}")
+            raise
+        except Exception as e:
+            if console:
+                console.print(f"[WARNING] LLM evaluation error: {e}")
+            raise
+
+    def _validate_and_normalize(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        验证和标准化 LLM 返回的结果
+
+        确保所有必需字段存在且值有效
+        """
+        # 验证 complexity
+        valid_complexities = ["simple", "medium", "complex"]
+        if "complexity" not in result or result["complexity"] not in valid_complexities:
+            # 根据 score 推断
+            score = result.get("score", 0.5)
+            if score < 0.4:
+                result["complexity"] = "simple"
+            elif score < 0.7:
+                result["complexity"] = "medium"
+            else:
+                result["complexity"] = "complex"
+
+        # 验证 score
+        if "score" not in result:
+            # 根据 complexity 映射
+            complexity_map = {"simple": 0.2, "medium": 0.5, "complex": 0.8}
+            result["score"] = complexity_map.get(result["complexity"], 0.5)
+        else:
+            result["score"] = max(0.0, min(1.0, result["score"]))
+
+        # 验证 suggested_mode
+        valid_modes = ["react", "graph_agent", "iel"]
+        if "suggested_mode" not in result or result["suggested_mode"] not in valid_modes:
+            # 根据 complexity 推断
+            mode_map = {
+                "simple": "react",
+                "medium": "graph_agent",
+                "complex": "iel"
+            }
+            result["suggested_mode"] = mode_map.get(result["complexity"], "react")
+
+        # 确保 reasons 存在
+        if "reasons" not in result or not isinstance(result["reasons"], list):
+            result["reasons"] = []
+
+        # 添加默认字段
+        result.setdefault("estimated_steps", 0)
+        result.setdefault("estimated_tools", 0)
+
+        return result
+
+    async def _evaluate_with_rules(self, query: str) -> Dict[str, Any]:
+        """
+        使用硬编码规则评估复杂度（Fallback）
+
+        当 LLM 不可用时使用
+
+        Returns:
+            评估结果字典
         """
         import re
 
@@ -159,6 +363,8 @@ class ComplexityEvaluator:
         return {
             "complexity": complexity,
             "score": score,
+            "estimated_steps": 0,
+            "estimated_tools": len(found_tools),
             "reasons": factors,
             "suggested_mode": suggested_mode,
         }
@@ -285,8 +491,8 @@ class UnifiedAgentREPL:
         self.running = True
         self.session_to_load = session_to_load
 
-        # 评估器
-        self.complexity_evaluator = ComplexityEvaluator()
+        # 评估器（延迟初始化，需要 llm_client）
+        self.complexity_evaluator = None
 
         # Console
         self.console = console
@@ -597,7 +803,10 @@ class UnifiedAgentREPL:
 
             # 自动模式选择
             if self.state.execution_mode == "auto":
-                evaluation = await self.complexity_evaluator.evaluate(query)
+                # 确保 evaluator 已初始化
+                evaluator = self._get_or_create_evaluator()
+
+                evaluation = await evaluator.evaluate(query)
 
                 self._show_complexity_evaluation(evaluation)
 
@@ -632,6 +841,7 @@ class UnifiedAgentREPL:
         score = evaluation["score"]
         reasons = evaluation["reasons"]
         mode = evaluation["suggested_mode"].upper()
+        method = evaluation.get("method", "unknown")
 
         # 颜色
         colors = {
@@ -642,12 +852,27 @@ class UnifiedAgentREPL:
 
         color = colors.get(complexity, "white")
 
+        # 方法标签颜色
+        method_color = "cyan" if method == "llm" else "dim"
+
         self.console.print()
         self.console.print(f"[{color}]任务复杂度: {complexity}[/] (score: {score:.2f})")
         self.console.print(f"[cyan]推荐模式: {mode}[/]")
+        self.console.print(f"[{method_color}]评估方法: {method.upper()}[/]")
+
+        # 如果是 LLM 评估，显示额外信息
+        if method == "llm":
+            estimated_steps = evaluation.get("estimated_steps", 0)
+            estimated_tools = evaluation.get("estimated_tools", 0)
+
+            if estimated_steps > 0:
+                self.console.print(f"[dim]预估步骤: {estimated_steps}[/]")
+
+            if estimated_tools > 0:
+                self.console.print(f"[dim]预估工具: {estimated_tools}[/]")
 
         if reasons:
-            self.console.print(f"  原因: {', '.join(reasons)}")
+            self.console.print(f"[dim]原因: {', '.join(reasons)}[/]")
 
         self.console.print()
 
@@ -698,6 +923,18 @@ class UnifiedAgentREPL:
             print(f"\nAnswer: {result.get('answer', '')}")
 
         return True
+
+    def _get_or_create_evaluator(self) -> ComplexityEvaluator:
+        """获取或创建复杂度评估器（延迟初始化）"""
+        if self.complexity_evaluator is None:
+            # 获取 LLM client（从 React Agent）
+            react_agent = self._get_or_create_react_agent()
+            llm_client = react_agent._get_client()
+
+            # 创建 evaluator
+            self.complexity_evaluator = ComplexityEvaluator(llm_client=llm_client)
+
+        return self.complexity_evaluator
 
     def _get_or_create_react_agent(self):
         """获取或创建 ReAct Agent（使用 bootstrap）"""
