@@ -338,7 +338,13 @@ class LLMDriver:
 
         # 所有重试都失败
         logger.error(f"[LLM Failed] all {config.max_retries} attempts failed")
-        raise last_error
+
+        # 确保 last_error 是有效的异常对象
+        if last_error is None:
+            # 创建有意义的错误消息
+            raise RuntimeError(f"LLM request failed with no specific error (max_retries={config.max_retries})")
+        else:
+            raise last_error
 
     def _build_request_params(
         self,

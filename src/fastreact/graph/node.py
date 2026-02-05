@@ -133,8 +133,11 @@ class ToolNode:
         self.outputs = outputs or {}
         self.config = config or NodeConfig()
 
-        # 推断工具类型
-        self.is_async = inspect.iscoroutinefunction(tool)
+        # 推断工具类型（检查tool.execute，不是tool本身）
+        if hasattr(tool, 'execute'):
+            self.is_async = inspect.iscoroutinefunction(tool.execute)
+        else:
+            self.is_async = False
 
         # 依赖和被依赖关系
         self._dependencies: Set[str] = set()
@@ -200,9 +203,9 @@ class ToolNode:
 
             # 执行工具
             if self.is_async:
-                outputs = await self.tool(**resolved_inputs)
+                outputs = await self.tool.execute(**resolved_inputs)
             else:
-                outputs = self.tool(**resolved_inputs)
+                outputs = self.tool.execute(**resolved_inputs)
 
             # 处理输出
             if isinstance(outputs, dict):

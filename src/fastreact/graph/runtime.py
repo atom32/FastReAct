@@ -148,14 +148,26 @@ class ToolRuntime:
             self.state.context.update(initial_inputs)
 
         # 选择执行策略
+        # DEBUG: Log strategy details
+        logger.info(f"[DEBUG] Execution strategy: {self.config.strategy}")
+        logger.info(f"[DEBUG] Strategy type: {type(self.config.strategy)}")
+        logger.info(f"[DEBUG] Strategy value: {repr(self.config.strategy)}")
+        logger.info(f"[DEBUG] LEVEL_BASED enum: {repr(ExecutionStrategy.LEVEL_BASED)}")
+        logger.info(f"[DEBUG] Comparison result: {self.config.strategy == ExecutionStrategy.LEVEL_BASED}")
+
         if self.config.strategy == ExecutionStrategy.TOPOLOGICAL:
+            logger.info("[DEBUG] Using TOPOLOGICAL strategy")
             node_results = await self._execute_topological(graph)
         elif self.config.strategy == ExecutionStrategy.LEVEL_BASED:
+            logger.info("[DEBUG] Using LEVEL_BASED strategy")
             node_results = await self._execute_level_based(graph)
         elif self.config.strategy == ExecutionStrategy.MAX_PARALLEL:
+            logger.info("[DEBUG] Using MAX_PARALLEL strategy")
             node_results = await self._execute_max_parallel(graph)
         else:
             logger.error(f"Unknown execution strategy: {self.config.strategy}")
+            logger.error(f"Strategy type: {type(self.config.strategy)}")
+            logger.error(f"Expected: ExecutionStrategy enum, got: {type(self.config.strategy)}")
             node_results = {}
 
         # 生成报告

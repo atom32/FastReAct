@@ -83,6 +83,9 @@ class GraphAgent:
         self.tools = tools or {}
         self.config = config or AgentConfig()
 
+        # HOTFIX #15: 初始化自我修正状态
+        self._last_parse_error = None
+
         # 创建计划解析器
         self.parser = PlanParser(
             format=ParseFormat.AUTO,
@@ -145,7 +148,7 @@ class GraphAgent:
 
     async def _generate_plan(self, query: str) -> ExecutionPlan:
         """
-        生成执行计划
+        生成执行计划（支持Auto-Retry自我修正）
 
         Args:
             query: 用户查询
@@ -153,36 +156,65 @@ class GraphAgent:
         Returns:
             ExecutionPlan
         """
+        from .parser import ParseError
+
         # 生成提示词
         tool_list = list(self.tools.keys())
-        prompt = generate_planning_prompt(
+
+        # 提取工具schemas以便LLM知道正确的参数名
+        tool_schemas = {}
+        for tool_name, tool_obj in self.tools.items():
+            if hasattr(tool_obj, 'parameters'):
+                tool_schemas[tool_name] = tool_obj.parameters
+
+        initial_prompt = generate_planning_prompt(
             user_request=query,
             tool_list=tool_list,
+            tool_schemas=tool_schemas,
         )
 
-        # 调用 LLM（使用 LLMDriver）
-        try:
-            messages = [
-                {"role": "system", "content": "You are an expert at planning multi-step workflows."},
-                {"role": "user", "content": prompt},
-            ]
+        # HOTFIX #15: Auto-Retry with self-correction
+        max_attempts = 3
+        messages = [
+            {"role": "system", "content": "You are an expert at planning multi-step workflows. Ensure all step IDs in dependencies actually exist in the plan."}
+        ]
 
-            response = await self.llm_driver.chat(
-                messages=messages,
-                temperature=0.5,
-                max_tokens=2000,
-            )
+        for attempt in range(max_attempts):
+            try:
+                # 第一次使用原始提示词，后续添加错误反馈
+                if attempt == 0:
+                    user_message = initial_prompt
+                else:
+                    user_message = initial_prompt + f"\n\nIMPORTANT: Your previous attempt had validation errors. Please fix them:\n{self._last_parse_error}"
 
-            llm_output = response.content
+                messages.append({"role": "user", "content": user_message})
 
-            # 解析计划
-            plan = self.parser.parse(llm_output)
+                response = await self.llm_driver.chat(
+                    messages=messages,
+                    temperature=0.5,
+                    max_tokens=2000,
+                )
 
-            return plan
+                llm_output = response.content
 
-        except Exception as e:
-            logger.error(f"Failed to generate plan: {e}")
-            raise
+                # 解析计划
+                plan = self.parser.parse(llm_output)
+
+                if attempt > 0:
+                    logger.info(f"Plan validation succeeded on attempt {attempt + 1}")
+
+                return plan
+
+            except ParseError as e:
+                self._last_parse_error = str(e)
+                logger.warning(f"Plan validation failed on attempt {attempt + 1}/{max_attempts}: {e}")
+
+                if attempt == max_attempts - 1:
+                    logger.error(f"Failed to generate valid plan after {max_attempts} attempts")
+                    raise
+
+                # 继续下一次重试，messages已包含错误反馈
+                continue
 
     def _plan_to_graph(self, plan: ExecutionPlan) -> ToolGraph:
         """

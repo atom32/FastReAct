@@ -96,10 +96,21 @@ class ExecutionPlan:
             step_ids.add(step.step_id)
 
         # 检查依赖是否存在（必须在环检测之前）
+        # HOTFIX #14: 自动清理指向不存在step的依赖，而不是报错
         for step in self.steps:
+            valid_deps = []
             for dep_id in step.dependencies:
-                if dep_id not in step_ids:
-                    errors.append(f"Step {step.step_id} depends on non-existent step: {dep_id}")
+                if dep_id in step_ids:
+                    valid_deps.append(dep_id)
+                else:
+                    # 记录警告但继续执行
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Step {step.step_id} depends on non-existent step {dep_id}, removing dependency")
+
+            # 更新依赖列表为只包含有效依赖
+            if len(valid_deps) != len(step.dependencies):
+                step.dependencies = valid_deps
 
         # 只有在所有依赖都存在时才检查环
         if not any("non-existent" in err for err in errors):
@@ -212,6 +223,10 @@ class PlanParser:
 
     def _clean_output(self, output: str) -> str:
         """清理输出内容"""
+        # 移除Markdown代码块标记（```json, ```）
+        output = re.sub(r'```(?:json)?\n?', '', output)
+        output = re.sub(r'```', '', output)
+
         # 移除多余的空白行
         lines = output.strip().split("\n")
         cleaned_lines = []
@@ -242,10 +257,43 @@ class PlanParser:
     def _parse_json(self, output: str) -> ExecutionPlan:
         """解析 JSON 格式"""
         try:
-            # 尝试提取 JSON 块
-            json_match = re.search(r'\{[\s\S]*\}', output)
-            if json_match:
-                json_str = json_match.group(0)
+            # 尝试提取完整的 JSON 对象（支持嵌套）
+            # 使用计数器来匹配平衡的花括号
+            json_start = output.find('{')
+            if json_start != -1:
+                brace_count = 0
+                in_string = False
+                escape_next = False
+                json_end = -1
+
+                for i in range(json_start, len(output)):
+                    char = output[i]
+
+                    if escape_next:
+                        escape_next = False
+                        continue
+
+                    if char == '\\':
+                        escape_next = True
+                        continue
+
+                    if char == '"' and not escape_next:
+                        in_string = not in_string
+                        continue
+
+                    if not in_string:
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = i
+                                break
+
+                if json_end != -1:
+                    json_str = output[json_start:json_end + 1]
+                else:
+                    json_str = output
             else:
                 json_str = output
 
@@ -462,6 +510,7 @@ User request: {user_request}"""
 def generate_planning_prompt(
     user_request: str,
     tool_list: List[str],
+    tool_schemas: Optional[Dict[str, Dict[str, Any]]] = None,
     template: str = DEFAULT_PLANNING_PROMPT,
 ) -> str:
     """
@@ -470,13 +519,58 @@ def generate_planning_prompt(
     Args:
         user_request: 用户请求
         tool_list: 可用工具列表
+        tool_schemas: 工具参数schemas {tool_name: parameters_dict} (可选)
         template: 提示词模板
 
     Returns:
         完整的提示词
     """
-    tools_text = "\n".join(f"- {tool}" for tool in tool_list)
+    if tool_schemas:
+        # 包含参数信息的详细工具列表
+        tools_text = []
+        for tool_name in tool_list:
+            if tool_name in tool_schemas:
+                params = tool_schemas[tool_name]
+                param_info = _format_tool_parameters(params)
+                tools_text.append(f"- {tool_name}: {param_info}")
+            else:
+                tools_text.append(f"- {tool_name}")
+        tools_text = "\n".join(tools_text)
+    else:
+        # 仅有工具名称
+        tools_text = "\n".join(f"- {tool}" for tool in tool_list)
+
     return template.format(
         tool_list=tools_text,
         user_request=user_request,
     )
+
+
+def _format_tool_parameters(parameters: Dict[str, Any]) -> str:
+    """
+    格式化工具参数为可读文本
+
+    Args:
+        parameters: 工具参数schema (JSON Schema格式)
+
+    Returns:
+        参数描述文本
+    """
+    if not parameters or "properties" not in parameters:
+        return "(no parameters defined)"
+
+    props = parameters["properties"]
+    required = parameters.get("required", [])
+
+    param_details = []
+    for param_name, param_info in props.items():
+        param_type = param_info.get("type", "any")
+        desc = param_info.get("description", "")
+        req_marker = " (required)" if param_name in required else " (optional)"
+
+        if desc:
+            param_details.append(f"{param_name}: {param_type}{req_marker} - {desc}")
+        else:
+            param_details.append(f"{param_name}: {param_type}{req_marker}")
+
+    return ", ".join(param_details) if param_details else "(no parameters)"

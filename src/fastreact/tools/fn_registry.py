@@ -128,12 +128,14 @@ def create_datetime_tool() -> Tool:
         from datetime import datetime
         now = datetime.now()
 
+        # 防御性编程：默认返回当前时间，而不是帮助文本
+        if not action or action not in ["current", "date"]:
+            action = "current"
+
         if action == "current":
             return f"当前时间: {now.strftime('%Y-%m-%d %H:%M:%S')}"
         elif action == "date":
             return f"当前日期: {now.strftime('%Y-%m-%d')}"
-        else:
-            return "可用操作: current（当前时间）, date（当前日期）"
 
     return Tool(
         name="datetime",

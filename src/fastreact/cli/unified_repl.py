@@ -46,10 +46,17 @@ try:
     from rich.panel import Panel
     from rich.table import Table
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
+    from rich.syntax import Syntax
+    from rich.markdown import Markdown
+    from rich.json import JSON
+    from rich.text import Text
+    from rich.live import Live
+    from rich.spinner import Spinner
 
     console = Console()
 except ImportError:
     console = None
+    Live = None
 
 # ============================================================================
 # Reuse existing components
@@ -123,7 +130,7 @@ class ComplexityEvaluator:
             return self.cache[cache_key]
 
         # 尝试 LLM 评估
-        if self.llm_client is not None:
+        if self.llm_driver is not None:
             try:
                 result = await self._evaluate_with_llm(query)
                 self.cache[cache_key] = result
@@ -548,8 +555,10 @@ class UnifiedAgentREPL:
                 if not command.strip():
                     continue
 
-                # 执行命令
-                await self.execute_command(command)
+                # 执行命令（检查返回值，False 表示退出）
+                should_continue = await self.execute_command(command)
+                if not should_continue:
+                    break
 
             except EOFError:
                 break
@@ -647,46 +656,94 @@ Type /help for commands""",
     # ========================================================================
 
     def cmd_help(self, args: str) -> bool:
-        """显示帮助（无 emoji）"""
+        """显示帮助（使用 Rich 表格格式化）"""
         if self.console:
             self.console.print()
-            self.console.print("[bold cyan]可用命令：[/bold cyan]")
-            self.console.print()
 
-            self.console.print("[bold yellow]基础命令：[/bold yellow]")
-            basics = [
-                ("run <query>", "执行查询（自动模式选择）"),
-                ("mode <name>", "切换模式 (auto/react/graph/iel)"),
-                ("stats", "显示统计信息"),
-                ("save", "保存当前会话"),
-                ("history", "显示查询历史"),
-                ("help", "显示帮助"),
-                ("exit/quit", "退出"),
+            # Basic Commands Table
+            basic_table = Table(title="[bold yellow]Basic Commands[/bold yellow]", show_header=True)
+            basic_table.add_column("[cyan]Command[/cyan]", style="cyan", width=25)
+            basic_table.add_column("[green]Description[/green]", style="green")
+
+            basic_commands = [
+                ("run <query>", "Execute query (auto mode selection)"),
+                ("mode <name>", "Switch mode (auto/react/graph/iel)"),
+                ("stats", "Show session statistics"),
+                ("save", "Save current session"),
+                ("history [n]", "Show last n sessions (default: 10)"),
+                ("help", "Show this help message"),
+                ("exit/quit", "Exit and save session"),
             ]
-            for cmd, desc in basics:
-                self.console.print(f"  {cmd:<30} {desc}")
 
+            for cmd, desc in basic_commands:
+                basic_table.add_row(cmd, desc)
+
+            self.console.print(basic_table)
             self.console.print()
-            self.console.print("[bold yellow]快捷命令：[/bold yellow]")
-            shortcuts = [
-                ("/react", "切换到 ReAct 模式"),
-                ("/graph", "切换到 GraphAgent 模式"),
-                ("/iel", "切换到 IEL 模式"),
-                ("/auto", "切换到自动模式"),
+
+            # Shortcut Commands Table
+            shortcut_table = Table(title="[bold yellow]Shortcut Commands[/bold yellow]", show_header=True)
+            shortcut_table.add_column("[cyan]Command[/cyan]", style="cyan", width=25)
+            shortcut_table.add_column("[green]Description[/green]", style="green")
+
+            shortcut_commands = [
+                ("/react", "Switch to ReAct mode"),
+                ("/graph", "Switch to GraphAgent mode"),
+                ("/iel", "Switch to IEL mode"),
+                ("/auto", "Switch to auto mode"),
             ]
-            for cmd, desc in shortcuts:
-                self.console.print(f"  {cmd:<30} {desc}")
 
+            for cmd, desc in shortcut_commands:
+                shortcut_table.add_row(cmd, desc)
+
+            self.console.print(shortcut_table)
             self.console.print()
+
+            # Execution Modes Info
+            modes_table = Table(title="[bold yellow]Execution Modes[/bold yellow]", show_header=True)
+            modes_table.add_column("[cyan]Mode[/cyan]", style="cyan", width=15)
+            modes_table.add_column("[green]Description[/green]", style="green")
+
+            modes_info = [
+                ("auto", "Automatically select best mode"),
+                ("react", "ReAct: Thought + Action loop"),
+                ("graph", "GraphAgent: Plan then execute"),
+                ("iel", "IEL: Safe execution with snapshots"),
+            ]
+
+            for mode, desc in modes_info:
+                modes_table.add_row(mode, desc)
+
+            self.console.print(modes_table)
+            self.console.print()
+
+            # Tips
+            tips_panel = Panel(
+                "[bold cyan]Tips:[/bold cyan]\n"
+                "- Use [yellow]auto mode[/yellow] for intelligent mode selection\n"
+                "- Type [yellow]run your query[/yellow] to start a task\n"
+                "- Sessions are auto-saved on exit\n"
+                "- Use [yellow]/react[/yellow], [yellow]/graph[/yellow] for quick mode switching",
+                title="[bold magenta]Quick Tips[/bold magenta]",
+                border_style="magenta"
+            )
+            self.console.print(tips_panel)
+            self.console.print()
+
         else:
-            print("\n可用命令：")
-            print("  run <query> - 执行查询")
-            print("  mode <name> - 切换模式")
-            print("  stats - 统计信息")
-            print("  save - 保存会话")
-            print("  history - 历史记录")
-            print("  help - 帮助")
-            print("  exit/quit - 退出")
+            print("\nAvailable Commands:")
+            print("=" * 60)
+            print("  run <query>    - Execute query")
+            print("  mode <name>    - Switch mode")
+            print("  stats          - Show statistics")
+            print("  save           - Save session")
+            print("  history [n]    - Show history")
+            print("  help           - Show help")
+            print("  exit/quit      - Exit")
+            print()
+            print("Shortcuts:")
+            print("  /react, /graph, /iel, /auto")
+            print()
 
         return True
 
@@ -813,7 +870,7 @@ Type /help for commands""",
                 phase="start",
                 metadata={"query": query}
             )
-            self.state.event_manager.emit(event)
+            await self.state.event_manager.emit(event)
 
             self.state.stats["total_queries"] += 1
 
@@ -849,47 +906,72 @@ Type /help for commands""",
             return True
 
     def _show_complexity_evaluation(self, evaluation: Dict[str, Any]):
-        """显示复杂度评估（无 emoji）"""
+        """
+        显示复杂度评估（使用 Rich 格式化）
+
+        Args:
+            evaluation: 复杂度评估结果字典
+        """
         if not self.console:
             return
 
         complexity = evaluation["complexity"].upper()
         score = evaluation["score"]
-        reasons = evaluation["reasons"]
+        reasons = evaluation.get("reasons", [])
         mode = evaluation["suggested_mode"].upper()
         method = evaluation.get("method", "unknown")
 
-        # 颜色
+        # Color scheme based on complexity
         colors = {
-            "SIMPLE": "green",
-            "MEDIUM": "yellow",
-            "COMPLEX": "red",
+            "SIMPLE": ("bright_green", "green"),
+            "MEDIUM": ("bright_yellow", "yellow"),
+            "COMPLEX": ("bright_red", "red"),
         }
+        title_color, border_color = colors.get(complexity, ("white", "white"))
 
-        color = colors.get(complexity, "white")
-
-        # 方法标签颜色
+        # Method label color
         method_color = "cyan" if method == "llm" else "dim"
 
-        self.console.print()
-        self.console.print(f"[{color}]任务复杂度: {complexity}[/] (score: {score:.2f})")
-        self.console.print(f"[cyan]推荐模式: {mode}[/]")
-        self.console.print(f"[{method_color}]评估方法: {method.upper()}[/]")
+        # Build evaluation content
+        content = []
 
-        # 如果是 LLM 评估，显示额外信息
+        # Complexity with score
+        content.append(f"[{title_color} bold]Complexity:[/] {complexity} (score: {score:.2f})")
+
+        # Recommended mode
+        content.append(f"[cyan bold]Recommended Mode:[/] {mode}")
+
+        # Evaluation method
+        content.append(f"[{method_color}]Evaluation Method:[/] {method.upper()}")
+
+        # LLM-specific info
         if method == "llm":
             estimated_steps = evaluation.get("estimated_steps", 0)
             estimated_tools = evaluation.get("estimated_tools", 0)
 
             if estimated_steps > 0:
-                self.console.print(f"[dim]预估步骤: {estimated_steps}[/]")
+                content.append(f"[dim]Estimated Steps:[/] {estimated_steps}")
 
             if estimated_tools > 0:
-                self.console.print(f"[dim]预估工具: {estimated_tools}[/]")
+                content.append(f"[dim]Estimated Tools:[/] {estimated_tools}")
 
+        # Reasons (if available)
         if reasons:
-            self.console.print(f"[dim]原因: {', '.join(reasons)}[/]")
+            content.append(f"\n[dim]Reasons:[/]")
+            for reason in reasons:
+                content.append(f"  [dim]-[/] {reason}")
 
+        # Create panel
+        panel = Panel(
+            "\n".join(content),
+            title=f"[Task Evaluation] - {complexity}",
+            title_align="left",
+            border_style=border_color,
+            padding=(0, 1)
+        )
+
+        self.console.print()
+        self.console.print(panel)
         self.console.print()
 
     # ========================================================================
@@ -897,44 +979,94 @@ Type /help for commands""",
     # ========================================================================
 
     async def _run_react(self, query: str) -> bool:
-        """ReAct 模式执行"""
+        """
+        ReAct 模式执行（带实时进度显示）
+
+        Sprint 2 Enhancement: Live status updates with spinner and ContextMonitor
+        """
         self.state.stats["react_queries"] += 1
 
         if self.console:
             self.console.print(f"[yellow][REACT 模式][/yellow]")
             self.console.print()
 
-        # 创建 FastReAct agent（使用 bootstrap）
-        agent = self._get_or_create_react_agent()
+        # ====================================================================
+        # Step 1: Thinking - Analyze query and plan execution
+        # ====================================================================
 
-        # 执行（使用事件回调）
-        def event_callback(event):
-            """事件回调（统一流式输出）"""
-            if self.console:
-                if event.type == "lifecycle":
-                    self.console.print(f"[dim][{event.phase.upper()}][/dim]")
-                elif event.type == "tool":
-                    if event.phase == "start":
-                        self.console.print(f"[cyan][TOOL] {event.tool_name}[/cyan]")
-                    elif event.phase == "result":
-                        self.console.print(f"[green][RESULT] {event.tool_name}[/green]")
+        if self.console:
+            with self.console.status("[bold cyan]Thinking...[/bold cyan]", spinner="dots"):
+                # Brief pause to show the spinner
+                await asyncio.sleep(0.5)
 
-        # 注册事件回调
-        self.state.event_manager.register(event_callback)
+        # Show ContextMonitor before execution
+        from fastreact.context import get_context_monitor
+        monitor = get_context_monitor()
+        if self.console:
+            self.print_context_monitor(monitor)
 
-        # 执行
+        # ====================================================================
+        # Step 2: Planning - Prepare agent
+        # ====================================================================
+
+        if self.console:
+            with self.console.status("[bold cyan]Planning execution...[/bold cyan]", spinner="dots2"):
+                # 创建 FastReAct agent（使用 bootstrap）
+                agent = self._get_or_create_react_agent()
+                await asyncio.sleep(0.3)
+
+        # ====================================================================
+        # Step 3: Execution - Run agent with tool tracking
+        # ====================================================================
+
+        if self.console:
+            self.print_info("[bold green]Executing tasks...[/bold green]")
+
+        # Execute agent
+        # Note: Event callbacks removed - Sprint 2 provides better feedback via spinners and ContextMonitor
         result = await agent.run_async(query)
 
-        # 注销事件回调
-        self.state.event_manager.unregister(event_callback)
+        # ====================================================================
+        # Step 4: Analysis - Show final ContextMonitor state
+        # ====================================================================
+
+        if self.console:
+            with self.console.status("[bold cyan]Analyzing results...[/bold cyan]", spinner="bouncingBar"):
+                await asyncio.sleep(0.3)
+
+            # Show final ContextMonitor state
+            self.print_context_monitor(monitor)
+
+        # ====================================================================
+        # Step 5: Display Result
+        # ====================================================================
 
         # 显示结果
         if self.console:
-            self.console.print(Panel(
-                result.get("answer", ""),
-                title="[REACT] Result",
-                border_style="green"
-            ))
+            answer = result.get("answer", "")
+
+            # Check if answer contains code, and if so, highlight it
+            if "```" in answer and "python" in answer:
+                # Extract code block and show with syntax highlighting
+                lines = answer.split("```")
+                for i, block in enumerate(lines):
+                    if i % 2 == 1:  # Code block
+                        # Extract language and code
+                        first_line = block.split("\n")[0]
+                        if "python" in first_line.lower():
+                            code = "\n".join(block.split("\n")[1:])
+                            self.print_code(code, language="python", title="[Python Code]")
+                        else:
+                            self.console.print(block)
+                    else:
+                        self.print_markdown(block)
+            else:
+                # Regular answer - show in panel
+                self.console.print(Panel(
+                    answer,
+                    title="[REACT] Result",
+                    border_style="green"
+                ))
         else:
             print(f"\nAnswer: {result.get('answer', '')}")
 
@@ -955,20 +1087,28 @@ Type /help for commands""",
         return self.complexity_evaluator
 
     def _get_or_create_react_agent(self):
-        """获取或创建 ReAct Agent（使用 bootstrap）"""
+        """获取或创建 ReAct Agent（使用 bootstrap + 内建工具）"""
         if self.state.react_agent is None:
             from fastreact import FastReAct
             from fastreact.bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
+            from fastreact.tools import create_builtin_tools  # 加载内建工具
 
             config = load_config()
             api_key = get_api_key(config)
             base_url = get_base_url(config)
             model = get_model(config)
 
+            # 创建内建工具（修复：确保 Agent 可以使用所有工具）
+            builtin_tools = create_builtin_tools(config=config, model=model)
+
+            if self.console:
+                self.print_info(f"Loaded {len(builtin_tools)} builtin tools")
+
             self.state.react_agent = FastReAct(
                 api_key=api_key,
                 base_url=base_url,
                 model=model,
+                tools=builtin_tools,  # 传入内建工具
                 enable_bootstrap=True,
                 config=config,
                 llm_driver=self.llm_driver,  # 传入 LLMDriver（包含 ContextMonitor）
@@ -981,47 +1121,86 @@ Type /help for commands""",
     # ========================================================================
 
     async def _run_graph_agent(self, query: str) -> bool:
-        """GraphAgent 模式执行"""
+        """
+        GraphAgent 模式执行（带实时进度显示）
+
+        Sprint 2 Enhancement: Enhanced status display with spinner
+        """
         self.state.stats["graph_agent_queries"] += 1
 
         if self.console:
             self.console.print(f"[cyan][GRAPHAGENT 模式][/cyan]")
             self.console.print()
 
+        # Show ContextMonitor before execution
+        from fastreact.context import get_context_monitor
+        monitor = get_context_monitor()
+        if self.console:
+            self.print_context_monitor(monitor)
+
         # 创建 GraphAgent
         agent = self._get_or_create_graph_agent()
 
-        # 步骤 1：生成计划
+        # ====================================================================
+        # Step 1: Plan Generation - Thinking phase
+        # ====================================================================
+
         if self.console:
-            self.console.print("[bold blue]Step 1: 生成执行计划...[/bold blue]")
+            with self.console.status("[bold cyan]Planning execution...[/bold cyan]", spinner="dots2"):
+                await asyncio.sleep(0.3)
+                plan = await agent._generate_plan(query)
 
-        plan = await agent._generate_plan(query)
+            # 显示计划
+            self._display_plan(plan)
 
-        # 显示计划
-        self._display_plan(plan)
+            # 确认
+            if self.state.config["auto_confirm_plan"]:
+                if not self._confirm_plan():
+                    self.state.stats["plan_rejections"] += 1
+                    self.print_output("[yellow]计划已取消[/yellow]")
+                    return True
+        else:
+            plan = await agent._generate_plan(query)
+            self._display_plan(plan)
 
-        # 确认
-        if self.state.config["auto_confirm_plan"]:
-            if not self._confirm_plan():
-                self.state.stats["plan_rejections"] += 1
-                self.print_output("[yellow]计划已取消[/yellow]")
-                return True
+            if self.state.config["auto_confirm_plan"]:
+                if not self._confirm_plan():
+                    self.state.stats["plan_rejections"] += 1
+                    self.print_output("[yellow]计划已取消[/yellow]")
+                    return True
 
-        # 步骤 2：执行计划
+        # ====================================================================
+        # Step 2: Plan Execution - Show progress
+        # ====================================================================
+
         if self.console:
             self.console.print()
-            self.console.print("[bold blue]Step 2: 执行计划...[/bold blue]")
+            self.print_info("[bold green]Executing plan...[/bold green]")
 
         with self._create_progress() as progress:
             task = progress.add_task("[cyan]执行中...", total=None)
 
             try:
-                result = await agent.run(query)
+                # Execute with spinner (only during agent.run)
+                if self.console:
+                    with self.console.status("[bold cyan]执行中...[/bold cyan]", spinner="dots"):
+                        result = await agent.run(query)
+                        # spinner 自动结束
 
-                progress.update(task, completed=True)
+                    progress.update(task, completed=True)
 
-                # 显示结果
-                self._display_graph_agent_result(result)
+                    # 显示"执行完成"消息
+                    self.print_success("[bold green]执行完成[/bold green]")
+
+                    # Show ContextMonitor after execution
+                    self.print_context_monitor(monitor)
+
+                    # 显示结果
+                    self._display_graph_agent_result(result)
+                else:
+                    result = await agent.run(query)
+                    progress.update(task, completed=True)
+                    self._display_graph_agent_result(result)
 
             except Exception as e:
                 self.print_error(f"执行失败: {e}")
@@ -1033,14 +1212,14 @@ Type /help for commands""",
         """获取或创建 GraphAgent"""
         if self.state.graph_agent is None:
             from fastreact.graph import GraphAgent, AgentConfig
+            from fastreact.graph.runtime import ExecutionStrategy
 
             react_agent = self._get_or_create_react_agent()
-
             self.state.graph_agent = GraphAgent(
-                llm_client=react_agent._get_client(),
+                llm_driver=self.llm_driver,  # 使用 LLMDriver 而不是 llm_client
                 tools=react_agent.tools,
                 config=AgentConfig(
-                    execution_strategy="level_based",
+                    execution_strategy=ExecutionStrategy.LEVEL_BASED,  # ← 使用枚举，不是字符串！
                     max_parallel=3,
                     enable_visualization=True,
                 ),
@@ -1208,6 +1387,168 @@ Type /help for commands""",
             self.console.print(message)
         else:
             print(message)
+
+    def print_info(self, message: str):
+        """打印信息提示"""
+        if self.console:
+            self.console.print(f"[cyan bold][INFO][/cyan bold] {message}")
+        else:
+            print(f"[INFO] {message}")
+
+    def print_warning(self, message: str):
+        """打印警告信息"""
+        if self.console:
+            self.console.print(f"[yellow bold][WARNING][/yellow bold] {message}")
+        else:
+            print(f"[WARNING] {message}")
+
+    def print_code(self, code: str, language: str = "python", title: str = None):
+        """
+        Display code with syntax highlighting
+
+        Args:
+            code: Code content to display
+            language: Programming language (default: python)
+            title: Optional title for the code block
+        """
+        if not code:
+            return
+
+        if self.console:
+            try:
+                syntax = Syntax(
+                    code,
+                    language,
+                    theme="monokai",
+                    line_numbers=True,
+                    word_wrap=True
+                )
+
+                panel_title = f"[{language}]" if title is None else title
+                panel = Panel(
+                    syntax,
+                    title=panel_title,
+                    title_align="left",
+                    border_style="bright_blue"
+                )
+                self.console.print(panel)
+            except Exception as e:
+                # Fallback to plain text if syntax highlighting fails
+                self.console.print(f"[{language}] Code:")
+                self.console.print(code)
+        else:
+            print(f"\n[{language}] Code:")
+            print("-" * 60)
+            print(code)
+            print("-" * 60)
+
+    def print_markdown(self, text: str):
+        """
+        Render and display Markdown text
+
+        Args:
+            text: Markdown content to render
+        """
+        if not text:
+            return
+
+        if self.console:
+            try:
+                md = Markdown(text)
+                self.console.print(md)
+            except (UnicodeEncodeError, UnicodeDecodeError) as e:
+                # Windows GBK encoding fallback - render as plain text
+                self.print_warning(f"Markdown rendering skipped due to encoding: {e}")
+                self.console.print(text)
+            except Exception as e:
+                # Other exceptions - fallback to plain text
+                self.console.print(text)
+        else:
+            print(text)
+
+    def print_tool_call(self, tool_name: str, params: dict, result: str = None):
+        """
+        Show tool call with nice formatting
+
+        Args:
+            tool_name: Name of the tool being called
+            params: Tool parameters
+            result: Optional tool execution result
+        """
+        if self.console:
+            try:
+                # Create table for tool call
+                table = Table(
+                    title=f"[Tool Call] {tool_name}",
+                    show_header=True,
+                    header_style="bold cyan",
+                    border_style="cyan"
+                )
+                table.add_column("Parameter", style="cyan", width=20)
+                table.add_column("Value", style="green")
+
+                # Add parameters
+                for key, value in params.items():
+                    # Truncate long values
+                    value_str = str(value)
+                    if len(value_str) > 100:
+                        value_str = value_str[:100] + "..."
+                    table.add_row(key, value_str)
+
+                self.console.print(table)
+
+                # Show result if provided
+                if result:
+                    result_str = str(result)
+                    if len(result_str) > 200:
+                        result_str = result_str[:200] + "..."
+
+                    self.print_info(f"Result: {result_str}")
+
+            except (UnicodeEncodeError, UnicodeDecodeError) as e:
+                # Windows GBK encoding fallback
+                self.print_warning(f"Table rendering skipped due to encoding: {e}")
+                self._fallback_tool_display(tool_name, params, result)
+            except Exception as e:
+                # Other exceptions
+                self._fallback_tool_display(tool_name, params, result)
+        else:
+            self._fallback_tool_display(tool_name, params, result)
+
+    def _fallback_tool_display(self, tool_name: str, params: dict, result: str = None):
+        """Fallback plain text display for tool calls"""
+        print(f"\n[Tool Call] {tool_name}")
+        print("-" * 60)
+        for key, value in params.items():
+            print(f"  {key}: {value}")
+        if result:
+            print(f"\n  Result: {result}")
+        print("-" * 60)
+
+    def print_context_monitor(self, monitor=None):
+        """
+        Display ContextMonitor progress bar and status
+
+        Args:
+            monitor: ContextMonitor instance (optional, will use global if None)
+        """
+        if monitor is None:
+            from fastreact.context import get_context_monitor
+            monitor = get_context_monitor()
+
+        if self.console:
+            progress_bar = monitor.get_progress_bar()
+            status_text = monitor.get_status_text()
+
+            panel = Panel(
+                f"{status_text}\n{progress_bar}",
+                title="[Context Monitor]",
+                border_style="bright_yellow"
+            )
+            self.console.print(panel)
+        else:
+            print(f"\n{monitor.get_progress_bar()}")
+            print(f"{monitor.get_status_text()}")
 
 
 # ============================================================================
