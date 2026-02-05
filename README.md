@@ -1,32 +1,32 @@
 # FastReAct
 
-> **企业级 AI Agent 基础设施框架** - 隐私优先、成本优化、生产就绪
+> **企业级 AI Agent 基础设施框架** - 基于标准 ReAct 架构
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version: 1.1.0](https://img.shields.io/badge/version-1.1.0-orange.svg)](https://github.com/atom32/FastReAct)
+[![Version: 1.1.0-alpha](https://img.shields.io/badge/version-1.1.0--alpha-orange.svg)](https://github.com/atom32/FastReAct)
 [![MCP Support](https://img.shields.io/badge/MCP-supported-brightgreen.svg)](https://modelcontextprotocol.io)
 
 ---
 
-## 简介
+## 项目简介
 
-**FastReAct** 是一个企业级 AI Agent 基础设施框架，采用 ReAct (Reasoning and Acting) 架构，支持大模型驱动的智能工具调用。
+**FastReAct** 是一个基于 ReAct (Reasoning and Acting) 架构的 AI Agent 框架，支持大语言模型驱动的工具调用。
 
-### 核心特性
+### 设计目标
 
-- [**隐私优先**](#隐私保护) - 完全离线部署，数据零外泄
-- [**模型灵活**](#模型支持) - 支持任何 OpenAI-compatible API
-- [**成本优化**](#成本优化) - 智能上下文管理，节省 70% Token
-- [**MCP 集成**](#mcp-集成) - 标准化工具协议，100+ 可用 servers
-- [**生产就绪**](#生产就绪) - 企业级稳定性、可观测性、可扩展性
+- **隐私优先**: 支持完全离线部署，数据不离开本地环境
+- **模型灵活**: 支持任何 OpenAI-compatible API
+- **成本可控**: 通过智能上下文管理优化 Token 使用
+- **可扩展**: 支持自定义工具和 MCP 协议集成
 
-### 适用场景
+### 当前状态
 
-- 企业内部 AI 助手（代码、文档、知识库）
-- 多租户 SaaS 平台（每个租户独立配置）
-- 本地部署的 Agent 系统（金融、医疗、政府）
-- 成本敏感的 AI 应用（vs Claude Code 节省 70%）
+**版本**: v1.1.0-alpha
+- 核心功能可用
+- 部分高级功能开发中
+- 生产使用需谨慎
+- 适合学习和原型开发
 
 ---
 
@@ -43,12 +43,12 @@ pip install -e .
 ### 配置
 
 ```bash
-# 推荐方式：使用用户配置
+# 方法 1: 使用用户配置（推荐）
 mkdir -p ~/.fastreact
 cp user_config.example.json ~/.fastreact/config.json
-# 编辑 ~/.fastreact/config.json 添加你的 API keys
+# 编辑添加你的 API keys
 
-# 或使用环境变量
+# 方法 2: 使用环境变量
 export FASTREACT_API_KEY=your-api-key-here
 ```
 
@@ -65,72 +65,51 @@ python -m fastreact.cli.main run "帮我计算 25 * 34"
 python scripts/run_gateway.py
 ```
 
-详细安装指南：[INSTALLATION.md](INSTALLATION.md) | [NEW_ENVIRONMENT_SETUP.md](NEW_ENVIRONMENT_SETUP.md)
+详细指南: [INSTALLATION.md](INSTALLATION.md) | [NEW_ENVIRONMENT_SETUP.md](NEW_ENVIRONMENT_SETUP.md)
 
 ---
 
-## 技术亮点
+## 功能概览
 
-### 1. 智能上下文管理 ⭐⭐⭐⭐⭐
+### 已实现功能
 
-三层防御机制，解决长对话的上下文溢出问题：
+#### 1. ReAct 核心引擎
+- 推理-行动循环 (Thought → Action → Observation)
+- 异步工具执行
+- 错误处理和重试机制
+- 会话管理
 
-- **Memory Flush** (50k tokens) - 自动总结旧消息，压缩比 ~70%
-- **Progressive Compaction** (极端情况) - 多层压缩，Level 1-3
-- **Memory Retrieval** (RAG) - 向量检索历史对话
+#### 2. 智能上下文管理
+- **Memory Flush**: 自动总结长对话（50k tokens 触发）
+- **Memory Retrieval**: 向量检索历史对话（可选）
+- **Progressive Compaction**: 多层压缩（已实现，未完全集成）
 
-**效果**：Token 使用降低 60%，对话长度提升 10 倍
+#### 3. 工具系统
+- 13 个内置工具（Calculator, Search, HTTP, Bash 等）
+- MCP 协议集成（GitHub, Apollo Core）
+- 工具策略控制（Allow/Deny 列表）
+- 风险分级和审批机制
 
-[详细说明](TECHNICAL_HIGHLIGHTS.md#1-智能上下文管理系统)
+#### 4. 配置系统
+- 4 层配置优先级（ENV > USER > PROJECT > DEFAULT）
+- 支持多租户场景
+- 灵活的配置管理
 
-### 2. MCP 协议集成 ⭐⭐⭐⭐⭐
+#### 5. 用户接口
+- CLI REPL（交互式命令行）
+- WebSocket Gateway（实时通信）
+- Web UI（通过 FastReAct-web 项目）
 
-标准化工具协议，开箱即用 100+ MCP servers：
+### 开发中功能
 
-```python
-# GitHub MCP (创建 Issue/PR)
-agent.run("在 test-repo 创建一个 issue")
-
-# Apollo Core (金融工具)
-agent.run("查询 AAPL 的财务数据")
-
-# 自定义 MCP
-agent.run("调用内部服务")
-```
-
-[详细说明](TECHNICAL_HIGHLIGHTS.md#2-mcp-model-context-protocol-集成)
-
-### 3. 四层配置优先级 ⭐⭐⭐⭐
-
-```
-ENV (环境变量) > USER (~/.fastreact/config.json) > PROJECT (./config.json) > DEFAULT
-```
-
-支持多租户、团队协作、CI/CD 等多种场景。
-
-[详细说明](CONFIG_PRIORITY.md)
-
-### 4. 工具策略与风险控制 ⭐⭐⭐⭐
-
-- 风险分级 (HIGH/MEDIUM/LOW)
-- 执行审批机制
-- 动态策略控制
-- 审计日志
-
-[详细说明](TECHNICAL_HIGHLIGHTS.md#4-工具策略与风险控制)
-
-### 5. 高性能优化 ⭐⭐⭐⭐
-
-- 异步并发工具调用（提升 3 倍）
-- LRU 缓存（节省 20% API 调用）
-- 连接池复用
-- 精确 Token 计数
-
-[详细说明](TECHNICAL_HIGHLIGHTS.md#5-高性能并发与缓存)
+- 多 Agent 协作（规划 v2.0.0）
+- Agent 编排（规划 v2.0.0）
+- 自动工具发现（规划 v2.0.0）
+- 完整的生产环境支持
 
 ---
 
-## 架构概览
+## 架构
 
 ```
 ┌─────────────────────────────────────────┐
@@ -143,13 +122,14 @@ ENV (环境变量) > USER (~/.fastreact/config.json) > PROJECT (./config.json) >
 │  - 推理 (Thought)                       │
 │  - 行动 (Action)                        │
 │  - 观察 (Observation)                   │
+│  - 上下文管理 (Memory Flush)            │
 └──────────────┬──────────────────────────┘
                │
 ┌──────────────▼──────────────────────────┐
-│  能力层                                 │
+│  工具层                                 │
 │  ┌─────────┐  ┌──────────┐  ┌────────┐ │
-│  │ Tools   │  │  Memory   │  │  MCP   │ │
-│  │  System │  │  System   │  │ Servers│ │
+│  │ Builtin │  │  Memory   │  │  MCP   │ │
+│  │ Tools   │  │ Retrieval │  │ Servers│ │
 │  └─────────┘  └──────────┘  └────────┘ │
 └──────────────┬──────────────────────────┘
                │
@@ -158,40 +138,6 @@ ENV (环境变量) > USER (~/.fastreact/config.json) > PROJECT (./config.json) >
 │  LLM 抽象 / 配置系统 / 存储层            │
 └─────────────────────────────────────────┘
 ```
-
-[完整架构说明](TECHNICAL_HIGHLIGHTS.md#核心架构)
-
----
-
-## 主要功能
-
-### 隐私保护
-
-- **完全离线**：所有计算在本地进行
-- **数据安全**：代码、文档、数据不离开内网
-- **审计日志**：完整的操作记录
-
-### 模型支持
-
-- **OpenAI** (GPT-4, GPT-4o, GPT-4o-mini)
-- **DeepSeek** (DeepSeek-V3)
-- **本地模型** (Ollama, vLLM)
-- **任何 OpenAI-compatible API**
-
-### 成本优化
-
-| 优化项 | 节省 |
-|--------|------|
-| Memory Flush | 60% Token |
-| 智能缓存 | 20% API 调用 |
-| 并发执行 | 66% 时间 |
-| **总计** | **~70% 成本** |
-
-### 多租户支持
-
-- 工作区隔离（每个租户独立配置）
-- 会话管理（自动恢复）
-- 配置优先级（环境变量覆盖）
 
 ---
 
@@ -209,15 +155,11 @@ print(result['answer'])  # 8
 
 ### 工具调用
 
-```python
-# GitHub MCP
-agent.run("在 atom32/FastReAct 创建一个 issue，标题是 Bug report")
-
-# Tavily Search
-agent.run("搜索最新的 AI 新闻")
-
-# Calculator
-agent.run("计算 (25 + 35) * 2 - 10")
+```bash
+# 在 REPL 中
+>>> 计算 (25 + 35) * 2 - 10
+>>> 搜索最新的 AI 新闻
+>>> 在 atom32/FastReAct 创建一个 issue
 ```
 
 ### Gateway + Web UI
@@ -226,98 +168,120 @@ agent.run("计算 (25 + 35) * 2 - 10")
 # 终端 1：启动 Gateway
 python scripts/run_gateway.py
 
-# 终端 2：启动 Web UI
+# 终端 2：启动 Web UI（需要 FastReAct-web 项目）
 cd ../FastReAct-web
 npm run dev
 
-# 浏览器：http://localhost:3001
+# 浏览器访问 http://localhost:3001
 ```
+
+---
+
+## 技术亮点
+
+### 1. Memory Flush (自动上下文管理)
+- 触发阈值: 50000 (soft) / 55000 (hard) tokens
+- 自动总结旧消息
+- 压缩比约 70%
+- 已实现并集成
+
+### 2. MCP 协议集成
+- 标准化工具协议
+- 支持 GitHub MCP、Apollo Core
+- 100+ 社区 MCP servers 可用
+- 已实现并可用
+
+### 3. 4 层配置优先级
+- ENV > USER > PROJECT > DEFAULT
+- 支持多租户场景
+- 敏感信息隔离
+- 已实现并验证
+
+### 4. 工具策略控制
+- 风险分级（HIGH/MEDIUM/LOW）
+- 执行审批机制
+- 动态策略控制
+- 已实现
+
+---
+
+## 技术债务与限制
+
+### 当前限制
+
+1. **测试覆盖不足**: 缺少端到端集成测试
+2. **性能数据未验证**: 部分优化效果未实际测量
+3. **Progressive Compaction**: 代码已写但未完全集成
+4. **Alpha 版本**: 不推荐直接用于生产环境
+
+### 已知问题
+
+1. 部分 MCP servers 在 Windows 上有兼容性问题
+2. 长对话场景需要更多测试
+3. 错误处理需要更健壮
 
 ---
 
 ## 文档
 
-### 用户文档
-
+### 核心文档
+- [项目状态](PROJECT_STATUS.md) - 诚实的功能状态评估 ⭐
+- [技术亮点](TECHNICAL_HIGHLIGHTS.md) - 技术设计文档
 - [安装指南](INSTALLATION.md) - 详细安装步骤
-- [新环境设置](NEW_ENVIRONMENT_SETUP.md) - 新开发环境配置
-- [配置说明](CONFIG_PRIORITY.md) - 四层配置优先级
-
-### 技术文档
-
-- [技术亮点](TECHNICAL_HIGHLIGHTS.md) - 架构设计、性能优化、技术决策
-- [开发日志](DEVELOPMENT_LOG.md) - 完整开发历史
-- [版本管理](VERSION_MANAGEMENT.md) - 版本发布流程
+- [新环境设置](NEW_ENVIRONMENT_SETUP.md) - 开发环境配置
 
 ### 功能文档
-
-- [多租户工作区](MULTI_TENANT_WORKSPACE.md) - 工作区隔离
-- [会话恢复](SESSION_RESUME.md) - 会话持久化
-- [多行输入](MULTILINE_INPUT.md) - REPL 增强
-- [MCP 集成](MCP_INTEGRATION_SUCCESS.md) - MCP 协议支持
-- [Gateway & Web UI](GATEWAY_WEB_EVALUATION.md) - WebSocket 服务
+- [多租户工作区](MULTI_TENANT_WORKSPACE.md)
+- [会话恢复](SESSION_RESUME.md)
+- [配置优先级](CONFIG_PRIORITY.md)
+- [Gateway & Web UI](GATEWAY_WEB_EVALUATION.md)
 
 ### 系统文档
-
-- [Memory 集成](MEMORY_SYSTEMS_INTEGRATION.md) - 记忆管理
-- [Memory Flush & Compaction](MEMORY_FLUSH_COMPACTION_INTERACTION.md) - 上下文压缩
-- [跨平台开发](CROSS_PLATFORM_SUMMARY.md) - Windows/Linux/Mac 兼容
+- [Memory 系统集成](MEMORY_SYSTEMS_INTEGRATION.md)
+- [上下文压缩机制](MEMORY_FLUSH_COMPACTION_INTERACTION.md)
+- [跨平台开发](CROSS_PLATFORM_SUMMARY.md)
 
 [完整文档索引](DOCS_INDEX.md)
 
 ---
 
-## 对比分析
+## 适用场景
 
-| 特性 | FastReAct | Claude Code | GitHub Copilot | LangChain |
-|------|-----------|-------------|----------------|-----------|
-| **成本** (10k次) | $10 | $100 | $50 | $30 |
-| **隐私** | 完全离线 | 云端 | 云端 | 灵活 |
-| **MCP 支持** | ✓ | ✗ | ✗ | ✗ |
-| **Memory Flush** | ✓ | ✗ | ✗ | ✗ |
-| **多租户** | ✓ | ✗ | ✗ | ✗ |
-| **学习曲线** | 低 | 低 | 低 | 高 |
+### 适合
+- 学习 ReAct 架构
+- 快速原型开发
+- 小规模内部部署
+- 需要本地化/隐私保护
+- 需要自定义工具
 
----
-
-## 性能基准
-
-| 指标 | FastReAct | 说明 |
-|------|-----------|------|
-| **响应时间** | 2-5s | 包含工具调用 |
-| **Token 使用** | 5k avg | Memory Flush 优化 |
-| **并发工具** | 3 个 | 异步执行 |
-| **缓存命中率** | 15-25% | LRU 缓存 |
-| **准确率** | ~90% | ReAct 架构 |
+### 不适合
+- 大规模生产环境（目前）
+- 需要完整功能（vs LangChain）
+- 不想配置环境
+- 需要开箱即用的完美体验
 
 ---
 
 ## 开发路线图
 
-### v1.1.0 (当前)
-
+### v1.1.0 (当前 Alpha)
+- [x] ReAct 核心引擎
+- [x] Memory Flush
 - [x] MCP 协议集成
-- [x] Memory Flush 系统
-- [x] Progressive Compaction
-- [x] 四层配置优先级
-- [x] 多租户工作区
-- [x] 会话恢复
-- [x] Gateway + Web UI
+- [x] 4 层配置优先级
+- [x] 工具系统
+- [ ] Progressive Compaction 集成
 
-### v1.2.0 (规划中)
-
-- [ ] 分布式锁（多实例）
-- [ ] Redis 缓存
-- [ ] Prometheus 监控
-- [ ] 更多 MCP servers
-- [ ] Docker Compose 部署
+### v1.2.0 (规划)
+- [ ] 完整的集成测试
+- [ ] 性能基准测试
+- [ ] 生产环境验证
+- [ ] 错误处理增强
 
 ### v2.0.0 (未来)
-
 - [ ] 多 Agent 协作
-- [ ] Agent 编排 (CrewAI 风格)
+- [ ] Agent 编排
 - [ ] 自动工具发现
-- [ ] 自我改进机制
 
 ---
 
@@ -371,5 +335,5 @@ python test_memory_flush_logic.py
 ---
 
 **最后更新**: 2025-02-05
-**版本**: v1.1.0
-**状态**: Production Ready 🚀
+**版本**: v1.1.0-alpha
+**状态**: Alpha - 核心功能可用，持续改进中
