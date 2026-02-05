@@ -971,6 +971,7 @@ Type /help for commands""",
                 model=model,
                 enable_bootstrap=True,
                 config=config,
+                llm_driver=self.llm_driver,  # 传入 LLMDriver（包含 ContextMonitor）
             )
 
         return self.state.react_agent
