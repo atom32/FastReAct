@@ -55,6 +55,10 @@ except ImportError:
 # Reuse existing components
 # ============================================================================
 
+# ============================================================================
+# Reuse existing components
+# ============================================================================
+
 from fastreact.observability.events import (
     LifecycleEvent,
     AssistantEvent,
@@ -62,6 +66,13 @@ from fastreact.observability.events import (
     AgentEvent,
     EventManager,
 )
+
+# ============================================================================
+# LLMDriver - 统一 LLM 调用中间层
+# ============================================================================
+
+from fastreact.llm import LLMDriver, LLMDriverConfig, create_llm_driver_from_config
+
 
 # ============================================================================
 # Complexity Evaluator - LLM 驱动的任务复杂度评估
@@ -75,16 +86,20 @@ class ComplexityEvaluator:
     1. LLM 为主（智能评估）
     2. 硬编码为 fallback（当 LLM 不可用时）
     3. 缓存结果（避免重复调用）
+
+    迁移到 LLMDriver:
+        - 旧版: 接收 llm_client (AsyncOpenAI)
+        - 新版: 接收 llm_driver (LLMDriver)
     """
 
-    def __init__(self, llm_client=None):
+    def __init__(self, llm_driver=None):
         """
         初始化评估器
 
         Args:
-            llm_client: LLM 客户端（可选，为 None 时使用 fallback）
+            llm_driver: LLM Driver（可选，为 None 时使用 fallback）
         """
-        self.llm_client = llm_client
+        self.llm_driver = llm_driver
         self.cache = {}  # 查询缓存
 
     async def evaluate(self, query: str) -> Dict[str, Any]:
@@ -184,25 +199,26 @@ class ComplexityEvaluator:
 """
 
         try:
-            # 调用 LLM
-            response = await self.llm_client.chat.completions.create(
-                model=self.llm_client.model or "gpt-4",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一个任务复杂度评估专家。请严格按照 JSON 格式返回结果。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,
-                max_tokens=500,
+            # 使用 LLMDriver（统一中间层）
+            messages = [
+                {
+                    "role": "system",
+                    "content": "你是一个任务复杂度评估专家。请严格按照 JSON 格式返回结果。"
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+
+            # 调用 LLMDriver（自动重试、缓存、日志）
+            response = await self.llm_driver.chat(
+                messages=messages,
+                temperature=0.3,  # 较低温度，更确定的输出
             )
 
             # 提取响应
-            llm_output = response.choices[0].message.content or ""
+            llm_output = response.content
 
             # 解析 JSON
             # 尝试提取 JSON（可能被包裹在 ```json 中）
@@ -925,14 +941,16 @@ class UnifiedAgentREPL:
         return True
 
     def _get_or_create_evaluator(self) -> ComplexityEvaluator:
-        """获取或创建复杂度评估器（延迟初始化）"""
+        """获取或创建复杂度评估器（延迟初始化，使用 LLMDriver）"""
         if self.complexity_evaluator is None:
-            # 获取 LLM client（从 React Agent）
-            react_agent = self._get_or_create_react_agent()
-            llm_client = react_agent._get_client()
+            # 创建 LLMDriver（如果还没有）
+            if not hasattr(self, 'llm_driver') or self.llm_driver is None:
+                from fastreact.bootstrap.config_loader import load_config
+                config = load_config()
+                self.llm_driver = create_llm_driver_from_config(config)
 
-            # 创建 evaluator
-            self.complexity_evaluator = ComplexityEvaluator(llm_client=llm_client)
+            # 创建 evaluator（使用 LLMDriver）
+            self.complexity_evaluator = ComplexityEvaluator(llm_driver=self.llm_driver)
 
         return self.complexity_evaluator
 
