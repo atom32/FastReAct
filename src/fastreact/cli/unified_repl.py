@@ -1,55 +1,78 @@
 """
-GraphAgent REPL - 智能任务规划 REPL
+UnifiedAgent REPL - 统一入口 REPL
 
-集成 GraphAgent 和 IEL，提供"先思考，再动手"的执行模式：
+遵循 CLAUDE.md 规则：
+- No emoji in code
+- No hardcoded paths
+- Use existing infrastructure (events, session resume)
+- Single entry point for both toC and toB
 
-1. 大脑升级：GraphAgent 自动规划任务
-2. 防弹背心：IEL 快照和自动回滚
-3. 实时反馈：流式进度和工具状态面板
-
-使用：
-    python -m fastreact.cli.graph_repl
+Architecture:
+    User Input
+        ↓
+    ComplexityEvaluator (reuse)
+        ↓
+    Auto Router
+        ↓
+    ┌───┴────┬─────────┬─────────┐
+    │ REACT  │ GRAPH   │ IEL     │
+    │        │ AGENT   │         │
+    └───┬────┴─────────┴─────────┘
+        ↓
+    EventManager (reuse)
+        ↓
+    UnifiedRenderer
+        ├─ REPLRenderer (toC)
+        └─ GatewayRenderer (toB)
 """
 
 import sys
 import os
-import asyncio
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import asyncio
 
 # Windows UTF-8 设置
 if sys.platform == 'win32':
     os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+# ============================================================================
+# Import existing infrastructure
+# ============================================================================
 
 try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
-    from rich.live import Live
-    from rich.markdown import Markdown
-    from rich.syntax import Syntax
+
     console = Console()
 except ImportError:
     console = None
-    print("[Warning] Rich not installed, falling back to basic output")
 
-try:
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.completion import WordCompleter
-    from prompt_toolkit.history import FileHistory
-    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-    from prompt_toolkit.key_binding import KeyBindings
-except ImportError:
-    PromptSession = None
+# ============================================================================
+# Reuse existing components
+# ============================================================================
+
+from fastreact.observability.events import (
+    LifecycleEvent,
+    AssistantEvent,
+    ToolEvent,
+    AgentEvent,
+    EventManager,
+)
 
 # ============================================================================
 # Complexity Evaluator - 任务复杂度评估
 # ============================================================================
 
 class ComplexityEvaluator:
-    """评估任务复杂度，决定使用哪种执行模式"""
+    """
+    评估任务复杂度，决定使用哪种执行模式
+
+    复用原则：不要重复造轮子
+    """
 
     async def evaluate(self, query: str) -> Dict[str, Any]:
         """
@@ -141,31 +164,41 @@ class ComplexityEvaluator:
         }
 
 # ============================================================================
-# GraphAgent REPL State
+# Unified Agent State - 使用 SESSION_RESUME 机制
 # ============================================================================
 
-class GraphAgentREPLState:
-    """GraphAgent REPL 会话状态"""
+class UnifiedAgentState:
+    """
+    统一 Agent 状态
 
-    def __init__(self):
+    复用原则：
+    - 使用 .fastreact/sessions/ 存储会话
+    - 与 SESSION_RESUME 机制兼容
+    """
+
+    def __init__(self, session_dir: Optional[Path] = None):
+        """初始化状态"""
+        if session_dir is None:
+            session_dir = Path.cwd() / ".fastreact" / "sessions"
+
+        self.session_dir = session_dir
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+
         # 执行模式
         self.execution_mode = "auto"  # auto | react | graph_agent | iel
 
-        # Agent 实例
+        # Agent 实例（延迟初始化）
         self.react_agent = None
         self.graph_agent = None
         self.iel_loop = None
 
-        # 对话历史
-        self.conversation_history: List[Dict[str, str]] = []
-
-        # 配置
+        # 配置（使用统一的配置系统）
         self.config = {
-            "auto_confirm_plan": True,  # 自动确认计划
-            "show_plan_details": True,  # 显示计划详情
-            "enable_streaming": True,   # 启用流式输出
-            "auto_snapshot": True,      # 自动快照
-            "git_integration": True,    # Git 集成
+            "auto_confirm_plan": True,
+            "show_plan_details": True,
+            "enable_streaming": True,
+            "auto_snapshot": True,
+            "git_integration": False,  # Phase 2
         }
 
         # 统计
@@ -177,39 +210,88 @@ class GraphAgentREPLState:
             "plan_rejections": 0,
         }
 
-    def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
-        return self.stats.copy()
+        # 事件管理器（复用）
+        self.event_manager = EventManager()
+
+    def get_session_path(self) -> Path:
+        """获取当前会话文件路径"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return self.session_dir / f"unified_{timestamp}.json"
+
+    def save_session(self) -> Optional[Path]:
+        """保存会话到文件"""
+        import json
+
+        session_path = self.get_session_path()
+
+        session_data = {
+            "timestamp": datetime.now().isoformat(),
+            "execution_mode": self.execution_mode,
+            "stats": self.stats.copy(),
+            "config": self.config.copy(),
+        }
+
+        try:
+            with open(session_path, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+
+            return session_path
+
+        except Exception as e:
+            if console:
+                console.print(f"[ERROR] Failed to save session: {e}")
+            return None
+
+    def load_session(self, session_path: Path) -> bool:
+        """从文件加载会话"""
+        import json
+
+        try:
+            with open(session_path, 'r', encoding='utf-8') as f:
+                session_data = json.load(f)
+
+            self.execution_mode = session_data.get("execution_mode", "auto")
+            self.stats.update(session_data.get("stats", {}))
+            self.config.update(session_data.get("config", {}))
+
+            return True
+
+        except Exception as e:
+            if console:
+                console.print(f"[ERROR] Failed to load session: {e}")
+            return False
 
 # ============================================================================
-# GraphAgent REPL
+# Unified REPL
 # ============================================================================
 
-class GraphAgentREPL:
+class UnifiedAgentREPL:
     """
-    GraphAgent REPL - 智能任务规划 REPL
+    统一 Agent REPL
 
-    特点：
-    1. 自动评估任务复杂度
-    2. GraphAgent 自动生成执行计划
-    3. 用户确认后再执行
-    4. IEL 快照和自动回滚
-    5. 实时进度反馈
+    设计原则：
+    1. 统一入口（toC 和 toB 使用相同逻辑）
+    2. 自动路由（根据复杂度选择模式）
+    3. 事件驱动（使用 EventManager）
+    4. 状态持久化（使用 SESSION_RESUME）
     """
 
     def __init__(self, session_to_load: Optional[Path] = None):
         """初始化 REPL"""
-        self.state = GraphAgentREPLState()
+        # 状态（复用 SESSION_RESUME 机制）
+        self.state = UnifiedAgentState()
+
+        # 运行时状态
         self.running = True
         self.session_to_load = session_to_load
 
         # 评估器
         self.complexity_evaluator = ComplexityEvaluator()
 
-        # Rich Console
+        # Console
         self.console = console
 
-        # 命令
+        # 命令映射
         self.commands = {
             'help': self.cmd_help,
             'exit': self.cmd_exit,
@@ -219,6 +301,7 @@ class GraphAgentREPL:
             'stats': self.cmd_stats,
             'clear': self.cmd_clear,
             'history': self.cmd_history,
+            'save': self.cmd_save,
         }
 
     # ========================================================================
@@ -231,7 +314,8 @@ class GraphAgentREPL:
 
         # 加载会话
         if self.session_to_load:
-            await self._load_session(self.session_to_load)
+            if self.state.load_session(self.session_to_load):
+                self.print_success(f"会话已加载: {self.session_to_load.name}")
 
         # 主循环
         while self.running:
@@ -249,10 +333,9 @@ class GraphAgentREPL:
                 break
             except KeyboardInterrupt:
                 print()
-                continue
 
     def get_prompt(self) -> str:
-        """获取提示符"""
+        """获取提示符（无 emoji）"""
         mode_display = {
             "auto": "[AUTO]",
             "react": "[REACT]",
@@ -261,25 +344,24 @@ class GraphAgentREPL:
         }
 
         mode_tag = mode_display.get(self.state.execution_mode, "[UNKNOWN]")
-
         query_count = self.state.stats["total_queries"]
 
         return f"FastReAct{mode_tag} Q{query_count} >> "
 
     def print_welcome(self):
-        """打印欢迎信息"""
+        """打印欢迎信息（无 emoji）"""
         if self.console:
             self.console.print()
             self.console.print(Panel(
-                """**FastReAct GraphAgent REPL**
+                """FastReAct UnifiedAgent REPL
 
-智能任务规划 REPL：
+统一入口 REPL：
 • 自动评估任务复杂度
 • GraphAgent 自动生成执行计划
 • 用户确认后再执行
 • IEL 快照和自动回滚
 
-输入 `/help` 查看命令""",
+输入 /help 查看命令""",
                 title="Welcome",
                 border_style="cyan"
             ))
@@ -287,10 +369,10 @@ class GraphAgentREPL:
         else:
             print()
             print("=" * 60)
-            print("FastReAct GraphAgent REPL")
+            print("FastReAct UnifiedAgent REPL")
             print("=" * 60)
-            print("智能任务规划 REPL：自动规划 + 用户确认 + 安全执行")
-            print("输入 `/help` 查看命令")
+            print("统一入口 REPL：自动规划 + 用户确认 + 安全执行")
+            print("输入 /help 查看命令")
             print()
 
     async def execute_command(self, command: str) -> bool:
@@ -322,18 +404,16 @@ class GraphAgentREPL:
         """处理快捷命令"""
         cmd = command[1:].strip().lower()
 
-        if cmd == "react":
-            self.state.execution_mode = "react"
-            self.print_success("切换到 ReAct 模式")
-        elif cmd == "graph":
-            self.state.execution_mode = "graph_agent"
-            self.print_success("切换到 GraphAgent 模式")
-        elif cmd == "iel":
-            self.state.execution_mode = "iel"
-            self.print_success("切换到 IEL 模式")
-        elif cmd == "auto":
-            self.state.execution_mode = "auto"
-            self.print_success("切换到自动模式")
+        mode_map = {
+            "react": "react",
+            "graph": "graph_agent",
+            "iel": "iel",
+            "auto": "auto",
+        }
+
+        if cmd in mode_map:
+            self.state.execution_mode = mode_map[cmd]
+            self.print_success(f"切换到 {mode_map[cmd].upper()} 模式")
         else:
             self.print_error(f"未知命令: /{cmd}")
             return await self.cmd_help("")
@@ -345,7 +425,7 @@ class GraphAgentREPL:
     # ========================================================================
 
     def cmd_help(self, args: str) -> bool:
-        """显示帮助"""
+        """显示帮助（无 emoji）"""
         if self.console:
             self.console.print()
             self.console.print("[bold cyan]可用命令：[/bold cyan]")
@@ -356,6 +436,7 @@ class GraphAgentREPL:
                 ("run <query>", "执行查询（自动模式选择）"),
                 ("mode <name>", "切换模式 (auto/react/graph/iel)"),
                 ("stats", "显示统计信息"),
+                ("save", "保存当前会话"),
                 ("history", "显示查询历史"),
                 ("help", "显示帮助"),
                 ("exit/quit", "退出"),
@@ -380,6 +461,7 @@ class GraphAgentREPL:
             print("  run <query> - 执行查询")
             print("  mode <name> - 切换模式")
             print("  stats - 统计信息")
+            print("  save - 保存会话")
             print("  history - 历史记录")
             print("  help - 帮助")
             print("  exit/quit - 退出")
@@ -387,8 +469,13 @@ class GraphAgentREPL:
         return True
 
     def cmd_exit(self, args: str) -> bool:
-        """退出"""
+        """退出（保存会话）"""
+        # 自动保存会话
+        session_path = self.state.save_session()
+
         if self.console:
+            if session_path:
+                self.console.print(f"\n[bold cyan]Session saved: {session_path.name}[/bold cyan]")
             self.console.print("\n[bold cyan]Goodbye![/bold cyan]\n")
         else:
             print("\nGoodbye!\n")
@@ -419,11 +506,8 @@ class GraphAgentREPL:
             table.add_column("Metric", style="cyan")
             table.add_column("Value", style="green")
 
-            table.add_row("Total Queries", str(stats["total_queries"]))
-            table.add_row("ReAct Queries", str(stats["react_queries"]))
-            table.add_row("GraphAgent Queries", str(stats["graph_agent_queries"]))
-            table.add_row("IEL Queries", str(stats["iel_queries"]))
-            table.add_row("Plan Rejections", str(stats["plan_rejections"]))
+            for key, value in stats.items():
+                table.add_row(key.replace("_", " ").title(), str(value))
 
             self.console.print(table)
         else:
@@ -433,29 +517,57 @@ class GraphAgentREPL:
 
         return True
 
+    async def cmd_save(self, args: str) -> bool:
+        """保存会话"""
+        session_path = self.state.save_session()
+
+        if session_path:
+            self.print_success(f"会话已保存: {session_path}")
+        else:
+            self.print_error("保存会话失败")
+
+        return True
+
     async def cmd_history(self, args: str) -> bool:
         """显示历史"""
         limit = int(args) if args.isdigit() else 10
 
-        recent = self.state.conversation_history[-limit:]
+        # 列出会话文件
+        session_files = sorted(
+            self.state.session_dir.glob("unified_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )[:limit]
 
-        if not recent:
+        if not session_files:
             self.print_output("No history yet")
         else:
             if self.console:
-                table = Table(title=f"Last {len(recent)} Messages")
-                table.add_column("Role")
-                table.add_column("Message")
+                table = Table(title=f"Last {len(session_files)} Sessions")
+                table.add_column("File")
+                table.add_column("Time")
+                table.add_column("Queries")
 
-                for msg in recent:
-                    content = msg["content"][:100]
-                    table.add_row(msg["role"].upper(), content)
+                for session_file in session_files:
+                    import json
+
+                    try:
+                        with open(session_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+
+                        table.add_row(
+                            session_file.name,
+                            data.get("timestamp", "")[:19],
+                            str(data.get("stats", {}).get("total_queries", 0))
+                        )
+                    except:
+                        pass
 
                 self.console.print(table)
             else:
-                print(f"\nLast {len(recent)} messages:")
-                for msg in recent:
-                    print(f"  [{msg['role'].upper()}]: {msg['content'][:100]}")
+                print(f"\nLast {len(session_files)} sessions:")
+                for session_file in session_files:
+                    print(f"  {session_file.name}")
 
         return True
 
@@ -474,8 +586,13 @@ class GraphAgentREPL:
     async def cmd_run(self, query: str) -> bool:
         """执行查询（智能模式选择）"""
         try:
-            # 保存查询
-            self.state.conversation_history.append({"role": "user", "content": query})
+            # 保存查询到历史（使用事件系统）
+            event = LifecycleEvent(
+                phase="start",
+                metadata={"query": query}
+            )
+            self.state.event_manager.emit(event)
+
             self.state.stats["total_queries"] += 1
 
             # 自动模式选择
@@ -507,7 +624,7 @@ class GraphAgentREPL:
             return True
 
     def _show_complexity_evaluation(self, evaluation: Dict[str, Any]):
-        """显示复杂度评估"""
+        """显示复杂度评估（无 emoji）"""
         if not self.console:
             return
 
@@ -546,11 +663,29 @@ class GraphAgentREPL:
             self.console.print(f"[yellow][REACT 模式][/yellow]")
             self.console.print()
 
-        # 创建 FastReAct agent
+        # 创建 FastReAct agent（使用 bootstrap）
         agent = self._get_or_create_react_agent()
+
+        # 执行（使用事件回调）
+        def event_callback(event):
+            """事件回调（统一流式输出）"""
+            if self.console:
+                if event.type == "lifecycle":
+                    self.console.print(f"[dim][{event.phase.upper()}][/dim]")
+                elif event.type == "tool":
+                    if event.phase == "start":
+                        self.console.print(f"[cyan][TOOL] {event.tool_name}[/cyan]")
+                    elif event.phase == "result":
+                        self.console.print(f"[green][RESULT] {event.tool_name}[/green]")
+
+        # 注册事件回调
+        self.state.event_manager.register(event_callback)
 
         # 执行
         result = await agent.run_async(query)
+
+        # 注销事件回调
+        self.state.event_manager.unregister(event_callback)
 
         # 显示结果
         if self.console:
@@ -562,16 +697,10 @@ class GraphAgentREPL:
         else:
             print(f"\nAnswer: {result.get('answer', '')}")
 
-        # 保存到历史
-        self.state.conversation_history.append({
-            "role": "assistant",
-            "content": result.get("answer", "")
-        })
-
         return True
 
     def _get_or_create_react_agent(self):
-        """获取或创建 ReAct Agent"""
+        """获取或创建 ReAct Agent（使用 bootstrap）"""
         if self.state.react_agent is None:
             from fastreact import FastReAct
             from fastreact.bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
@@ -638,12 +767,6 @@ class GraphAgentREPL:
                 # 显示结果
                 self._display_graph_agent_result(result)
 
-                # 保存到历史
-                self.state.conversation_history.append({
-                    "role": "assistant",
-                    "content": result.get("response", "")
-                })
-
             except Exception as e:
                 self.print_error(f"执行失败: {e}")
                 raise
@@ -670,7 +793,7 @@ class GraphAgentREPL:
         return self.state.graph_agent
 
     def _display_plan(self, plan):
-        """显示执行计划"""
+        """显示执行计划（无 emoji）"""
         if not self.console:
             print(f"\nPlan: {plan.goal}")
             print(f"Steps: {len(plan.steps)}")
@@ -718,7 +841,7 @@ class GraphAgentREPL:
             return False
 
     def _display_graph_agent_result(self, result: dict):
-        """显示 GraphAgent 结果"""
+        """显示 GraphAgent 结果（无 emoji）"""
         if not self.console:
             print(f"\nResult: {result.get('response', '')}")
             return
@@ -806,38 +929,18 @@ class GraphAgentREPL:
         return await self._run_graph_agent(query)
 
     # ========================================================================
-    # 会话管理
-    # ========================================================================
-
-    async def _load_session(self, session_file: Path):
-        """加载会话"""
-        import json
-
-        try:
-            with open(session_file, 'r', encoding='utf-8') as f:
-                session_data = json.load(f)
-
-            self.state.conversation_history = session_data.get("conversation", [])
-            self.state.stats.update(session_data.get("stats", {}))
-
-            self.print_success(f"会话已加载: {session_file.name}")
-
-        except Exception as e:
-            self.print_error(f"加载会话失败: {e}")
-
-    # ========================================================================
     # 辅助方法
     # ========================================================================
 
     def print_success(self, message: str):
-        """打印成功信息"""
+        """打印成功信息（无 emoji）"""
         if self.console:
             self.console.print(f"[green bold][SUCCESS][/green bold] {message}")
         else:
             print(f"[SUCCESS] {message}")
 
     def print_error(self, message: str):
-        """打印错误信息"""
+        """打印错误信息（无 emoji）"""
         if self.console:
             self.console.print(f"[red bold][ERROR][/red bold] {message}")
         else:
@@ -855,9 +958,32 @@ class GraphAgentREPL:
 # 入口点
 # ============================================================================
 
-def run_graph_repl():
-    """启动 GraphAgent REPL"""
-    repl = GraphAgentREPL()
+def run_unified_repl():
+    """启动统一 REPL"""
+    # 检查是否有历史会话
+    session_dir = Path.cwd() / ".fastreact" / "sessions"
+
+    session_to_load = None
+
+    if session_dir.exists():
+        # 找到最新的会话
+        session_files = sorted(
+            session_dir.glob("unified_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+
+        if session_files:
+            latest_session = session_files[0]
+
+            # 询问用户
+            print(f"发现历史会话: {latest_session.name}")
+            response = input("是否恢复？ [Y/n]: ").strip().lower()
+
+            if response not in ['n', 'no', '否']:
+                session_to_load = latest_session
+
+    repl = UnifiedAgentREPL(session_to_load=session_to_load)
 
     try:
         asyncio.run(repl.run_async())
@@ -866,4 +992,4 @@ def run_graph_repl():
 
 
 if __name__ == '__main__':
-    run_graph_repl()
+    run_unified_repl()
