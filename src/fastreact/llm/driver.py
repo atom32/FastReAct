@@ -148,6 +148,12 @@ class LLMDriver:
         # 缓存
         self._cache = {} if self.config.enable_cache else None
 
+        # Context Monitor: 实时追踪 Token 消耗
+        from ..context.monitor import get_context_monitor
+        self.context_monitor = get_context_monitor(
+            context_window=self.config.max_tokens * 10  # 估算：max_tokens * 10轮对话
+        )
+
     # ========================================================================
     # 客户端管理
     # ========================================================================
@@ -375,6 +381,39 @@ class LLMDriver:
         # 提取工具调用
         if hasattr(message, 'tool_calls') and message.tool_calls:
             result.tool_calls = message.tool_calls
+
+        # 更新 Context Monitor: 追踪 Token 消耗
+        if hasattr(response, 'usage') and response.usage:
+            usage = response.usage
+            prompt_tokens = getattr(usage, 'prompt_tokens', 0)
+            completion_tokens = getattr(usage, 'completion_tokens', 0)
+
+            # 更新监控状态
+            status = self.context_monitor.track_request(
+                input_tokens=prompt_tokens,
+                output_tokens=completion_tokens
+            )
+
+            # 显示警告（如果需要）
+            if status.get("warning"):
+                warning_level = status["warning"]
+                if config.log_requests:
+                    # 显示进度条和警告
+                    progress_bar = self.context_monitor.get_progress_bar()
+                    status_text = self.context_monitor.get_status_text()
+
+                    if warning_level == "WARNING":
+                        logger.warning(f"[ContextMonitor] {progress_bar}")
+                        logger.warning(f"[ContextMonitor] {status_text}")
+                        logger.warning("[ContextMonitor] Consider enabling Memory Flush or pruning history")
+                    elif warning_level == "ALERT":
+                        logger.error(f"[ContextMonitor] {progress_bar}")
+                        logger.error(f"[ContextMonitor] {status_text}")
+                        logger.error("[ContextMonitor] Strongly recommend enabling Memory Flush immediately!")
+                    elif warning_level == "CRITICAL":
+                        logger.critical(f"[ContextMonitor] {progress_bar}")
+                        logger.critical(f"[ContextMonitor] {status_text}")
+                        logger.critical("[ContextMonitor] Context limit approaching! System will trigger Memory Flush!")
 
         return result
 

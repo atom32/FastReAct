@@ -23,6 +23,7 @@ from .context_pruning import (
 )
 from .summarizer import Summarizer, SummarizerBuilder
 from .memory_flush import MemoryFlush, MemoryFlushBuilder
+from .monitor import ContextMonitor, get_context_monitor, reset_context_monitor, ContextMetrics
 from .compaction import ProgressiveCompaction, ProgressiveCompactionBuilder, CompactionResult
 from .repo_mapper import (
     RepoMapper,
@@ -61,4 +62,9 @@ __all__ = [
     "RepoMapEntry",
     "get_repo_mapper",
     "remove_session",
+    # Context Monitor
+    "ContextMonitor",
+    "get_context_monitor",
+    "reset_context_monitor",
+    "ContextMetrics",
 ]
