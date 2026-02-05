@@ -136,9 +136,9 @@ class FastReAct:
         初始化FastReAct引擎
 
         Args:
-            api_key: OpenAI API密钥
-            base_url: API基础URL（支持兼容API）
-            model: 模型名称
+            api_key: [DEPRECATED] OpenAI API密钥，建议通过 config 传入
+            base_url: [DEPRECATED] API基础URL，建议通过 config 传入
+            model: [DEPRECATED] 模型名称，建议通过 config 传入
             tools: 工具列表（如果不指定，使用默认工具）
             max_iterations: 最大迭代次数
             max_concurrent_tools: 最大并发工具数
@@ -160,6 +160,12 @@ class FastReAct:
             respect_group_policies: 是否遵守分组策略（V2，默认True）
             policy_engine: 工具策略引擎实例（V2，可选）
             approval_manager: 审批管理器实例（V2，可选）
+            llm_driver: LLMDriver 实例（推荐，优先级最高）
+
+        Note:
+            - 优先使用 llm_driver 参数传入 LLMDriver 实例
+            - 如果未传入 llm_driver 但 enable_bootstrap=True，将自动从 config 创建 LLMDriver
+            - 直接传入 api_key/base_url/model 的方式已废弃，建议使用配置系统
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -366,16 +372,28 @@ class FastReAct:
         self._client = None
         self._http_client = None
 
-        # Phase 3: LLMDriver 支持
+        # Phase 3-4: LLMDriver 支持
         if llm_driver is not None:
+            # 外部传入的 LLMDriver（优先级最高）
             self._llm_driver = llm_driver
             self._use_driver = True
             logger.info("Using external LLMDriver")
+        elif enable_bootstrap and config:
+            # Bootstrap 模式：自动创建 LLMDriver
+            try:
+                from ..llm import create_llm_driver_from_config
+                self._llm_driver = create_llm_driver_from_config(config)
+                self._use_driver = True
+                logger.info("Auto-created LLMDriver from Bootstrap config")
+            except Exception as e:
+                logger.warning(f"Failed to create LLMDriver from config: {e}")
+                self._llm_driver = None
+                self._use_driver = False
         else:
-            # 兼容旧方式：延迟初始化（在第一次 _chat 时创建 driver）
+            # 兼容旧方式：延迟初始化（保留向后兼容）
             self._llm_driver = None
             self._use_driver = False
-            logger.debug("LLMDriver not provided, will create on first use")
+            logger.debug("LLMDriver not provided, will use legacy _get_client() path")
 
         # 请求去重（时间窗口内的最近调用）
         self._recent_calls: deque = deque()
@@ -1025,7 +1043,25 @@ class FastReAct:
         ))
 
     def _get_client(self):
-        """获取或创建异步客户端"""
+        """
+        获取或创建异步客户端
+
+        [DEPRECATED] 此方法已废弃，请使用 LLMDriver 代替
+
+        警告：直接使用 OpenAI 客户端绕过了 LLMDriver 的重试、缓存和日志功能。
+        建议通过 FastReAct 构造函数传入 llm_driver 参数。
+
+        计划移除版本：v2.0.0
+        """
+        import warnings
+        warnings.warn(
+            "_get_client() is deprecated and will be removed in v2.0.0. "
+            "Use LLMDriver instead by passing llm_driver parameter to FastReAct.__init__(). "
+            "Direct client usage bypasses retry, caching, and logging features.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         if self._client is None:
             try:
                 from openai import AsyncOpenAI
@@ -1721,6 +1757,10 @@ class FastReAct:
     ) -> Dict[str, Any]:
         """
         使用原始 OpenAI 客户端发送聊天请求（向后兼容）
+
+        [DEPRECATED] 此方法为向后兼容保留，新代码应使用 _chat_with_driver()
+
+        注意：此路径不包含 LLMDriver 的自动重试、缓存和日志功能。
 
         Returns:
             {
