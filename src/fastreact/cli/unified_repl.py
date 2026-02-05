@@ -571,19 +571,19 @@ class UnifiedAgentREPL:
         return f"FastReAct{mode_tag} Q{query_count} >> "
 
     def print_welcome(self):
-        """打印欢迎信息（无 emoji）"""
+        """打印欢迎信息（无 emoji，跨平台兼容）"""
         if self.console:
             self.console.print()
             self.console.print(Panel(
                 """FastReAct UnifiedAgent REPL
 
-统一入口 REPL：
-• 自动评估任务复杂度
-• GraphAgent 自动生成执行计划
-• 用户确认后再执行
-• IEL 快照和自动回滚
+[Features]
+- Automatic task complexity evaluation
+- GraphAgent auto-generates execution plans
+- User confirmation before execution
+- IEL snapshots and auto-rollback
 
-输入 /help 查看命令""",
+Type /help for commands""",
                 title="Welcome",
                 border_style="cyan"
             ))
@@ -593,8 +593,8 @@ class UnifiedAgentREPL:
             print("=" * 60)
             print("FastReAct UnifiedAgent REPL")
             print("=" * 60)
-            print("统一入口 REPL：自动规划 + 用户确认 + 安全执行")
-            print("输入 /help 查看命令")
+            print("Unified REPL: Auto-planning + User confirmation + Safe execution")
+            print("Type /help for commands")
             print()
 
     async def execute_command(self, command: str) -> bool:
