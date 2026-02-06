@@ -385,6 +385,25 @@ class FastReAct:
             except Exception as e:
                 logger.warning(f"[SPRINT-4] Failed to initialize SteeringPump: {e}")
 
+        # Sprint 4: FollowUp Pump - Task chaining
+        self._followup_pump = None
+        self._task_scheduler = None
+        if self._enable_reactive_loop:
+            try:
+                from .pumps import FollowUpPump
+                from .scheduler import SimpleTaskScheduler
+
+                # 创建任务调度器
+                self._task_scheduler = SimpleTaskScheduler()
+
+                # 创建跟进泵
+                self._followup_pump = FollowUpPump(
+                    task_scheduler=self._task_scheduler,
+                )
+                logger.info("[SPRINT-4] FollowUpPump enabled with SimpleTaskScheduler")
+            except Exception as e:
+                logger.warning(f"[SPRINT-4] Failed to initialize FollowUpPump: {e}")
+
         # LRU缓存
         self.cache = LRUCache(max_size=cache_size) if enable_cache else None
 

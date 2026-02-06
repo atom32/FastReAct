@@ -23,6 +23,17 @@ from fastreact.core.pumps import (
     create_steering_pump,
     create_followup_pump,
 )
+from fastreact.core.scheduler import (
+    TaskScheduler,
+    ScheduledTask,
+    SimpleTaskScheduler,
+    SequentialTaskScheduler,
+    ConditionalTaskScheduler,
+    create_simple_scheduler,
+    create_sequential_scheduler,
+    create_conditional_scheduler,
+    create_workflow_from_list,
+)
 from fastreact.core.engine import FastReAct
 from fastreact.core.tool import Tool, ToolCall, ToolResult
 from fastreact.core.cache import LRUCache
@@ -81,6 +92,16 @@ __all__ = [
     "FollowUpPump",
     "create_steering_pump",
     "create_followup_pump",
+    # Task Scheduler
+    "TaskScheduler",
+    "ScheduledTask",
+    "SimpleTaskScheduler",
+    "SequentialTaskScheduler",
+    "ConditionalTaskScheduler",
+    "create_simple_scheduler",
+    "create_sequential_scheduler",
+    "create_conditional_scheduler",
+    "create_workflow_from_list",
     # Tool Policy
     "ToolPolicy",
     "ToolPolicyConfig",

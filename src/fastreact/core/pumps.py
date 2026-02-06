@@ -588,20 +588,26 @@ class FollowUpPump(MessagePump):
         messages = []
 
         try:
-            # Call task scheduler
-            if hasattr(self.task_scheduler, 'get_next_tasks'):
-                tasks = await self.task_scheduler.get_next_tasks(context)
+            # Call task scheduler - get next single task
+            if hasattr(self.task_scheduler, 'get_next_task'):
+                task = await self.task_scheduler.get_next_task(context)
 
-                for idx, task in enumerate(tasks):
+                if task:
+                    # Get scheduler status for metadata
+                    status = self.task_scheduler.get_status()
+                    total_tasks = status.get("pending_count", 0) + status.get("completed_count", 0)
+                    current_number = status.get("completed_count", 0) + 1
+
                     messages.append(AgentMessage(
                         role=MessageRole.USER,
-                        content=task.get("instruction", ""),
+                        content=task.instruction,
                         source=MessageSource.FOLLOWUP_SCHEDULER,
                         metadata={
-                            "task_id": task.get("task_id"),
-                            "task_number": idx + 1,
-                            "total_tasks": len(tasks),
-                            "task_type": task.get("type", "unknown")
+                            "task_id": task.task_id,
+                            "task_type": task.task_type,
+                            "priority": task.priority,
+                            "task_number": current_number,
+                            "total_tasks": total_tasks,
                         }
                     ))
 
