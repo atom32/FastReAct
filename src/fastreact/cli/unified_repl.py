@@ -1639,6 +1639,12 @@ Type /help for commands""",
             from fastreact.tools import create_builtin_tools  # 加载内建工具
 
             config = load_config()
+
+            # Sprint 4/5: Enable reactive loop for auto-reflection
+            if "reactive_loop" not in config:
+                config["reactive_loop"] = {}
+            config["reactive_loop"]["enabled"] = True
+
             api_key = get_api_key(config)
             base_url = get_base_url(config)
             model = get_model(config)
