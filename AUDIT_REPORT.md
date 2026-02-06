@@ -1,5 +1,16 @@
-# FastReAct Code Audit Report
-- **Total Python Files**: 308
-- **Total Lines of Code**: 88113
-- **Third-party Dependencies**: , __future__, abc, aiosqlite, anyio, argparse, asyncio, click, concurrent, contextlib, copy, dataclasses, difflib, docker, enum, fastapi, fastreact, flask, functools, hashlib, httpx, importlib, inspect, io, jwt, logging, mcp, mcp_server_apollo, models, pathlib, psycopg2, pydantic, pytest, queue, random, redis, requests, rich, secrets, setuptools, shutil, sqlite3, src, starlette, subprocess, tempfile, test_integration_1_audit_fix, test_integration_2_context_stress, test_integration_3_brain_reload, test_integration_4_tool_graph, threading, typer, typing, unittest, uuid, uvicorn, yaml
-- **Average Comment Ratio**: 7.66%
+# Python Library Audit Report\n\n## Third-Party Libraries Usage\n\n| Library Name | Frequency |\n|--------------|-----------|\n📁 >
+$ grep -rh --include="*.py" "^import\|^from" . | sed 's/^import \([^ ]*\).*/\1/; s/^from \([^ ]*\).*/\1/' | sort | uniq -c | sort -nr | awk '{print "|" $2 "|" $1 "|"}'
+
+'grep' �����ڲ����ⲿ���Ҳ���ǿ����еĳ���
+���������ļ���
+
+\n\n## Git Status\n\n\n📁 >
+$ git status --porcelain
+
+Microsoft Windows [�汾 10.0.26100.6718]
+(c) Microsoft Corporation����������Ȩ����
+
+D:\FastReAct>git status --porcelain
+
+
+\n

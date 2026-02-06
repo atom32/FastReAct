@@ -597,6 +597,7 @@ class UnifiedAgentREPL:
             'clear': self.cmd_clear,
             'history': self.cmd_history,
             'save': self.cmd_save,
+            'tools': self.cmd_tools,  # 新增：列出所有工具
         }
 
     # ========================================================================
@@ -902,6 +903,79 @@ Type /help for commands""",
             self.print_success(f"会话已保存: {session_path}")
         else:
             self.print_error("保存会话失败")
+
+        return True
+
+    # ========================================================================
+    # Tool Listing Command
+    # ========================================================================
+
+    async def cmd_tools(self, args: str) -> bool:
+        """列出所有可用工具（包括MCP工具）"""
+        self.print_info("正在获取工具列表...")
+
+        # 获取当前agent
+        agent = self._get_current_agent()
+        if not agent:
+            self.print_error("无法获取当前agent")
+            return True
+
+        # 获取所有工具
+        tools_dict = agent.tools if hasattr(agent, 'tools') else {}
+
+        if not tools_dict:
+            self.print_warning("未找到任何工具")
+            return True
+
+        # 分类工具
+        builtin_tools = []
+        mcp_tools = {}
+
+        for tool_name, tool in tools_dict.items():
+            tool_info = {
+                "name": tool.name,
+                "description": tool.description[:80] + "..." if len(tool.description) > 80 else tool.description,
+                "group": getattr(tool, 'group', 'builtin')
+            }
+
+            if tool_info["group"] == "mcp":
+                # 按MCP服务器分类
+                server = getattr(tool, 'server', 'unknown')
+                if server not in mcp_tools:
+                    mcp_tools[server] = []
+                mcp_tools[server].append(tool_info)
+            else:
+                builtin_tools.append(tool_info)
+
+        # 显示统计
+        total_builtin = len(builtin_tools)
+        total_mcp = sum(len(tools) for tools in mcp_tools.values())
+        total = total_builtin + total_mcp
+
+        print()
+        print(f"[统计] 总计 {total} 个工具")
+        print(f"  - 内建工具: {total_builtin}")
+        print(f"  - MCP工具: {total_mcp}")
+        print()
+
+        # 显示内建工具
+        if builtin_tools:
+            print(f"[内建工具] ({total_builtin}个)")
+            for tool in builtin_tools[:10]:  # 只显示前10个
+                print(f"  - {tool['name']}")
+            if len(builtin_tools) > 10:
+                print(f"  ... 还有 {len(builtin_tools) - 10} 个")
+            print()
+
+        # 显示MCP工具
+        if mcp_tools:
+            for server, tools in mcp_tools.items():
+                print(f"[{server}] ({len(tools)}个)")
+                for tool in tools[:10]:  # 只显示前10个
+                    print(f"  - {tool['name']}")
+                if len(tools) > 10:
+                    print(f"  ... 还有 {len(tools) - 10} 个")
+                print()
 
         return True
 
