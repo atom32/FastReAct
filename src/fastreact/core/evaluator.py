@@ -140,6 +140,13 @@ class TaskEvaluator:
             ],
         }
 
+        # Patterns that require explicit fixes (not just retry)
+        self._fix_patterns = [
+            "no such file or directory",
+            "permission denied",
+            "command not found",
+        ]
+
         # Statistics
         self._stats = {
             "total_evaluations": 0,
@@ -256,8 +263,12 @@ class TaskEvaluator:
                     logger.warning(f"[EVALUATOR] Detected error pattern: {pattern}")
 
                     # Determine if retry or fix based on pattern
-                    if pattern in ["traceback", "syntaxerror", "indentationerror"]:
-                        # Code syntax error - needs fix
+                    pattern_lower = pattern.lower()
+                    # Code syntax/traceback errors - need fix
+                    if any(keyword in pattern_lower for keyword in [
+                        "traceback", "syntaxerror", "indentationerror",
+                        "nameerror", "typeerror", "exception"
+                    ]):
                         return EvaluationResult(
                             outcome=EvaluationOutcome.FIX,
                             success=False,
@@ -268,8 +279,20 @@ class TaskEvaluator:
                             confidence=0.9,
                             metadata={"error_pattern": pattern}
                         )
-                    else:
-                        # Other errors - may retry
+                    # Bash/general errors that need explicit fixes
+                    elif any(keyword in pattern_lower for keyword in self._fix_patterns):
+                        return EvaluationResult(
+                            outcome=EvaluationOutcome.FIX,
+                            success=False,
+                            needs_retry=False,
+                            needs_fix=True,
+                            failure_reason=f"Command failed: {pattern}",
+                            suggested_fix=self._generate_fix_suggestion(pattern, content),
+                            confidence=0.85,
+                            metadata={"error_pattern": pattern}
+                        )
+                    # Other bash/general errors - retry (might be transient)
+                    elif pattern_type == "bash" or pattern_type == "general":
                         return EvaluationResult(
                             outcome=EvaluationOutcome.RETRY,
                             success=False,
@@ -277,7 +300,19 @@ class TaskEvaluator:
                             needs_fix=False,
                             failure_reason=f"Error pattern detected: {pattern}",
                             suggested_fix=f"Check the {pattern_type} output and retry.",
-                            confidence=0.8,
+                            confidence=0.7,
+                            metadata={"error_pattern": pattern}
+                        )
+                    else:
+                        # Unknown - retry conservatively
+                        return EvaluationResult(
+                            outcome=EvaluationOutcome.RETRY,
+                            success=False,
+                            needs_retry=True,
+                            needs_fix=False,
+                            failure_reason=f"Error pattern detected: {pattern}",
+                            suggested_fix=f"Check the {pattern_type} output and retry.",
+                            confidence=0.6,
                             metadata={"error_pattern": pattern}
                         )
 
