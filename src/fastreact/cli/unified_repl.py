@@ -693,11 +693,21 @@ Type /help for commands""",
             "auto": "auto",
         }
 
+        # Sprint 4: Task Chaining Commands
+        if cmd.startswith("chain "):
+            # /chain "Task A" -> "Task B" -> "Task C"
+            return await self._cmd_chain(command[7:].strip())
+
+        if cmd == "tasks":
+            # /tasks - Show pending tasks
+            return await self._cmd_tasks()
+
+        # Mode switching commands
         if cmd in mode_map:
             self.state.execution_mode = mode_map[cmd]
-            self.print_success(f"切换到 {mode_map[cmd].upper()} 模式")
+            self.print_success(f"Switched to {mode_map[cmd].upper()} mode")
         else:
-            self.print_error(f"未知命令: /{cmd}")
+            self.print_error(f"Unknown command: /{cmd}")
             return await self.cmd_help("")
 
         return True
@@ -726,14 +736,36 @@ Type /help for commands""",
                 ("exit/quit", "Exit and save session"),
             ]
 
+            # Sprint 4: Task Chaining Commands
+            chaining_commands = [
+                ("/chain \"A\" -> \"B\"", "Create task chain (Sprint 4)"),
+                ("/tasks", "Show pending tasks (Sprint 4)"),
+            ]
+
             for cmd, desc in basic_commands:
                 basic_table.add_row(cmd, desc)
 
             self.console.print(basic_table)
             self.console.print()
 
+            # Sprint 4: Task Chaining Commands Table
+            chaining_table = Table(title="[bold yellow]Task Chaining Commands (Sprint 4)[/bold yellow]", show_header=True)
+            chaining_table.add_column("[cyan]Command[/cyan]", style="cyan", width=30)
+            chaining_table.add_column("[green]Description[/green]", style="green")
+
+            chaining_commands = [
+                ("/chain \"A\" -> \"B\"", "Create task workflow"),
+                ("/tasks", "Show pending tasks"),
+            ]
+
+            for cmd, desc in chaining_commands:
+                chaining_table.add_row(cmd, desc)
+
+            self.console.print(chaining_table)
+            self.console.print()
+
             # Shortcut Commands Table
-            shortcut_table = Table(title="[bold yellow]Shortcut Commands[/bold yellow]", show_header=True)
+            shortcut_table = Table(title="[bold yellow]Mode Switching[/bold yellow]", show_header=True)
             shortcut_table.add_column("[cyan]Command[/cyan]", style="cyan", width=25)
             shortcut_table.add_column("[green]Description[/green]", style="green")
 
@@ -857,6 +889,114 @@ Type /help for commands""",
             self.print_error("保存会话失败")
 
         return True
+
+    # ========================================================================
+    # Sprint 4: Task Chaining Commands
+    # ========================================================================
+
+    async def _cmd_chain(self, args: str) -> bool:
+        """
+        Handle /chain command - Create task chain
+
+        Usage: /chain "Task A" -> "Task B" -> "Task C"
+
+        Example:
+            /chain "Write hello.py" -> "Run hello.py" -> "Delete hello.py"
+        """
+        # Parse tasks separated by ->
+        tasks = [t.strip() for t in args.split("->") if t.strip()]
+
+        if len(tasks) < 2:
+            self.print_error("Usage: /chain \"Task A\" -> \"Task B\" -> \"Task C\"")
+            self.print_info("Example: /chain \"Write hello.py\" -> \"Run hello.py\" -> \"Delete hello.py\"")
+            return True
+
+        # Check if agent has scheduler
+        if not self.state.agent:
+            self.print_error("Agent not initialized")
+            return True
+
+        scheduler = self.state.agent.get_task_scheduler()
+        if not scheduler:
+            self.print_error("Task Scheduler not available")
+            self.print_info("Enable reactive loop: config['reactive_loop']['enabled'] = True")
+            return True
+
+        # Schedule tasks
+        self.print_info(f"[CHAIN] Creating workflow with {len(tasks)} tasks...")
+
+        for i, task in enumerate(tasks):
+            task_id = await self.state.agent.schedule_task(
+                instruction=task,
+                task_type="chain_step",
+                priority=100 - i * 10  # Decreasing priority
+            )
+
+            if self.console:
+                self.console.print(f"  [dim]Step {i+1}: {task}[/]")
+
+        self.print_success(f"[CHAIN] {len(tasks)} tasks queued")
+
+        # Start first task
+        self.print_info(f"[CHAIN] Starting task 1/{len(tasks)}: {tasks[0]}")
+
+        return await self.cmd_run(tasks[0])
+
+    async def _cmd_tasks(self) -> bool:
+        """
+        Handle /tasks command - Show pending tasks
+
+        Usage: /tasks
+
+        Displays all pending tasks in the scheduler queue.
+        """
+        if not self.state.agent:
+            self.print_error("Agent not initialized")
+            return True
+
+        scheduler = self.state.agent.get_task_scheduler()
+        if not scheduler:
+            self.print_error("Task Scheduler not available")
+            return True
+
+        # Get scheduler status
+        status = scheduler.get_status()
+
+        if self.console:
+            self.console.print()
+
+            if status['pending_count'] == 0:
+                self.print_info("No pending tasks in queue")
+            else:
+                # Create table for pending tasks
+                table = Table(title=f"[bold yellow]Pending Tasks ({status['pending_count']})[/bold yellow]")
+                table.add_column("[cyan]Task ID[/cyan]", style="cyan", width=20)
+                table.add_column("[green]Instruction[/green]", style="green")
+                table.add_column("[yellow]Priority[/yellow]", style="yellow", width=10)
+
+                # Get pending tasks
+                temp_context = type('obj', (object,), {'messages': [], 'metadata': {}})()
+
+                for i in range(min(status['pending_count'], 10)):  # Max 10 tasks shown
+                    task = await scheduler.get_next_task(temp_context)
+                    if task:
+                        table.add_row(
+                            task.task_id,
+                            task.instruction[:50] + ("..." if len(task.instruction) > 50 else ""),
+                            str(task.priority)
+                        )
+
+                self.console.print(table)
+
+        # Show completed count
+        if status['completed_count'] > 0:
+            self.print_info(f"Completed: {status['completed_count']} tasks")
+
+        return True
+
+    # ========================================================================
+    # End Sprint 4 Commands
+    # ========================================================================
 
     async def cmd_history(self, args: str) -> bool:
         """显示历史"""
