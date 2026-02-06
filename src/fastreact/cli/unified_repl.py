@@ -911,12 +911,14 @@ Type /help for commands""",
             self.print_info("Example: /chain \"Write hello.py\" -> \"Run hello.py\" -> \"Delete hello.py\"")
             return True
 
-        # Check if agent has scheduler
-        if not self.state.agent:
+        # Get current agent based on execution mode
+        agent = self._get_current_agent()
+        if not agent:
             self.print_error("Agent not initialized")
+            self.print_info("Try running a query first to initialize the agent")
             return True
 
-        scheduler = self.state.agent.get_task_scheduler()
+        scheduler = agent.get_task_scheduler()
         if not scheduler:
             self.print_error("Task Scheduler not available")
             self.print_info("Enable reactive loop: config['reactive_loop']['enabled'] = True")
@@ -926,7 +928,7 @@ Type /help for commands""",
         self.print_info(f"[CHAIN] Creating workflow with {len(tasks)} tasks...")
 
         for i, task in enumerate(tasks):
-            task_id = await self.state.agent.schedule_task(
+            task_id = await agent.schedule_task(
                 instruction=task,
                 task_type="chain_step",
                 priority=100 - i * 10  # Decreasing priority
@@ -950,11 +952,14 @@ Type /help for commands""",
 
         Displays all pending tasks in the scheduler queue.
         """
-        if not self.state.agent:
+        # Get current agent based on execution mode
+        agent = self._get_current_agent()
+        if not agent:
             self.print_error("Agent not initialized")
+            self.print_info("Try running a query first to initialize the agent")
             return True
 
-        scheduler = self.state.agent.get_task_scheduler()
+        scheduler = agent.get_task_scheduler()
         if not scheduler:
             self.print_error("Task Scheduler not available")
             return True
@@ -993,6 +998,24 @@ Type /help for commands""",
             self.print_info(f"Completed: {status['completed_count']} tasks")
 
         return True
+
+    def _get_current_agent(self):
+        """
+        Get current active agent based on execution mode
+
+        Returns:
+            Current agent instance (react_agent, graph_agent, or iel_loop)
+        """
+        mode = self.state.execution_mode
+
+        if mode == "react" or mode == "auto":
+            return self.state.react_agent
+        elif mode == "graph_agent":
+            return self.state.graph_agent
+        elif mode == "iel":
+            return self.state.iel_loop
+        else:
+            return None
 
     # ========================================================================
     # End Sprint 4 Commands
