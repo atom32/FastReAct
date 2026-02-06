@@ -2379,6 +2379,87 @@ class FastReAct:
         else:
             logger.warning("[REACTIVE] Cannot inject message - reactive loop is disabled")
 
+    def get_task_scheduler(self):
+        """
+        Get the task scheduler for reactive loop
+
+        Allows external code to schedule follow-up tasks.
+
+        Returns:
+            TaskScheduler instance, or None if reactive loop is disabled
+
+        Example:
+            ```python
+            scheduler = agent.get_task_scheduler()
+            if scheduler:
+                from fastreact.core import ScheduledTask
+                scheduler.add_task(ScheduledTask(
+                    task_id="test",
+                    instruction="Run the test suite"
+                ))
+            ```
+        """
+        return self._task_scheduler
+
+    def get_followup_pump(self):
+        """
+        Get the follow-up pump for reactive loop
+
+        Returns:
+            FollowUpPump instance, or None if reactive loop is disabled
+
+        Example:
+            ```python
+            pump = agent.get_followup_pump()
+            if pump:
+                stats = pump.get_stats()
+                print(f"Follow-ups triggered: {stats['total_followups']}")
+            ```
+        """
+        return self._followup_pump
+
+    async def schedule_task(self, instruction: str, task_type: str = "general", priority: int = 0) -> str:
+        """
+        Schedule a follow-up task
+
+        Convenience method for task scheduling.
+
+        Args:
+            instruction: Task instruction for the agent
+            task_type: Type of task (default: "general")
+            priority: Task priority (higher = earlier execution)
+
+        Returns:
+            Task ID of the scheduled task
+
+        Example:
+            ```python
+            task_id = await agent.schedule_task(
+                "Run the test suite",
+                task_type="test",
+                priority=10
+            )
+            ```
+        """
+        if not self._task_scheduler:
+            logger.warning("[REACTIVE] Cannot schedule task - reactive loop is disabled")
+            return None
+
+        import uuid
+        from .scheduler import ScheduledTask
+
+        task = ScheduledTask(
+            task_id=f"task_{uuid.uuid4().hex[:8]}",
+            instruction=instruction,
+            task_type=task_type,
+            priority=priority,
+        )
+
+        self._task_scheduler.add_task(task)
+        logger.info(f"[REACTIVE] Task scheduled: {task.task_id} - {instruction[:50]}...")
+
+        return task.task_id
+
     def is_reactive_loop_enabled(self) -> bool:
         """Check if reactive loop (steering pump) is enabled"""
         return self._steering_pump is not None

@@ -21,7 +21,8 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from fastreact import FastReAct, ScheduledTask, SimpleTaskScheduler, SequentialTaskScheduler, create_workflow_from_list
+from fastreact import FastReAct
+from fastreact.core import ScheduledTask, SimpleTaskScheduler, SequentialTaskScheduler, create_workflow_from_list
 from fastreact.bootstrap.config_loader import load_config, get_api_key, get_base_url, get_model
 
 
@@ -172,7 +173,7 @@ async def demo_conditional_scheduling():
     print("=" * 70)
     print()
 
-    from fastreact import ConditionalTaskScheduler
+    from fastreact.core import ConditionalTaskScheduler, ScheduledTask
 
     # Define a task generator function
     def generate_next_task(context):
