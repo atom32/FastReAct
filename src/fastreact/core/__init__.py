@@ -2,6 +2,27 @@
 FastReAct核心模块
 """
 
+from fastreact.core.message import (
+    AgentMessage,
+    MessageRole,
+    MessageSource,
+    user_message,
+    assistant_message,
+    system_message,
+    tool_result_message,
+    steering_message,
+    policy_intervention_message,
+    followup_message,
+    messages_to_openai_format,
+)
+from fastreact.core.pumps import (
+    MessagePump,
+    SteeringPump,
+    ExecutionPump,
+    FollowUpPump,
+    create_steering_pump,
+    create_followup_pump,
+)
 from fastreact.core.engine import FastReAct
 from fastreact.core.tool import Tool, ToolCall, ToolResult
 from fastreact.core.cache import LRUCache
@@ -41,6 +62,25 @@ __all__ = [
     "ToolCall",
     "ToolResult",
     "LRUCache",
+    # Message Schema
+    "AgentMessage",
+    "MessageRole",
+    "MessageSource",
+    "user_message",
+    "assistant_message",
+    "system_message",
+    "tool_result_message",
+    "steering_message",
+    "policy_intervention_message",
+    "followup_message",
+    "messages_to_openai_format",
+    # Message Pumps
+    "MessagePump",
+    "SteeringPump",
+    "ExecutionPump",
+    "FollowUpPump",
+    "create_steering_pump",
+    "create_followup_pump",
     # Tool Policy
     "ToolPolicy",
     "ToolPolicyConfig",

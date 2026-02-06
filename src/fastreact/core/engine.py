@@ -365,6 +365,26 @@ class FastReAct:
         if self._mcp_enabled:
             logger.info("MCP enabled - will load tools on first use")
 
+        # Sprint 4: Reactive Loop - Message Pumps
+        # 初始化转向泵（需要中断队列）
+        self._steering_pump = None
+        self._interrupt_queue = None
+        self._enable_reactive_loop = self.config.get("reactive_loop", {}).get("enabled", False)
+        if self._enable_reactive_loop or policy_engine:
+            try:
+                from .pumps import SteeringPump
+                from ..graph.interrupt import PriorityInterruptQueue
+
+                # 创建或复用中断队列
+                self._interrupt_queue = PriorityInterruptQueue()
+                self._steering_pump = SteeringPump(
+                    interrupt_queue=self._interrupt_queue,
+                    policy_engine=policy_engine,
+                )
+                logger.info("[SPRINT-4] Reactive Loop enabled with SteeringPump")
+            except Exception as e:
+                logger.warning(f"[SPRINT-4] Failed to initialize SteeringPump: {e}")
+
         # LRU缓存
         self.cache = LRUCache(max_size=cache_size) if enable_cache else None
 
@@ -1973,8 +1993,51 @@ class FastReAct:
 
             steps = []
 
+            # Sprint 4: Reactive Loop - 转向消息列表
+            pending_steering_messages = []
+
             for iteration in range(self.max_iterations):
-                # 调用LLM
+                # ============================================================
+                # Phase 1: Ingestion - 检查转向消息（Steering Check #1）
+                # ============================================================
+                # 在 LLM 思考前检查用户干预/策略引擎
+                if self._steering_pump:
+                    try:
+                        # 创建临时上下文用于泵检查
+                        temp_context = type('obj', (object,), {
+                            'messages': messages,
+                            'iteration': iteration,
+                            'metadata': {}
+                        })()
+
+                        steering_msgs = await self._steering_pump.pump(temp_context)
+
+                        if steering_msgs:
+                            # 检查是否有终止信号
+                            for msg in steering_msgs:
+                                if msg.metadata.get("critical"):
+                                    logger.warning("[REACTIVE] Critical interrupt - terminating")
+                                    elapsed = time.time() - start_time
+                                    self.stats["total_time"] += elapsed
+                                    await self._emit_lifecycle("end")
+                                    return {
+                                        "answer": f"[TERMINATED] {msg.content}",
+                                        "steps": steps,
+                                        "stats": self.get_stats(),
+                                    }
+
+                            # 添加转向消息到上下文
+                            for msg in steering_msgs:
+                                # 转换为 OpenAI 格式
+                                messages.append(msg.to_dict())
+                                logger.info(f"[REACTIVE] Steering message injected: {msg.source.value}")
+
+                    except Exception as e:
+                        logger.error(f"[REACTIVE] Steering pump failed: {e}")
+
+                # ============================================================
+                # Phase 2: Reasoning - 调用LLM
+                # ============================================================
                 if self.enable_streaming:
                     llm_response = await self._chat_with_streaming(messages, stream_callback)
                 else:
@@ -2067,6 +2130,44 @@ class FastReAct:
                         "content": f"工具返回结果:\n\n{observation_text}\n\n请基于这些信息继续思考或给出最终答案。",
                     }
                 )
+
+                # ============================================================
+                # Phase 3: Post-Tool Steering Check (Double Check Mechanism)
+                # ============================================================
+                # 工具执行后再次检查转向消息
+                # 关键创新：防止长任务执行后的"惯性错误"
+                if self._steering_pump:
+                    try:
+                        temp_context = type('obj', (object,), {
+                            'messages': messages,
+                            'iteration': iteration,
+                            'metadata': {}
+                        })()
+
+                        post_tool_steering = await self._steering_pump.pump(temp_context)
+
+                        if post_tool_steering:
+                            # 检查终止信号
+                            for msg in post_tool_steering:
+                                if msg.metadata.get("critical"):
+                                    logger.warning("[REACTIVE] Critical interrupt after tools - terminating")
+                                    elapsed = time.time() - start_time
+                                    self.stats["total_time"] += elapsed
+                                    await self._emit_lifecycle("end")
+                                    return {
+                                        "answer": f"[TERMINATED] {msg.content}",
+                                        "steps": steps,
+                                        "stats": self.get_stats(),
+                                    }
+
+                            # 添加转向消息
+                            for msg in post_tool_steering:
+                                messages.append(msg.to_dict())
+                                logger.info(f"[REACTIVE] Post-tool steering: {msg.source.value}")
+
+                    except Exception as e:
+                        logger.error(f"[REACTIVE] Post-tool steering check failed: {e}")
+
 
             # 达到最大迭代次数
             elapsed = time.time() - start_time
@@ -2196,6 +2297,76 @@ class FastReAct:
             stats["avg_time_per_call"] = 0.0
 
         return stats
+
+    # ========================================================================
+    # Sprint 4: Reactive Loop - Public API
+    # ========================================================================
+
+    def get_interrupt_queue(self):
+        """
+        Get the interrupt queue for reactive loop
+
+        Allows external code (like REPL) to inject user input for cognitive steering.
+
+        Returns:
+            PriorityInterruptQueue instance, or None if reactive loop is disabled
+
+        Example:
+            ```python
+            agent = FastReAct(...)
+            queue = agent.get_interrupt_queue()
+            if queue:
+                await queue.put_user_input("Wait, check tests too")
+            ```
+        """
+        return self._interrupt_queue
+
+    def get_steering_pump(self):
+        """
+        Get the steering pump for reactive loop
+
+        Returns:
+            SteeringPump instance, or None if reactive loop is disabled
+
+        Example:
+            ```python
+            pump = agent.get_steering_pump()
+            if pump:
+                stats = pump.get_stats()
+                print(f"Interrupts handled: {stats['total_interrupts_handled']}")
+            ```
+        """
+        return self._steering_pump
+
+    async def inject_steering_message(self, content: str, source: str = "user") -> None:
+        """
+        Inject a steering message directly into the interrupt queue
+
+        Convenience method for cognitive steering without accessing the queue directly.
+
+        Args:
+            content: The steering message content
+            source: Message source identifier (default: "user")
+
+        Example:
+            ```python
+            # In a background task
+            await agent.inject_steering_message("Check the tests first")
+            ```
+        """
+        if self._interrupt_queue:
+            await self._interrupt_queue.put_user_input(content, source=source)
+            logger.info(f"[REACTIVE] Steering message injected: {content[:50]}...")
+        else:
+            logger.warning("[REACTIVE] Cannot inject message - reactive loop is disabled")
+
+    def is_reactive_loop_enabled(self) -> bool:
+        """Check if reactive loop (steering pump) is enabled"""
+        return self._steering_pump is not None
+
+    # ========================================================================
+    # End Sprint 4
+    # ========================================================================
 
     async def run_streaming(
         self,
