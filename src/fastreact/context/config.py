@@ -47,12 +47,16 @@ class ContextConfig:
     # Enable smart truncation (token-aware vs message-count-based)
     smart_truncate: bool = True
 
-    # Memory flush configuration
+    # Memory flush configuration (使用百分比，自动适配不同context window)
     memory_flush_enabled: bool = False
-    memory_flush_soft_threshold: int = 50000
-    memory_flush_hard_threshold: int = 55000
+    memory_flush_soft_percent: float = 0.7  # 70%时触发软阈值
+    memory_flush_hard_percent: float = 0.9  # 90%时触发硬阈值
     memory_flush_prompt: str = "Please summarize the following conversation concisely, preserving key information and decisions."
     memory_flush_temperature: float = 0.3
+
+    # 兼容旧配置（已弃用，优先使用百分比）
+    memory_flush_soft_threshold: int = 0  # 自动计算
+    memory_flush_hard_threshold: int = 0  # 自动计算
 
     # Memory retrieval configuration (optional, created from dict)
     retrieval: Optional[RetrievalConfig] = None
@@ -63,11 +67,12 @@ class ContextConfig:
     
 
     @classmethod
-    def from_dict(cls, config_dict: dict) -> "ContextConfig":
+    def from_dict(cls, config_dict: dict, context_window: int = 64000) -> "ContextConfig":
         """Create ContextConfig from config.json section
 
         Args:
             config_dict: The 'context' section from config.json
+            context_window: Model's context window size (用于动态计算阈值)
 
         Returns:
             ContextConfig instance
@@ -77,6 +82,20 @@ class ContextConfig:
 
         # Extract memory flush config
         memory_flush_cfg = context_cfg.get("memory_flush", {})
+
+        # 读取百分比配置（优先使用）
+        soft_percent = memory_flush_cfg.get("soft_threshold_percent", 0.7)
+        hard_percent = memory_flush_cfg.get("hard_threshold_percent", 0.9)
+
+        # 兼容旧的token数配置（如果存在百分比则忽略token数）
+        if "soft_threshold_percent" not in memory_flush_cfg:
+            # 旧配置：使用硬编码的token数
+            soft_threshold = memory_flush_cfg.get("soft_threshold_tokens", int(context_window * 0.7))
+            hard_threshold = memory_flush_cfg.get("hard_threshold_tokens", int(context_window * 0.9))
+        else:
+            # 新配置：根据context_window动态计算
+            soft_threshold = int(context_window * soft_percent)
+            hard_threshold = int(context_window * hard_percent)
 
         # Extract retrieval config
         retrieval_config = RetrievalConfig.from_dict(context_cfg) if context_cfg.get("retrieval", {}).get("enabled", False) else None
@@ -99,8 +118,10 @@ class ContextConfig:
             token_model=context_cfg.get("token_model", "gpt-4"),
             smart_truncate=context_cfg.get("smart_truncate", True),
             memory_flush_enabled=memory_flush_cfg.get("enabled", False),
-            memory_flush_soft_threshold=memory_flush_cfg.get("soft_threshold_tokens", 4000),
-            memory_flush_hard_threshold=memory_flush_cfg.get("hard_threshold_tokens", 6000),
+            memory_flush_soft_percent=soft_percent,
+            memory_flush_hard_percent=hard_percent,
+            memory_flush_soft_threshold=soft_threshold,  # 动态计算
+            memory_flush_hard_threshold=hard_threshold,  # 动态计算
             memory_flush_prompt=memory_flush_cfg.get("summarize_prompt",
                 "请用简洁的语言总结以下对话，保留关键信息和决策。"),
             memory_flush_temperature=memory_flush_cfg.get("summarize_temperature", 0.3),
@@ -108,6 +129,20 @@ class ContextConfig:
             compaction=compaction_config,
             pruning=pruning_config,
         )
+
+    def get_memory_flush_thresholds(self, context_window: int) -> tuple[int, int]:
+        """
+        获取memory flush的实际阈值（基于当前context_window）
+
+        Args:
+            context_window: 模型的context window大小
+
+        Returns:
+            (soft_threshold, hard_threshold) token数
+        """
+        soft = int(context_window * self.memory_flush_soft_percent)
+        hard = int(context_window * self.memory_flush_hard_percent)
+        return soft, hard
 
     def calculate_budget(self, context_window: int) -> int:
         """Calculate available token budget for history

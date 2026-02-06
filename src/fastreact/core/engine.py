@@ -237,17 +237,21 @@ class FastReAct:
                 logger.warning(f"Failed to initialize Bootstrap: {e}")
 
         # 上下文管理配置
-        from ..context import ContextConfig
+        from ..context import ContextConfig, get_default_context_window
+
+        # 获取context_window（用于动态计算memory flush阈值）
+        _model_context_window = get_default_context_window(model)
+
         if context_config is None and config is not None:
-            # Create ContextConfig from config dict
-            self._context_config = ContextConfig.from_dict(config)
+            # Create ContextConfig from config dict，传入context_window以动态计算阈值
+            self._context_config = ContextConfig.from_dict(config, context_window=_model_context_window)
         else:
             self._context_config = context_config or ContextConfig()
         self._llm_config = LLMProviderConfig(
             name=model,
             model=model,
             max_tokens=max_tokens,
-            context_window=get_default_context_window(model),
+            context_window=_model_context_window,
             temperature=temperature,
             base_url=base_url,
             api_key=api_key,
@@ -813,6 +817,11 @@ class FastReAct:
         """
         system_prompt = self._build_system_prompt()
         history = list(session_context.get("history", [])) if session_context else None
+
+        # ========== Per-Message Truncation ==========
+        # 防止单条消息过长导致context膨胀（用户友好度改进）
+        if history:
+            history = self._truncate_long_messages(history, max_chars=2000)
 
         # 检查是否需要 Memory Flush
         if history and self._memory_flush:
@@ -1658,6 +1667,41 @@ class FastReAct:
 
         logger.debug(f"Parsed {len(tool_calls)} tool calls from text (regex)")
         return tool_calls
+
+    def _truncate_long_messages(
+        self,
+        history: List[Dict[str, Any]],
+        max_chars: int = 2000
+    ) -> List[Dict[str, Any]]:
+        """
+        截断过长的历史消息，防止context膨胀
+
+        用户友好度改进：防止没说几句话context就飙到50K+
+
+        Args:
+            history: 历史消息列表
+            max_chars: 单条消息最大字符数（默认2000）
+
+        Returns:
+            截断后的历史消息列表
+        """
+        truncated = []
+        for msg in history:
+            content = msg.get("content", "")
+            if isinstance(content, str) and len(content) > max_chars:
+                # 截断并添加标记
+                truncated_content = content[:max_chars] + "\n... [内容过长已截断]"
+                truncated.append({
+                    "role": msg["role"],
+                    "content": truncated_content
+                })
+                logger.debug(
+                    f"[Context] Truncated message: {len(content)} -> {max_chars} chars"
+                )
+            else:
+                truncated.append(msg)
+
+        return truncated
 
     def _build_system_prompt(self) -> str:
         """

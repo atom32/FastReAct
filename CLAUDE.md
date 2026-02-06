@@ -69,72 +69,71 @@ from mcp import ClientSession, StdioServerParameters
 2. **Single source of truth** - Keep one canonical doc per topic
 3. **Archive historical docs** - Move old docs to `docs_archive/` instead of deleting
 4. **Update index** - Maintain `DOCS_INDEX.md` when adding/modifying docs
+5. **REUSE before CREATE** - Always check if existing doc can be updated instead of creating new
 
-### Documentation Structure
+### Documentation Location Rules
 
-```
-FastReAct/
-├── DOCS_INDEX.md               # Master index (update when adding docs)
-├── README.md                    # Project homepage
-├── CLAUDE.md                    # This file - Development rules
-├── DEVELOPMENT_LOG.md           # Chronological development history
-│
-├── [User Docs]
-│   ├── INSTALLATION.md
-│   └── CONFIG.md
-│
-├── [Feature Docs] - One per major feature
-│   ├── MULTI_TENANT_WORKSPACE.md
-│   ├── SESSION_RESUME.md
-│   ├── MCP_INTEGRATION_SUCCESS.md
-│   └── WORKSPACE_ISOLATION.md
-│
-├── [Technical Docs]
-│   ├── VERSION_MANAGEMENT.md
-│   ├── IEL.md
-│   └── SECURITY.md
-│
-└── docs_archive/               # Historical docs (read-only)
-    ├── INDEX.md
-    └── ...
-```
+**CRITICAL: Where to put documentation**
 
-### Adding New Documentation
-
-**Steps**:
-1. Check `DOCS_INDEX.md` for similar existing docs
-2. Create new doc with clear name: `FEATURE_NAME.md`
-3. Add to appropriate category in `DOCS_INDEX.md`
-4. Run `python scripts/quick_check.py` to verify no emojis
-5. Commit with descriptive message
-
-**Naming Conventions**:
-- User docs: `TOPIC.md` (e.g., `INSTALLATION.md`)
-- Feature docs: `FEATURE_NAME.md` (e.g., `MULTI_TENANT_WORKSPACE.md`)
-- Technical docs: `TOPIC.md` (e.g., `VERSION_MANAGEMENT.md`)
-
-### What Belongs Where
-
-**Root Directory (keep minimal)**:
-- `README.md` - Project overview, quick start
+**Root Directory (minimal, essential only)**:
+- `README.md` - Project overview
 - `DOCS_INDEX.md` - Documentation navigation
 - `CLAUDE.md` - Development rules (this file)
 - `CHANGELOG.md` - Version history
+- `INSTALLATION.md` - Installation guide
+- `CLI_TROUBLESHOOTING.md` - Common issues
 
-**Feature Docs (keep one per feature)**:
-- Complete implementation guide
-- Usage examples
-- API documentation
+**FORBIDDEN locations**:
+- `/docs` directory - **DEPRECATED**, use `docs_archive/old_docs_*/` instead
+- Root directory - Only essential docs, avoid clutter
 
-**Archive (move when obsolete)**:
-- Development process docs
-- Old test reports
-- Superseded docs
+**Where new docs go**:
+1. **Check first** - Look at `DOCS_INDEX.md` for similar topics
+2. **Update existing** - If similar doc exists, UPDATE it instead of creating new
+3. **Create only if necessary** - When truly new topic, add to root with clear name
+4. **Archive promptly** - Move outdated docs to `docs_archive/`
+
+### Before Creating New Documentation
+
+**Decision Tree**:
+```
+Need to document something?
+    ↓
+Check DOCS_INDEX.md for similar topics
+    ↓
+    Found? ──Yes→ UPDATE existing doc
+    ↓
+     No
+    ↓
+Is it temporary/development process?
+    ↓
+    Yes→ Put in docs_archive/sprints/ or docs_archive/temp/
+    ↓
+    No
+    ↓
+Create in root with clear, descriptive name
+Update DOCS_INDEX.md
+```
+
+### What Belongs Where
+
+**Root Directory** (keep minimal):
+- User-facing guides (INSTALLATION, TROUBLESHOOTING)
+- Feature documentation (IEL.md, SESSION_RESUME.md)
+- Development rules (CLAUDE.md, DEVELOPMENT_LOG.md)
+- Navigation (DOCS_INDEX.md, README.md)
+
+**docs_archive/** (historical reference only):
+- `bugfixes/` - Bug fix records (keep 30 days)
+- `sprints/` - Sprint summaries (keep permanently)
+- `temp/` - Temporary analysis (keep 7 days)
+- `old_docs_*/` - Deprecated docs directories
 
 **Delete (avoid completely)**:
 - Duplicate content
 - Empty placeholder docs
 - Outdated quickstarts
+- Process docs that belong in git history
 
 ### Quality Checklist
 
@@ -145,6 +144,7 @@ Before committing documentation:
 - [ ] No hardcoded paths (use `pathlib` or `config`)
 - [ ] Cross-platform compatible (no Windows/Mac specific paths)
 - [ ] Updated `DOCS_INDEX.md` if needed
+- [ ] Checked for duplicates (reused existing doc if possible)
 
 ---
 
@@ -231,6 +231,76 @@ print("❌ Failed")     # Cross-platform problems
 
 ## Testing
 
+### Test File Location Rules
+
+**CRITICAL: Where to put test code**
+
+**Designated locations**:
+- `tests/` - Unit tests and integration tests (pytest style)
+- `examples/` - Demo scripts and usage examples
+- `scripts/` - Utility scripts (not tests, but development tools)
+
+**FORBIDDEN locations**:
+- Root directory - No `test_*.py` or `demo_*.py` files in root
+- Scattered test files - Keep tests organized in `tests/`
+
+### Before Creating New Test Files
+
+**Decision Tree**:
+```
+Need to test something?
+    ↓
+Check tests/ for similar test files
+    ↓
+    Found? ──Yes→ MODIFY existing test
+    ↓
+     No
+    ↓
+Is it a demo/showcase?
+    ↓
+    Yes→ Put in examples/ with clear name
+    ↓
+    No
+    ↓
+Create in tests/ with test_*.py naming
+```
+
+### Test File Organization
+
+**tests/ directory structure**:
+```
+tests/
+├── test_core/           # Core functionality tests
+│   ├── test_engine.py
+│   ├── test_react_agent.py
+│   └── test_context_monitor.py
+├── test_integration/    # Integration tests
+│   ├── test_mcp_integration.py
+│   └── test_cli.py
+└── test_utils/          # Test utilities
+    └── fixtures.py
+```
+
+**examples/ directory structure**:
+```
+examples/
+├── demo_task_chaining.py
+├── demo_session_resume.py
+└── demo_auto_reflection.py
+```
+
+### Naming Conventions
+
+**Test files** (in `tests/`):
+- Unit tests: `test_<module>.py` (e.g., `test_engine.py`)
+- Integration tests: `test_<feature>_integration.py`
+- Use descriptive names that indicate what's being tested
+
+**Example files** (in `examples/`):
+- Demos: `demo_<feature>.py` (e.g., `demo_task_chaining.py`)
+- Showcase specific functionality
+- Include comments explaining usage
+
 ### Quick Verification
 
 ```bash
@@ -263,6 +333,8 @@ python test_version_consistency.py
 4. **Version in one place** - Only `__init__.py` defines `__version__`
 5. **Update docs index** - Keep `DOCS_INDEX.md` in sync
 6. **Archive, don't delete** - Move old docs to `docs_archive/`
+7. **REUSE before CREATE** - Update existing docs/tests before creating new ones
+8. **Proper locations** - Docs in root, tests in `tests/`, examples in `examples/`
 
 ---
 

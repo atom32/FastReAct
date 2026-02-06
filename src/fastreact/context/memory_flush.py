@@ -62,10 +62,11 @@ class MemoryFlush:
             logger.debug(f"Skipping flush, already flushed in iteration {iteration}")
             return False
 
+        # 动态计算阈值（基于当前context_window的百分比）
+        soft_threshold, hard_threshold = self.config.get_memory_flush_thresholds(context_window)
+
         # Get threshold values (these represent USED token counts)
         reserve = self.config.reserve_tokens
-        soft_threshold = self.config.memory_flush_soft_threshold
-        hard_threshold = self.config.memory_flush_hard_threshold
 
         # Validate thresholds
         available = context_window - reserve
@@ -73,7 +74,8 @@ class MemoryFlush:
         # Check hard threshold first (more aggressive)
         if current_tokens >= hard_threshold:
             logger.warning(
-                f"Hard threshold exceeded: {current_tokens} >= {hard_threshold} tokens, "
+                f"Hard threshold exceeded: {current_tokens} >= {hard_threshold} tokens "
+                f"({hard_threshold/context_window*100:.1f}% of context window), "
                 f"forcing memory flush (available: {available}, reserve: {reserve})"
             )
             return True
@@ -81,7 +83,8 @@ class MemoryFlush:
         # Check soft threshold
         if current_tokens >= soft_threshold:
             logger.info(
-                f"Soft threshold reached: {current_tokens} >= {soft_threshold} tokens, "
+                f"Soft threshold reached: {current_tokens} >= {soft_threshold} tokens "
+                f"({soft_threshold/context_window*100:.1f}% of context window), "
                 f"triggering memory flush (available: {available}, reserve: {reserve})"
             )
             return True

@@ -497,16 +497,24 @@ class UnifiedAgentState:
         # 事件管理器（复用）
         self.event_manager = EventManager()
 
+        # 当前会话文件路径（修复：避免每次创建新文件）
+        self._current_session_path: Optional[Path] = None
+
     def get_session_path(self) -> Path:
-        """获取当前会话文件路径"""
+        """获取当前会话文件路径（复用现有路径或创建新路径）"""
+        if self._current_session_path:
+            return self._current_session_path
+
+        # 创建新路径（仅首次）
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return self.session_dir / f"unified_{timestamp}.json"
+        self._current_session_path = self.session_dir / f"unified_{timestamp}.json"
+        return self._current_session_path
 
     def save_session(self) -> Optional[Path]:
-        """保存会话到文件"""
+        """保存会话到文件（更新同一文件）"""
         import json
 
-        session_path = self.get_session_path()
+        session_path = self.get_session_path()  # 复用现有路径
 
         # 修复：保存对话历史
         session_data = {
@@ -545,6 +553,9 @@ class UnifiedAgentState:
             self.history = session_data.get("history", [])
             self.session_context["history"] = self.history.copy()
             self.session_context["session_id"] = session_data.get("session_id")
+
+            # 修复：设置当前会话路径，后续保存将更新此文件
+            self._current_session_path = session_path
 
             return True
 
@@ -718,13 +729,17 @@ Type /help for commands""",
             # /tasks - Show pending tasks
             return await self._cmd_tasks()
 
+        if cmd == "tools":
+            # /tools - List all available tools
+            return await self.cmd_tools("")
+
         # Mode switching commands
         if cmd in mode_map:
             self.state.execution_mode = mode_map[cmd]
             self.print_success(f"Switched to {mode_map[cmd].upper()} mode")
         else:
             self.print_error(f"Unknown command: /{cmd}")
-            return await self.cmd_help("")
+            return self.cmd_help("")
 
         return True
 
@@ -1091,6 +1106,7 @@ Type /help for commands""",
     def _get_current_agent(self):
         """
         Get current active agent based on execution mode
+        Creates agent lazily if not yet initialized
 
         Returns:
             Current agent instance (react_agent, graph_agent, or iel_loop)
@@ -1098,8 +1114,9 @@ Type /help for commands""",
         mode = self.state.execution_mode
 
         if mode == "react" or mode == "auto":
-            return self.state.react_agent
+            return self._get_or_create_react_agent()
         elif mode == "graph_agent":
+            # Note: graph_agent is created async in _get_or_create_graph_agent
             return self.state.graph_agent
         elif mode == "iel":
             return self.state.iel_loop
@@ -1261,6 +1278,7 @@ Type /help for commands""",
             # Track 2: Agent执行任务（消费者生成器）
             # ====================================================================
             async def agent_task():
+                # 用于收集结果
                 """Agent轨道：执行并yield事件"""
                 nonlocal is_running
                 final_result = None
@@ -1293,11 +1311,15 @@ Type /help for commands""",
                                 print(f"[APPROVAL] {event.tool_name} ({event.risk_level} risk)")
                                 print(f"Node: {event.node_id}")
 
-                            # 获取用户输入
-                            with patch_stdout():
-                                user_input = await prompt_session.prompt_async(
+                            # 获取用户输入（使用同步input在线程池中运行）
+                            import asyncio
+                            try:
+                                user_input = await asyncio.to_thread(
+                                    input,
                                     f"Allow {event.tool_name}? [Y/n/stop]: "
                                 )
+                            except (EOFError, KeyboardInterrupt):
+                                user_input = "n"  # 默认拒绝
 
                             # 处理用户决定
                             if user_input.lower() in ["y", "yes"]:
@@ -1502,6 +1524,13 @@ Type /help for commands""",
 
             self.state.stats["total_queries"] += 1
 
+            # 用户友好度改进：早期回应机制
+            # 检测是否为纯聊天查询（无需工具），直接回答
+            chat_response = self._try_chat_only_response(query)
+            if chat_response:
+                # 直接回答，跳过复杂度评估和模式选择
+                return await self._show_direct_answer(query, chat_response)
+
             # 自动模式选择
             if self.state.execution_mode == "auto":
                 # 确保 evaluator 已初始化
@@ -1510,6 +1539,9 @@ Type /help for commands""",
                 evaluation = await evaluator.evaluate(query)
 
                 self._show_complexity_evaluation(evaluation)
+
+                # 用户友好度改进：显示早期回应
+                self._show_early_response(query, evaluation)
 
                 # 选择模式
                 mode = evaluation["suggested_mode"]
@@ -1538,6 +1570,118 @@ Type /help for commands""",
             import traceback
             traceback.print_exc()
             return True
+
+    def _try_chat_only_response(self, query: str) -> Optional[str]:
+        """
+        尝试直接回答纯聊天查询（无需工具）
+
+        用户友好度改进：对于简单的问答，直接返回响应，跳过复杂流程
+
+        Args:
+            query: 用户查询
+
+        Returns:
+            直接回答内容，如果需要工具则返回None
+        """
+        query_lower = query.lower().strip()
+
+        # 简单问候
+        greetings = ["你好", "嗨", "hello", "hi", "早上好", "下午好", "晚上好"]
+        if any(g in query_lower for g in greetings):
+            return "你好！有什么可以帮您的吗？"
+
+        # 简单的自我介绍
+        intros = ["你是谁", "介绍一下自己", "what are you", "who are you"]
+        if any(p in query_lower for p in intros):
+            return "我是 FastReAct，一个智能代理助手，可以帮助您执行任务、编写代码、分析文件等。"
+
+        # 询问能力
+        capabilities = ["你能做什么", "你会什么", "help", "帮助"]
+        if any(p in query_lower for p in capabilities):
+            return "我可以帮您：\n- 编写和运行代码\n- 读取和分析文件\n- 执行系统命令\n- 搜索信息\n- 复杂的推理和规划任务\n\n直接告诉我您需要什么帮助！"
+
+        # 需要工具的查询，返回None让系统处理
+        return None
+
+    async def _show_direct_answer(self, query: str, answer: str) -> bool:
+        """
+        显示直接回答（无需调用LLM）
+
+        Args:
+            query: 用户查询
+            answer: 直接回答内容
+        """
+        # 显示回答
+        if self.console:
+            self.console.print()
+            panel = Panel(
+                answer,
+                title="[bold cyan][FAST RESPONSE][/bold cyan]",
+                border_style="cyan",
+                padding=(0, 1)
+            )
+            self.console.print(panel)
+        else:
+            print(f"\n[FAST RESPONSE]\n{answer}\n")
+
+        # 保存到历史
+        self.state.history.append({"role": "user", "content": query})
+        self.state.history.append({"role": "assistant", "content": answer})
+        self.state.session_context["history"] = self.state.history.copy()
+
+        return True
+
+    def _show_early_response(self, query: str, evaluation: Dict[str, Any]):
+        """
+        显示早期回应（Claude Code风格）
+
+        在执行前给用户一个简单的工作提示，提升用户体验
+
+        Args:
+            query: 用户查询
+            evaluation: 复杂度评估结果
+        """
+        if not self.console:
+            return
+
+        import re
+        query_lower = query.lower()
+
+        # 根据查询内容生成早期回应
+        response = None
+
+        # 文件操作
+        if any(word in query_lower for word in ["读取", "查看", "显示", "read", "show", "cat"]):
+            response = "[dim]正在读取文件...[/dim]"
+        elif any(word in query_lower for word in ["创建", "写入", "生成", "create", "write", "generate"]):
+            response = "[dim]正在为您创建...[/dim]"
+        elif any(word in query_lower for word in ["删除", "移除", "delete", "remove"]):
+            response = "[dim]正在删除...[/dim]"
+
+        # 代码执行
+        elif any(word in query_lower for word in ["运行", "执行", "run", "execute"]):
+            response = "[dim]正在执行...[/dim]"
+        elif any(word in query_lower for word in ["计算", "算", "calculate", "compute"]):
+            response = "[dim]正在计算...[/dim]"
+
+        # 搜索/查找
+        elif any(word in query_lower for word in ["搜索", "查找", "search", "find"]):
+            response = "[dim]正在搜索...[/dim]"
+
+        # 分析任务
+        elif any(word in query_lower for word in ["分析", "analyze", "analysis"]):
+            response = "[dim]正在分析...[/dim]"
+
+        # 默认回应
+        if not response:
+            mode = evaluation.get("suggested_mode", "react")
+            if mode == "graph_agent":
+                response = "[dim]正在为您规划任务...[/dim]"
+            else:
+                response = "[dim]正在处理...[/dim]"
+
+        # 显示早期回应（在同一行，不换行）
+        self.console.print(response, end="")
 
     def _show_complexity_evaluation(self, evaluation: Dict[str, Any]):
         """
@@ -1653,13 +1797,17 @@ Type /help for commands""",
         # Step 3: Execution - Run agent with tool tracking
         # ====================================================================
 
-        if self.console:
-            self.print_info("[bold green]Executing tasks...[/bold green]")
-
-        # Execute agent
+        # Execute agent with live status
         # Note: Event callbacks removed - Sprint 2 provides better feedback via spinners and ContextMonitor
         # 修复：传递 session_context 以支持多轮对话
-        result = await agent.run_async(query, session_context=self.state.session_context)
+
+        if self.console:
+            # Wrap execution with live status spinner
+            with self.console.status("[bold green][REACT] Executing tasks...[/bold green]", spinner="dots"):
+                result = await agent.run_async(query, session_context=self.state.session_context)
+        else:
+            self.print_info("Executing tasks...")
+            result = await agent.run_async(query, session_context=self.state.session_context)
 
         # 修复：更新对话历史
         if result:
