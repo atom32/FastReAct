@@ -1,0 +1,48 @@
+{
+  "cpu": {
+    "usage_percent": 2.28033700293974,
+    "status": "正常",
+    "indicator": "[OK]",
+    "healthy": true
+  },
+  "memory": {
+    "total_gb": 47.15,
+    "used_gb": 18.67,
+    "free_gb": 28.48,
+    "usage_percent": 39.597030752916226,
+    "status": "正常",
+    "indicator": "[OK]",
+    "healthy": true
+  },
+  "disk": {
+    "path": "D:\\FastReAct",
+    "drive": "D:\\",
+    "exists": true,
+    "total_gb": 465.75,
+    "used_gb": 316.21,
+    "free_gb": 149.54,
+    "free_gb_float": 149.54,
+    "status": "充足",
+    "indicator": "[OK]",
+    "healthy": true
+  },
+  "permission": {
+    "path": "D:\\FastReAct",
+    "has_write_permission": true,
+    "indicator": "[OK]",
+    "healthy": true
+  },
+  "stress_test": {
+    "path": "D:\\FastReAct\\.stress_test_1770391680.dat",
+    "size_mb": 10,
+    "actual_size_mb": 10.0,
+    "write_time": 0.0,
+    "write_speed_mb_s": 4674.36,
+    "md5_checksum": "e6d19ad6e6a88d45ff68f012440cc932",
+    "md5_calc_time": 0.02,
+    "write_consistent": true,
+    "file_deleted": true,
+    "indicator": "[OK]",
+    "healthy": true
+  }
+}
