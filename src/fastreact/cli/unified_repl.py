@@ -487,6 +487,13 @@ class UnifiedAgentState:
             "plan_rejections": 0,
         }
 
+        # 对话历史（修复：SESSION_RESUME）
+        self.history = []  # List of message dicts
+        self.session_context = {
+            "session_id": None,
+            "history": [],
+        }
+
         # 事件管理器（复用）
         self.event_manager = EventManager()
 
@@ -501,11 +508,14 @@ class UnifiedAgentState:
 
         session_path = self.get_session_path()
 
+        # 修复：保存对话历史
         session_data = {
             "timestamp": datetime.now().isoformat(),
             "execution_mode": self.execution_mode,
             "stats": self.stats.copy(),
             "config": self.config.copy(),
+            "history": self.history,  # ← 修复：保存历史
+            "session_id": self.session_context.get("session_id"),
         }
 
         try:
@@ -530,6 +540,11 @@ class UnifiedAgentState:
             self.execution_mode = session_data.get("execution_mode", "auto")
             self.stats.update(session_data.get("stats", {}))
             self.config.update(session_data.get("config", {}))
+
+            # 修复：恢复对话历史
+            self.history = session_data.get("history", [])
+            self.session_context["history"] = self.history.copy()
+            self.session_context["session_id"] = session_data.get("session_id")
 
             return True
 
@@ -1569,7 +1584,26 @@ Type /help for commands""",
 
         # Execute agent
         # Note: Event callbacks removed - Sprint 2 provides better feedback via spinners and ContextMonitor
-        result = await agent.run_async(query)
+        # 修复：传递 session_context 以支持多轮对话
+        result = await agent.run_async(query, session_context=self.state.session_context)
+
+        # 修复：更新对话历史
+        if result:
+            # 添加用户消息
+            self.state.history.append({
+                "role": "user",
+                "content": query,
+            })
+
+            # 添加助手回复
+            answer = result.get("answer", "")
+            self.state.history.append({
+                "role": "assistant",
+                "content": answer,
+            })
+
+            # 更新 session_context
+            self.state.session_context["history"] = self.state.history.copy()
 
         # ====================================================================
         # Step 4: Analysis - Show final ContextMonitor state
@@ -1614,6 +1648,9 @@ Type /help for commands""",
                 ))
         else:
             print(f"\nAnswer: {result.get('answer', '')}")
+
+        # 修复：自动保存会话（包含更新后的历史）
+        self.state.save_session()
 
         return True
 
