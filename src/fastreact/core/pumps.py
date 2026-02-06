@@ -500,6 +500,7 @@ class FollowUpPump(MessagePump):
         task_scheduler = None,
         auto_reflector = None,
         custom_followup_hooks: Optional[List[Callable]] = None,
+        enable_auto_evaluation: bool = True,
     ):
         """
         Initialize follow-up pump
@@ -508,11 +509,23 @@ class FollowUpPump(MessagePump):
             task_scheduler: Optional task scheduler for chaining
             auto_reflector: Optional auto-reflector for improvement suggestions
             custom_followup_hooks: Optional list of async callbacks for custom follow-ups
+            enable_auto_evaluation: Enable auto-evaluation (Sprint 5)
         """
         self.task_scheduler = task_scheduler
         self.auto_reflector = auto_reflector
         self.custom_followup_hooks = custom_followup_hooks or []
+        self.enable_auto_evaluation = enable_auto_evaluation
         self._enabled = True
+
+        # Sprint 5: Auto-Reflector
+        self._evaluator = None
+        if self.enable_auto_evaluation:
+            try:
+                from .evaluator import TaskEvaluator
+                self._evaluator = TaskEvaluator()
+                logger.info("[SPRINT-5] TaskEvaluator initialized in FollowUpPump")
+            except Exception as e:
+                logger.warning(f"[SPRINT-5] Failed to initialize TaskEvaluator: {e}")
 
         # Statistics
         self._stats = {
@@ -520,6 +533,7 @@ class FollowUpPump(MessagePump):
             "from_scheduler": 0,
             "from_reflector": 0,
             "from_custom": 0,
+            "from_evaluator": 0,  # Sprint 5
         }
 
     async def pump(self, context: 'AgentContext') -> List[AgentMessage]:
@@ -527,6 +541,12 @@ class FollowUpPump(MessagePump):
         Draw follow-up messages from all sources
 
         Only called when current task is marked as complete.
+
+        Priority (Sprint 5):
+        1. Auto-Evaluation (Self-Correction) - Highest priority
+        2. Task Scheduler (Task Chaining)
+        3. Auto-Reflector (Improvement Suggestions)
+        4. Custom Hooks
 
         Args:
             context: Agent execution context
@@ -540,7 +560,19 @@ class FollowUpPump(MessagePump):
         messages = []
 
         # ====================================================================
-        # 1. Check Task Scheduler
+        # Sprint 5: Phase 1 - Auto-Evaluation (Self-Correction)
+        # ====================================================================
+        # Priority: Check for failures before scheduling new tasks
+        if self._evaluator and self.enable_auto_evaluation:
+            eval_result = await self._check_and_evaluate(context)
+
+            if eval_result:
+                # If task failed, inject fix task immediately
+                # This takes priority over all other follow-ups
+                return eval_result
+
+        # ====================================================================
+        # 2. Check Task Scheduler
         # ====================================================================
         if self.task_scheduler:
             scheduler_messages = await self._check_task_scheduler(context)
@@ -615,6 +647,127 @@ class FollowUpPump(MessagePump):
             logger.error(f"[FOLLOW-UP] Task scheduler check failed: {e}")
 
         return messages
+
+    async def _check_and_evaluate(self, context: 'AgentContext') -> List[AgentMessage]:
+        """
+        Sprint 5: Auto-Evaluation - Self-correction before task chaining
+
+        Checks the last tool result and determines if a fix is needed.
+        This takes priority over all other follow-up actions.
+
+        Args:
+            context: Agent execution context
+
+        Returns:
+            List of fix messages if evaluation failed, empty list otherwise
+        """
+        if not self._evaluator:
+            return []
+
+        messages = []
+
+        try:
+            # Extract last tool result from context
+            last_result = self._get_last_tool_result(context)
+
+            if last_result:
+                logger.info(f"[SPRINT-5] Evaluating last tool result...")
+
+                # Evaluate the result
+                evaluation = await self._evaluator.evaluate(
+                    tool_result=last_result,
+                    context=context
+                )
+
+                # Update statistics
+                self._stats["from_evaluator"] += 1
+
+                # Check if fix is needed
+                if not evaluation.success:
+                    logger.warning(f"[SPRINT-5] Evaluation failed: {evaluation.failure_reason}")
+
+                    # Generate fix message
+                    fix_message = AgentMessage(
+                        role=MessageRole.USER,
+                        content=self._generate_fix_message(evaluation),
+                        source=MessageSource.AUTO_REFLECTOR,
+                        metadata={
+                            "evaluation_outcome": evaluation.outcome.value,
+                            "failure_reason": evaluation.failure_reason,
+                            "suggested_fix": evaluation.suggested_fix,
+                        }
+                    )
+
+                    messages.append(fix_message)
+
+                    logger.info(f"[SPRINT-5] Auto-fix task injected")
+                    return messages
+
+        except Exception as e:
+            logger.error(f"[SPRINT-5] Evaluation failed: {e}")
+
+        return messages
+
+    def _get_last_tool_result(self, context: 'AgentContext') -> Optional['ToolResult']:
+        """
+        Extract the last tool result from execution context
+
+        Args:
+            context: Agent execution context
+
+        Returns:
+            Last ToolResult, or None if not found
+        """
+        # Try to get from context metadata
+        if hasattr(context, 'last_tool_result'):
+            return context.last_tool_result
+
+        # Try to extract from messages
+        if hasattr(context, 'messages'):
+            # Search backwards through messages
+            for msg in reversed(context.messages):
+                # Check if message contains tool result
+                if isinstance(msg, dict):
+                    if msg.get("role") == "tool":
+                        # This is a tool result message
+                        # Create a pseudo ToolResult
+                        from ..tool import ToolResult
+
+                        # Extract tool call ID and content
+                        tool_call_id = msg.get("tool_call_id")
+                        content = msg.get("content", "")
+
+                        # Check for error markers
+                        is_error = "[ERROR]" in content or "[FAIL]" in content
+
+                        return ToolResult(
+                            tool_name="unknown",  # We don't have the tool name here
+                            result=content,
+                            error="Error detected in output" if is_error else None
+                        )
+
+        return None
+
+    def _generate_fix_message(self, evaluation) -> str:
+        """
+        Generate a fix message based on evaluation
+
+        Args:
+            evaluation: Evaluation result
+
+        Returns:
+            Fix message content
+        """
+        parts = [
+            "[AUTO-REFLECTOR] Quality Check Failed",
+            "",
+            f"Failure Reason: {evaluation.failure_reason}",
+            f"Suggested Fix: {evaluation.suggested_fix}",
+            "",
+            "Please fix this issue and continue.",
+        ]
+
+        return "\n".join(parts)
 
     async def _check_auto_reflector(self, context: 'AgentContext') -> List[AgentMessage]:
         """Check auto-reflector for improvement suggestions"""

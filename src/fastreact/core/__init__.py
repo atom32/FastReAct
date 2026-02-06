@@ -34,6 +34,13 @@ from fastreact.core.scheduler import (
     create_conditional_scheduler,
     create_workflow_from_list,
 )
+from fastreact.core.evaluator import (
+    TaskEvaluator,
+    EvaluationResult,
+    EvaluationOutcome,
+    create_evaluator,
+    quick_check,
+)
 from fastreact.core.engine import FastReAct
 from fastreact.core.tool import Tool, ToolCall, ToolResult
 from fastreact.core.cache import LRUCache
@@ -102,6 +109,12 @@ __all__ = [
     "create_sequential_scheduler",
     "create_conditional_scheduler",
     "create_workflow_from_list",
+    # Task Evaluator
+    "TaskEvaluator",
+    "EvaluationResult",
+    "EvaluationOutcome",
+    "create_evaluator",
+    "quick_check",
     # Tool Policy
     "ToolPolicy",
     "ToolPolicyConfig",
