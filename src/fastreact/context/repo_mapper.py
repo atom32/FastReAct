@@ -26,6 +26,9 @@ class RepoMapConfig:
     # 总共最多显示的文件数
     max_total_files: int = 100
 
+    # 缓存过期时间（秒，0 = 永不自动过期）
+    cache_ttl: int = 60  # 默认 60 秒过期
+
     # 自动折叠的目录名模式
     fold_patterns: List[str] = field(default_factory=lambda: [
         "node_modules",
@@ -303,8 +306,22 @@ class RepoMapper:
                 self._cwd = new_cwd
                 self._map_dirty = True
 
-        # 检查是否需要刷新
-        if not force_refresh and not self._map_dirty and self._map is not None:
+        # 检查是否需要刷新（新增 TTL 检查）
+        should_use_cache = (
+            not force_refresh and
+            not self._map_dirty and
+            self._map is not None
+        )
+
+        # 如果配置了 TTL，检查缓存是否过期
+        if should_use_cache and self.config.cache_ttl > 0:
+            cache_age = time.time() - self._map_timestamp
+            if cache_age > self.config.cache_ttl:
+                logger.info(f"Cache expired (age: {cache_age:.1f}s > TTL: {self.config.cache_ttl}s)")
+                should_use_cache = False
+
+        if should_use_cache:
+            logger.debug(f"Using cached repo map (age: {time.time() - self._map_timestamp:.1f}s)")
             return self._map
 
         # 扫描目录
@@ -387,6 +404,16 @@ class RepoMapper:
     def mark_dirty(self) -> None:
         """标记 map 需要刷新"""
         self._map_dirty = True
+
+    def invalidate_cache(self) -> None:
+        """
+        使缓存失效
+
+        强制下次调用 generate_map() 重新扫描目录。
+        应在文件系统操作（创建、删除、移动文件）后调用。
+        """
+        self._map_dirty = True
+        logger.debug("Repo map cache invalidated")
 
 
 # ============================================================================

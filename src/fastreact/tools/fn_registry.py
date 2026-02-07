@@ -247,7 +247,18 @@ def create_ls_repo_tool() -> Tool:
     return Tool(
         name="ls_repo",
         label="List Repository",
-        description="查看当前项目的文件结构。显示目录树，自动折叠无关目录（node_modules, .git 等）。",
+        description="""查看当前项目的文件结构。显示目录树，自动折叠无关目录（node_modules, .git 等）。
+
+**缓存机制**：
+- 默认使用缓存（60秒 TTL）
+- 如果文件刚刚发生变化，设置 force_refresh=True
+
+**何时使用 force_refresh=True**：
+- 刚刚创建或删除了文件
+- 刚刚执行了 git 操作（clone, pull, checkout）
+- 距离上次扫描超过 60 秒且文件可能已变化
+- 看到的文件列表与实际不符（缓存过时）
+""",
         group="code",
         parameters={
             "type": "object",
@@ -259,7 +270,7 @@ def create_ls_repo_tool() -> Tool:
                 },
                 "force_refresh": {
                     "type": "boolean",
-                    "description": "是否强制重新扫描目录",
+                    "description": "强制重新扫描目录。在文件系统操作后使用（创建、删除、移动文件）。",
                     "default": False
                 }
             },
