@@ -107,7 +107,7 @@ class FastReAct:
         tools: Optional[List[Tool]] = None,
         max_iterations: int = 5,
         max_concurrent_tools: int = 3,
-        enable_streaming: bool = False,
+        enable_streaming: bool = True,  # 默认启用流式响应，提供更好的实时反馈
         enable_cache: bool = True,
         cache_size: int = 1000,
         temperature: float = 0.3,  # 降低温度，增加思考确定性
