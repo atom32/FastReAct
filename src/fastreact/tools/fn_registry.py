@@ -23,6 +23,7 @@ class Tool:
     label: Optional[str] = None
     category: Optional[str] = None
     group: Optional[str] = None  # 工具分组名称
+    needs_llm_client: bool = False  # 是否需要注入 LLM client
 
     def __post_init__(self):
         if self.label is None:
@@ -511,6 +512,7 @@ def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = N
     Args:
         llm_client: LLM 客户端（由 Agent 传入）
         tavily_api_key: Tavily API key（可选，用于真实搜索）
+        model: LLM 模型名称
 
     Returns:
         Tool: 深度研究工具
@@ -520,9 +522,13 @@ def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = N
         depth: str = "standard",
         focus_areas: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
+        llm_client_runtime=None,  # 运行时注入的 LLM client
     ) -> str:
         """执行深度研究"""
         from .deep_research import DeepResearchEngine
+
+        # 使用运行时注入的 llm_client，如果没有则使用创建时的值
+        actual_llm_client = llm_client_runtime or llm_client
 
         # 准备搜索客户端
         search_client = None
@@ -535,7 +541,7 @@ def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = N
 
         # 创建研究引擎（传入模型名和进度回调）
         engine = DeepResearchEngine(
-            llm_client=llm_client,
+            llm_client=actual_llm_client,
             search_client=search_client,
             enable_tavily=True,
             model=model,  # 传入模型名
@@ -565,6 +571,7 @@ def create_deep_research_tool(llm_client=None, tavily_api_key: Optional[str] = N
 - 详细章节
 - 来源引用""",
         group="ai",
+        needs_llm_client=True,  # 需要在运行时注入 LLM client
         parameters={
             "type": "object",
             "properties": {
@@ -638,38 +645,41 @@ def create_builtin_tools(config: Optional[Dict[str, Any]] = None, model: str = "
             api_key=tavily_api_key
         ))
 
-    # 基础工具
+    # 基础工具（精简后）
     tools.extend([
-        create_calculator_tool(),
-        create_weather_tool(),
-        create_datetime_tool(),
-        create_http_tool(),
-        create_shell_tool(),  # Stateful Shell - P0 Coding Agent feature
+        create_datetime_tool(),  # 时间上下文（LLM 知识截止问题）
+        create_shell_tool(),      # Stateful Shell - 万能工具（bash/curl/python/docker）
     ])
 
-    # Coding Agent 工具
+    # Coding Agent 工具（精简后）
     tools.extend([
         create_ls_repo_tool(),      # Repository Map - P1 Coding Agent feature
         create_cd_repo_tool(),      # Change Directory
         create_refresh_repo_tool(), # Refresh Map
         create_edit_file_tool(),    # Edit File - P1 Coding Agent feature
         create_write_file_tool(),   # Write File - Create new files
-        create_read_file_tool(),    # Read File - Read file contents
+        # read_file 已删除，被 view_file 取代（更省 token）
     ])
 
-    # Deep Research 工具（需要 LLM client，在运行时设置）
-    # 注意：这个工具的 execute 函数需要 llm_client 参数
-    # 在实际使用时，可以通过 Agent 的 context 传入
+    # Deep Research 工具（需要 LLM client，在运行时注入）
+    # 注意：这个工具通过 needs_llm_client=True 标记，Engine 会在执行时注入 _llm_driver
     deep_research_enabled = tools_config.get("deep_research", {}).get("enabled", True)
     if deep_research_enabled:
-        # 创建工具，设置默认模型（llm_client 会在执行时从 Agent 注入）
+        # 创建工具，设置默认模型（llm_client_runtime 会在执行时由 Engine 注入）
         # model 优先从配置读取，否则使用默认值
         model = tools_config.get("deep_research", {}).get("model", "gpt-4")
         tools.append(create_deep_research_tool(
-            llm_client=None,
+            llm_client=None,  # 将在运行时由 Engine 注入
             tavily_api_key=tavily_api_key,
             model=model
         ))
+
+    # 精细化工具（Precision Tools）- "手术刀"级工具
+    # 用于替代"大锤"级工具，节省 Token，提供精准控制
+    precision_enabled = tools_config.get("precision_tools", {}).get("enabled", True)
+    if precision_enabled:
+        from . import precision_tools
+        tools.extend(precision_tools.create_precision_tools())
 
     logger.info(f"Created {len(tools)} builtin tools")
     return tools
@@ -688,22 +698,17 @@ def create_all_tools(config: Optional[Dict[str, Any]] = None) -> List[Tool]:
     config = config or {}
     tools = create_builtin_tools(config)
 
-    # 添加扩展工具
-    from . import moltbot_tools
-    tools.extend(moltbot_tools.create_moltbot_style_tools())
+    # Gateway 工具（可选，用于分布式 Agent）
+    # 如果不需要跨 Agent 调用，可以注释掉
+    if config.get("gateway_enabled", False):
+        from . import gateway_tools
+        gateway_url = config.get("gateway_url", "http://localhost:8080")
+        tools.extend(gateway_tools.create_gateway_tools(gateway_url))
 
-    # 添加 Gateway 工具（让 Agent 可以调用 Gateway）
-    from . import gateway_tools
-    gateway_url = config.get("gateway_url", "http://localhost:8080")
-    tools.extend(gateway_tools.create_gateway_tools(gateway_url))
-
-    # 添加沙箱工具（如果 Docker 可用）
-    try:
-        from . import sandbox_tools
-        tools.extend(sandbox_tools.create_sandbox_tools())
-        logger.info("Docker sandbox tools loaded")
-    except Exception as e:
-        logger.warning(f"Failed to load sandbox tools: {e}")
+    # 注意：已删除的工具（功能被 bash 取代）
+    # - moltbot_tools: code_exec, text_analysis, unit_converter
+    # - sandbox_tools: docker 操作可直接用 bash 执行
+    # - python_tools: python 代码可直接用 bash 执行
 
     logger.info(f"Created total {len(tools)} tools")
     return tools

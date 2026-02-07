@@ -11,14 +11,14 @@ FastReAct 内置工具集
 
 2. **手动导入工具对象**:
    ```python
-   from fastreact.tools import create_search_tool, create_calculator_tool
-   tools = [create_search_tool(api_key="..."), create_calculator_tool()]
+   from fastreact.tools import create_search_tool, create_shell_tool
+   tools = [create_search_tool(api_key="..."), create_shell_tool()]
    ```
 
 3. **面向对象（向后兼容）**:
    ```python
-   from fastreact.tools import SearchTool, CalculatorTool
-   tools = [SearchTool(), CalculatorTool()]
+   from fastreact.tools import SearchTool, StatefulShellTool
+   tools = [SearchTool(), StatefulShellTool()]
    ```
 """
 
@@ -43,17 +43,13 @@ from fastreact.tools.fn_registry import (
     create_builtin_tools,
     create_all_tools,
     create_search_tool,
-    create_calculator_tool,
-    create_weather_tool,
     create_datetime_tool,
-    create_http_tool,
     create_shell_tool,
     create_ls_repo_tool,
     create_cd_repo_tool,
     create_refresh_repo_tool,
     create_edit_file_tool,
     create_write_file_tool,
-    create_read_file_tool,
     create_deep_research_tool,
     execute_tool,
     get_tool_function_schema,
@@ -62,27 +58,17 @@ from fastreact.tools.fn_registry import (
 # Sprint 3.5: 精细化工具
 from fastreact.tools.precision_tools import (
     create_view_file_tool,
-    create_smart_read_tool,
     create_grep_code_tool,
     create_precision_tools,
     view_file,
-    smart_read,
     grep_code,
 )
 
-# moltbot 风格扩展工具
-from fastreact.tools.moltbot_tools import (
-    create_code_exec_tool,
-    create_text_analysis_tool,
-    create_unit_converter_tool,
-    create_moltbot_style_tools,
-)
-
-# Gateway 客户端工具
+# Gateway 客户端工具（可选，用于分布式 Agent）
 from fastreact.tools.gateway_tools import (
     create_gateway_tool,
     create_session_tool,
-    create_spawn_subagent_tool,  # 新增
+    create_spawn_subagent_tool,
     create_gateway_tools,
 )
 
@@ -90,10 +76,7 @@ from fastreact.tools.gateway_tools import (
 from fastreact.tools.registry import ToolRegistry, get_registry, load_tools_from_config
 
 # 手动导入（向后兼容）
-from fastreact.tools.calculator import CalculatorTool
 from fastreact.tools.search import SearchTool
-from fastreact.tools.weather import WeatherTool
-from fastreact.tools.http import HTTPTool
 from fastreact.tools.shell_tool import StatefulShellTool, get_stateful_shell
 
 # Tavily搜索工具
@@ -114,17 +97,18 @@ from fastreact.tools.datetime_tool import (
     DateTimeCalcTool,
 )
 
-# GraphRAG工具
-from fastreact.tools.graph_rag_tools import (
-    query_graph_rag,
-    analyze_relationships,
-    multi_hop_reasoning,
-    knowledge_extraction,
-    check_graph_rag_config,
-)
-
-# Python工具
-from fastreact.tools.python_tools import run_python_code, calculate_expression
+# GraphRAG工具（可选，需要外部服务）
+try:
+    from fastreact.tools.graph_rag_tools import (
+        query_graph_rag,
+        analyze_relationships,
+        multi_hop_reasoning,
+        knowledge_extraction,
+        check_graph_rag_config,
+    )
+    _graphrag_available = True
+except ImportError:
+    _graphrag_available = False
 
 # MCP适配器
 from fastreact.tools.mcp_adapter import export_tools_to_fastreact, get_global_registry
@@ -135,27 +119,6 @@ from fastreact.tools.mcp_client_manager import (
     MCPServerConnection,
     MCPToolWrapperExternal,
 )
-
-# 沙箱工具（函数式，需要 docker 包）
-try:
-    from fastreact.tools.sandbox_tools import (
-        create_sandbox_exec_tool,
-        create_sandbox_tools,
-    )
-    _sandbox_available = True
-except ImportError:
-    _sandbox_available = False
-
-# 旧版沙箱工具（向后兼容，类式）
-try:
-    from fastreact.tools.sandbox import (
-        ExecuteCodeTool,
-        CreateSandboxTool,
-        ExecuteInSandboxTool,
-        DestroySandboxTool,
-    )
-except ImportError:
-    pass
 
 __all__ = [
     # ============================================================================
@@ -178,29 +141,26 @@ __all__ = [
     "create_builtin_tools",
     "create_all_tools",
     "create_search_tool",
-    "create_calculator_tool",
-    "create_weather_tool",
     "create_datetime_tool",
-    "create_http_tool",
     "create_shell_tool",
     "create_ls_repo_tool",
     "create_cd_repo_tool",
     "create_refresh_repo_tool",
     "create_edit_file_tool",
     "create_write_file_tool",
-    "create_read_file_tool",
     "create_deep_research_tool",
     "execute_tool",
     "get_tool_function_schema",
-    # moltbot 风格扩展工具
-    "create_code_exec_tool",
-    "create_text_analysis_tool",
-    "create_unit_converter_tool",
-    "create_moltbot_style_tools",
+    # 精细化工具
+    "create_view_file_tool",
+    "create_grep_code_tool",
+    "create_precision_tools",
+    "view_file",
+    "grep_code",
     # Gateway 工具
     "create_gateway_tool",
     "create_session_tool",
-    "create_spawn_subagent_tool",  # 新增
+    "create_spawn_subagent_tool",
     "create_gateway_tools",
 
     # ============================================================================
@@ -214,10 +174,7 @@ __all__ = [
     # 旧版面向对象工具（向后兼容，不推荐新代码使用）
     # ============================================================================
     # 原有FastReAct工具
-    "CalculatorTool",
     "SearchTool",
-    "WeatherTool",
-    "HTTPTool",
     "StatefulShellTool",
     "get_stateful_shell",
     # Tavily搜索工具
@@ -234,22 +191,18 @@ __all__ = [
     "multi_hop_reasoning",
     "knowledge_extraction",
     "check_graph_rag_config",
-    # Python工具（MCP格式）
-    "run_python_code",
-    "calculate_expression",
-    # MCP适配器
-    "export_tools_to_fastreact",
-    "get_global_registry",
     # MCP客户端
     "MCPClientManager",
     "MCPServerConnection",
     "MCPToolWrapperExternal",
-    # 沙箱工具（函数式）
-    "create_sandbox_exec_tool",
-    "create_sandbox_tools",
-    # 沙箱工具（旧版，向后兼容）
-    "ExecuteCodeTool",
-    "CreateSandboxTool",
-    "ExecuteInSandboxTool",
-    "DestroySandboxTool",
 ]
+
+# ============================================================================
+# MCP 工具包装器（用于动态加载 MCP 服务器的工具）
+# ============================================================================
+
+try:
+    from fastreact.tools.mcp_wrapper import create_mcp_tool_wrapper
+    __all__.append("create_mcp_tool_wrapper")
+except ImportError:
+    pass

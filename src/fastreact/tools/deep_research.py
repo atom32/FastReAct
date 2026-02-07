@@ -580,6 +580,7 @@ def create_deep_research_tool(
         focus_areas: Optional[List[str]] = None,
         output_format: str = "markdown",
         progress_callback: Optional[Callable[[str], None]] = None,
+        llm_client_runtime=None,  # 运行时注入的 LLM client
     ) -> str:
         """
         执行深度研究
@@ -590,12 +591,16 @@ def create_deep_research_tool(
             focus_areas: 关注领域列表
             output_format: 输出格式 (markdown/json)
             progress_callback: 进度回调函数
+            llm_client_runtime: 运行时注入的 LLM client（优先使用）
 
         Returns:
             研究报告（Markdown 格式）
         """
+        # 使用运行时注入的 llm_client，如果没有则使用创建时的值
+        actual_llm_client = llm_client_runtime or llm_client
+
         engine = DeepResearchEngine(
-            llm_client=llm_client,
+            llm_client=actual_llm_client,
             search_client=search_client,
             enable_tavily=True,
             model=model,
@@ -656,4 +661,5 @@ Example:
         },
         execute=execute,
         group="ai",
+        needs_llm_client=True,  # 需要在运行时注入 LLM client
     )

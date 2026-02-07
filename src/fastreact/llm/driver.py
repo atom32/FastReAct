@@ -279,11 +279,12 @@ class LLMDriver:
         request_params = self._build_request_params(messages, None, config)
 
         # 修复：计算实际发送的token数并更新ContextMonitor
+        # 模块化原则：使用公开API而非直接访问metrics
         if self.context_monitor:
             from ..context import TokenCounter
             counter = TokenCounter(model=config.model)
             current_tokens = counter.count_messages_tokens(messages)
-            self.context_monitor.metrics.set_current(current_tokens)
+            self.context_monitor.set_current(current_tokens)  # 使用公开API
 
         # 流式调用
         stream = await client.chat.completions.create(**request_params)
@@ -317,12 +318,12 @@ class LLMDriver:
         request_params = self._build_request_params(messages, tools, config)
 
         # 修复：计算实际发送的token数并更新ContextMonitor
-        # 显示当前请求的真实context大小，而不是累加值
+        # 模块化原则：使用公开API而非直接访问metrics
         if self.context_monitor:
             from ..context import TokenCounter
             counter = TokenCounter(model=config.model)
             current_tokens = counter.count_messages_tokens(messages)
-            self.context_monitor.metrics.set_current(current_tokens)
+            self.context_monitor.set_current(current_tokens)  # 使用公开API
 
         # 重试循环
         last_error = None

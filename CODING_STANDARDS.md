@@ -220,3 +220,71 @@ python scripts/quick_check.py
 ---
 
 **最后更新**: 2026-02-07
+
+---
+
+## 架构规范
+
+### 模块化原则 (Module Architecture Rule)
+
+**核心原则**: 模块必须保持独立，不允许层级渗透
+
+**层级关系**:
+```
+CLI 层
+    ↓ (通过公开API)
+Core 层
+    ↓ (通过公开API)
+Context/LLM 层
+    ↓ (内部实现)
+Private/Internal
+```
+
+**禁止行为**:
+- ❌ 上层直接导入下层 `internal.py`
+- ❌ 跨层访问私有属性 (`_private`)
+- ❌ 跳过封装边界直接操作内部状态
+
+**正确做法**:
+- ✅ 使用公开API/方法
+- ✅ 通过构造函数依赖注入
+- ✅ 使用工厂方法创建对象
+
+### 层级渗透自查
+
+**检查命令**:
+```bash
+# 1. 检查导入internal模块
+grep -r "from.*internal import" src/fastreact --include="*.py"
+
+# 2. 检查跨模块访问私有属性
+grep -r "\.context_monitor\.metrics\." src/fastreact
+
+# 3. 检查直接访问_llm私有属性
+grep -r "\._llm_driver\._" src/fastreact
+
+# 4. 检查CLI直接访问core私有状态
+grep -r "\._react_agent\._" src/fastreact/cli
+```
+
+**修复示例**:
+```python
+# BAD (层级渗透):
+self.context_monitor.metrics.set_current(tokens)  # 直接访问内部
+
+# GOOD (使用公开API):
+self.context_monitor.set_current(tokens)  # 使用公开接口
+```
+
+### 边界完整性评分
+
+| 模块边界 | 评分标准 |
+|---------|---------|
+| ⭐⭐⭐⭐⭐ | 完全隔离，无渗透 |
+| ⭐⭐⭐⭐☆ | 少量渗透，已修复 |
+| ⭐⭐⭐☆☆ | 有渗透，需修复 |
+| ⭐⭐☆☆☆ | 严重渗透，重构 |
+
+---
+
+**最后更新**: 2026-02-07 (添加层级渗透检查方法)

@@ -473,6 +473,7 @@ class UnifiedAgentState:
         self.config = {
             "auto_confirm_plan": True,
             "show_plan_details": True,
+            "show_step_details": True,  # 新增：显示执行步骤详情
             "enable_streaming": True,
             "auto_snapshot": True,
             "git_integration": False,  # Phase 2
@@ -556,6 +557,29 @@ class UnifiedAgentState:
 
             # 修复：设置当前会话路径，后续保存将更新此文件
             self._current_session_path = session_path
+
+            # 修复：立即计算历史 token 并更新 ContextMonitor
+            # 这样第一次显示时就不会是 0 了
+            if self.history:
+                try:
+                    from fastreact.context import get_context_monitor, TokenCounter
+                    from fastreact.bootstrap.config_loader import load_config
+
+                    config = load_config()
+                    llm_cfg = config.get('llm', {})
+                    provider_cfg = llm_cfg.get('providers', {}).get(llm_cfg.get('default_provider', 'siliconflow'), {})
+                    model = provider_cfg.get('model', 'gpt-4')
+
+                    counter = TokenCounter(model=model)
+                    history_tokens = counter.count_messages_tokens(self.history)
+
+                    # 更新 ContextMonitor（显示实际历史 token）
+                    monitor = get_context_monitor()
+                    monitor.set_current(history_tokens)
+
+                    logger.info(f"[Session Load] History loaded: {len(self.history)} messages, {history_tokens} tokens")
+                except Exception as e:
+                    logger.warning(f"[Session Load] Failed to calculate history tokens: {e}")
 
             return True
 
@@ -1800,14 +1824,74 @@ Type /help for commands""",
         # Execute agent with live status
         # Note: Event callbacks removed - Sprint 2 provides better feedback via spinners and ContextMonitor
         # 修复：传递 session_context 以支持多轮对话
+        # 修复：添加 step_callback 实时显示执行详情
 
-        if self.console:
-            # Wrap execution with live status spinner
+        # 检查是否显示步骤详情
+        show_details = self.config.get("show_step_details", False)
+
+        # 创建 step_callback 显示执行详情（实时）
+        def show_step_detail(step: Dict[str, Any]):
+            """显示执行步骤详情（实时）"""
+            if not self.console or not show_details:
+                return
+
+            # 停止 spinner 以便实时输出
+            # 注意：这会导致 spinner 消失，但可以看到实时进度
+
+            iteration = step.get("iteration", 0)
+
+            # 显示工具调用
+            tool_calls = step.get("tool_calls", [])
+            if tool_calls:
+                for tc in tool_calls:
+                    tool_name = tc.get("name", "unknown")
+                    params = tc.get("parameters", {})
+                    self.console.print(f"[cyan]Step {iteration}: {tool_name}[/cyan]")
+                    # 显示关键参数
+                    if "command" in params:
+                        cmd = params["command"].split("\n")[0][:100]  # 只显示第一行
+                        self.console.print(f"[dim]     {cmd}[/dim]")
+                    elif "path" in params:
+                        self.console.print(f"[dim]     File: {params['path']}[/dim]")
+                    elif "topic" in params:
+                        self.console.print(f"[dim]     Topic: {params['topic']}[/dim]")
+
+            # 显示观察结果
+            observation = step.get("observation", "")
+            if observation and len(observation) > 0:
+                obs_preview = observation[:200].replace("\n", " ")
+                self.console.print(f"[dim]  Result: {obs_preview}...[/dim]")
+
+            # 显示最终答案
+            if step.get("is_final"):
+                answer = step.get("answer", "")
+                if answer:
+                    answer_preview = answer[:100].replace("\n", " ")
+                    self.console.print(f"[green]  ✓ Complete[/green]")
+
+        if self.console and show_details:
+            # 显示步骤详情模式：不使用 spinner，直接输出
+            self.console.print("[bold yellow][REACT] Executing tasks...[/bold yellow]")
+            result = await agent.run_async(
+                query,
+                session_context=self.state.session_context,
+                step_callback=show_step_detail
+            )
+        elif self.console:
+            # 默认模式：使用 spinner（简洁输出）
             with self.console.status("[bold green][REACT] Executing tasks...[/bold green]", spinner="dots"):
-                result = await agent.run_async(query, session_context=self.state.session_context)
+                result = await agent.run_async(
+                    query,
+                    session_context=self.state.session_context,
+                    step_callback=None  # 不显示步骤详情
+                )
         else:
             self.print_info("Executing tasks...")
-            result = await agent.run_async(query, session_context=self.state.session_context)
+            result = await agent.run_async(
+                query,
+                session_context=self.state.session_context,
+                step_callback=None
+            )
 
         # 修复：更新对话历史
         if result:

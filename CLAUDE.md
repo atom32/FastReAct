@@ -44,6 +44,57 @@ from mcp import ClientSession, StdioServerParameters
 
 **RATIONALE**: Ensures semantic consistency between Windows host and Docker containers.
 
+### 4. Modular Architecture Rule (NO Layer Penetration)
+**模块必须保持独立，不允许层级渗透。**
+
+**REQUIREMENTS**:
+- 上层模块只能通过**公开API**访问下层模块
+- 禁止直接导入下层模块的`internal.py`或私有属性
+- 禁止跨层直接访问内部状态（`_private`属性）
+- 每个模块应该有清晰的边界和接口
+
+**FORBIDDEN**:
+```python
+# CLI直接访问core的私有属性
+from fastreact.core.engine import ReActEngine
+engine._context._metrics.total_tokens  # BAD - 层级渗透
+
+# core直接访问context的内部实现
+from fastreact.context.internal import _InternalState  # BAD - 跨层访问
+
+# tools直接修改llm的内部状态
+from fastreact.llm.driver import LLMDriver
+driver._client._http_pool  # BAD - 越过封装边界
+```
+
+**CORRECT**:
+```python
+# 通过公开API访问
+from fastreact.context import ContextMonitor
+monitor = ContextMonitor(context_window=40960)
+usage = monitor.get_progress_bar()  # GOOD - 使用公开接口
+
+# 通过构造函数注入依赖
+engine = ReActEngine(
+    context_config=config,  # GOOD - 依赖注入
+    llm_driver=driver
+)
+
+# 通过方法调用而非直接访问
+result = agent.run_async(query)  # GOOD - 封装边界
+```
+
+**RATIONALE**:
+- 保持模块独立性和可测试性
+- 便于重构内部实现而不影响上层
+- 遵循依赖倒置原则（依赖抽象而非具体实现）
+
+**CHECKLIST**:
+- [ ] 上层不导入下层`internal.py`
+- [ ] 不访问`_private`属性（跨模块）
+- [ ] 使用公开API而非直接访问内部状态
+- [ ] 依赖通过构造函数注入，而非直接import
+
 ---
 
 ## IMPORTANT: No Emoji Policy

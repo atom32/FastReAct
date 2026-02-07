@@ -11,10 +11,56 @@ import sys
 import subprocess
 import threading
 import time
-from typing import Optional, Dict, Any
+import shutil
+from typing import Optional, Dict, Any, Tuple
 from queue import Queue, Empty
 
 from ..core.tool import Tool
+
+
+def _detect_shell_path() -> Tuple[str, str]:
+    """
+    智能检测 Shell 环境
+    优先级: Unix Bash -> Windows Git Bash -> Windows PowerShell -> Windows CMD
+
+    Returns:
+        (shell_path, shell_type): shell 路径和类型标识
+
+    Shell Type 说明:
+        - bash: Unix/Linux/macOS 原生 bash
+        - git-bash: Windows Git Bash (最兼容 LLM)
+        - powershell: Windows PowerShell (支持 ls, cat, rm 等别名)
+        - cmd: Windows CMD (最后选择，兼容性最差)
+    """
+    # 非 Windows 平台：直接使用 bash
+    if sys.platform != "win32":
+        shell_path = os.environ.get("SHELL", "/bin/bash")
+        return shell_path, "bash"
+
+    # [Windows 策略 1] 优先寻找 Git Bash (最兼容 LLM)
+    # 先检查 PATH 环境变量
+    git_bash_in_path = shutil.which("bash")
+    if git_bash_in_path:
+        return git_bash_in_path, "git-bash"
+
+    # 再检查常见安装路径
+    possible_git_bash = [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Users\%USERNAME%\AppData\Local\Programs\Git\bin\bash.exe",
+    ]
+    for path in possible_git_bash:
+        expanded_path = os.path.expandvars(path)
+        if os.path.exists(expanded_path):
+            return expanded_path, "git-bash"
+
+    # [Windows 策略 2] 回退到 PowerShell (次兼容，支持 ls, cat, rm 等别名)
+    powershell_path = shutil.which("powershell")
+    if powershell_path:
+        return powershell_path, "powershell"
+
+    # [Windows 策略 3] 最后的无奈：CMD
+    return "cmd.exe", "cmd"
 
 
 class StatefulShellTool(Tool):
@@ -73,15 +119,20 @@ class StatefulShellTool(Tool):
         self._output_queue: Queue = Queue()
         self._initialized = False  # 标记为未初始化
 
-        # 自动检测平台和 shell
+        # 智能检测 Shell 环境（支持 Git Bash, PowerShell 降级）
         if shell is None:
-            if sys.platform == "win32":
-                self.shell_path = "cmd.exe"
-            else:
-                # 优先使用 bash，否则使用 sh
-                self.shell_path = os.environ.get("SHELL", "/bin/bash")
+            self.shell_path, self.shell_type = _detect_shell_path()
         else:
             self.shell_path = shell
+            # 根据 shell_path 推断类型
+            if "bash" in shell.lower():
+                self.shell_type = "git-bash" if sys.platform == "win32" else "bash"
+            elif "powershell" in shell.lower() or shell.endswith("pwsh.exe"):
+                self.shell_type = "powershell"
+            elif "cmd" in shell.lower() or shell == "cmd.exe":
+                self.shell_type = "cmd"
+            else:
+                self.shell_type = "unknown"
 
         # Repo Map 集成：目录变化回调
         self._on_cwd_change: Optional[callable] = None
@@ -91,7 +142,25 @@ class StatefulShellTool(Tool):
         self._initialized = True  # 标记为已初始化
 
     def _get_description(self) -> str:
-        return """在持久化的 Shell 会话中执行命令
+        # 动态生成描述，包含当前 Shell 类型信息
+        shell_hints = {
+            "bash": "使用标准 Linux/Unix bash 命令（ls, grep, find, cat 等）",
+            "git-bash": "Windows 环境下的 Git Bash，完全兼容 Linux 命令（ls, grep, find, cat 等）",
+            "powershell": "Windows PowerShell，支持常见别名（ls, cat, rm, cp 等），但避免复杂 bash 管道和 markdown 格式",
+            "cmd": "Windows CMD，使用 DOS 命令（dir, type, findstr 等），兼容性最差",
+        }
+
+        hint = shell_hints.get(self.shell_type, f"检测到 Shell 类型: {self.shell_type}")
+
+        return f"""在持久化的 Shell 会话中执行命令
+
+**当前环境**：
+- 平台: {sys.platform}
+- Shell 类型: {self.shell_type}
+- Shell 路径: {self.shell_path}
+
+**命令提示**：
+- {hint}
 
 **核心特性**：
 - **状态保持**：cd、export 等命令的副作用会持续生效
@@ -99,10 +168,10 @@ class StatefulShellTool(Tool):
 - **超时保护**：默认 30 秒超时，防止命令挂起
 
 **常用场景**：
-- 文件系统导航：cd, ls, pwd
+- 文件系统导航：cd, ls/dir, pwd
 - 代码操作：git commands, npm install, make
 - 测试执行：pytest, npm test
-- 文件查看：cat, grep, head, tail
+- 文件查看：cat/type, grep/findstr, head
 
 **注意事项**：
 - 这是持久化会话，每次命令都在之前的环境中执行

@@ -259,3 +259,119 @@ Implemented comprehensive progress feedback system for long-running tools across
 
 ---
 
+
+---
+
+## 2026-02-07: 项目规范建立与架构优化
+
+### 核心成果
+
+**1. 文档清理与规范**
+- 归档127个过时文档到 `docs_archive/`
+- 核心文档精简到20个
+- 建立 `REUSE before CREATE` 原则
+- 创建 `CODING_STANDARDS.md` 文档和测试管理规范
+
+**2. Context Monitor 修复**
+- **问题**: 显示累计计费token (50000+) 而非实际context (3000)
+- **修复**: 添加 `set_current()` 方法，显示实际context大小
+- **改进**: 进度条显示 "2.8K / 40K" 而非百分比
+- **影响**: 准确反映context使用情况，避免误导
+
+**3. Memory Flush 优化**
+- **问题**: 硬编码token阈值 (28672仅对40K有效)
+- **修复**: 改为百分比配置 (70%/90%)
+- **效果**: 自动适配任何context window (8K/40K/128K)
+- **代码**: `get_memory_flush_thresholds(context_window)` 动态计算
+
+**4. Session 存储修复**
+- **问题**: 每次查询创建新JSON文件
+- **修复**: 追踪 `_current_session_path`，更新同一文件
+- **影响**: 历史对话正确保存和恢复
+
+**5. 架构规范: 模块化与层级隔离**
+- **新增 Iron Rule #4**: Modular Architecture Rule
+- **禁止层级渗透**: 上层只能通过公开API访问下层
+- **自查修复**: LLM Driver 不再直接访问 `ContextMonitor.metrics`
+- **边界完整性**: 4.0/5.0 → 4.5/5.0
+
+**6. 用户体验改进**
+- **早期回应机制**: 简单问题直接回答
+- **工作提示**: "正在读取文件..." 等 Claude Code 风格
+- **/tools命令**: 列出所有工具 (包括MCP)
+
+**7. 工具系统增强**
+- **Deep Research 修复**: 实现运行时 LLM client 注入
+  - 问题: 创建时 llm_client=None，导致工具无法使用
+  - 修复: 添加 `needs_llm_client=True` 标记，Engine 执行时自动注入
+  - 实现: `llm_client_runtime` 参数，运行时优先使用
+- **Precision Tools 启用**: 添加精细化工具到 builtin tools
+  - `view_file`: 精准读取文件指定行范围
+  - `grep_code`: 正则表达式搜索代码
+
+**8. 工具系统精简与优化**
+- **工具清理**: 删除冗余和低频工具
+  - 删除: read_file（被 view_file 取代）, smart_read（重复）
+  - 删除: calculator, weather, http（可用 bash/search 替代）
+  - 删除: python_tools, sandbox_tools, moltbot_tools（功能重复）
+  - 文件删除: python_tools.py, sandbox_tools.py
+  - 保留核心工具: bash, search, datetime, view_file, write_file, edit_file, grep_code, ls_repo, cd_repo, refresh_repo, deep_research
+- **Token 节省**: 工具数量 16 → 11（节省 ~31%）
+- **智能 Shell 检测**: 跨平台兼容性改进
+  - Windows 优先级: Git Bash → PowerShell → CMD
+  - 动态工具描述: 告知 LLM 当前 Shell 类型
+  - 解决 LLM bash 命令在 Windows 上的兼容性问题
+
+---
+
+### 技术细节
+
+**文件修改** (14个核心文件):
+```
+context/monitor.py       - 添加 set_current() 公开API
+context/config.py        - 百分比阈值配置
+context/memory_flush.py  - 使用动态阈值
+llm/driver.py            - 使用公开API (2处)
+core/engine.py            - 消息截断 (2000字符) + llm_client注入
+cli/unified_repl.py       - 早期回应 + 会话修复
+config.json              - 软/硬阈值改为百分比
+tools/fn_registry.py      - 添加needs_llm_client + precision_tools + 删除冗余工具
+tools/deep_research.py    - 添加llm_client_runtime参数
+tools/shell_tool.py       - 智能Shell检测（Git Bash/PowerShell/CMD）
+tools/__init__.py         - 清理导入，删除已废弃工具
+tools/precision_tools.py  - 删除smart_read（与view_file重复）
+tools/python_tools.py     - 已删除（功能被bash取代）
+tools/sandbox_tools.py    - 已删除（功能被bash docker取代）
+```
+
+**Commit**: `2ec88a9`
+
+**关键指标**:
+- 总代码: 50,666行 (128个.py文件，删除2个)
+- 测试覆盖: 51.5% (67测试文件)
+- 核心文档: 20个
+- 归档文档: 127个
+- 核心工具: 11个（从16个精简，节省31% token）
+
+---
+
+### 下一步计划
+
+**高优先级**:
+1. 补充工具单元测试 (覆盖率 < 50%)
+2. MCP连接健康检查机制
+3. 改进错误日志 (结构化输出)
+
+**中优先级**:
+4. ~~合并冗余工具~~ (已完成)
+5. 工具调用缓存机制
+6. 性能监控dashboard
+
+---
+
+**总结**:
+1. **工具系统精简**: 从16个工具精简到11个核心工具，节省31% token
+2. **跨平台兼容**: 智能Shell检测（Git Bash → PowerShell → CMD），解决Windows兼容性
+3. **架构清晰**: 模块化规范，文档组织合理
+4. **问题修复**: ContextMonitor和Memory Flush的关键问题已解决
+

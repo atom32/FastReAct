@@ -422,6 +422,6 @@ def create_precision_tools() -> List[Dict]:
     """
     return [
         create_view_file_tool(),
-        create_smart_read_tool(),
+        # smart_read 已删除（与 view_file 功能重复）
         create_grep_code_tool(),
     ]

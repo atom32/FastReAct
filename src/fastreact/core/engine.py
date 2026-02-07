@@ -1312,6 +1312,13 @@ class FastReAct:
                     if 'progress_callback' in sig.parameters:
                         execute_params['progress_callback'] = self._progress_callback
 
+                # 注入 llm_client（如果工具需要）
+                # 用于像 deep_research 这样的工具，它们在运行时需要 LLM client
+                if getattr(tool, 'needs_llm_client', False) and hasattr(self, '_llm_driver'):
+                    sig = inspect.signature(tool.execute)
+                    if 'llm_client_runtime' in sig.parameters:
+                        execute_params['llm_client_runtime'] = self._llm_driver
+
                 # 执行工具 - 兼容旧方式和新方式
                 if hasattr(tool, 'execute_async'):
                     # 旧的 Tool 类（面向对象）

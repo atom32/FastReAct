@@ -110,6 +110,18 @@ class ContextMonitor:
             return "WARNING"
         return None
 
+    def set_current(self, current_tokens: int) -> None:
+        """
+        设置当前实际的context大小（公开API）
+
+        模块化原则：提供统一接口，避免层级渗透
+        上层模块应该通过此方法更新context，而非直接访问metrics
+
+        Args:
+            current_tokens: 当前请求的实际token数
+        """
+        self.metrics.set_current(current_tokens)
+
     def _log_warning(self, level: str, status: Dict[str, Any]):
         """Log warning message"""
         usage = status["usage_percentage"]
