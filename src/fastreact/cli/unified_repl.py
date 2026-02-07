@@ -28,10 +28,13 @@ Architecture:
 
 import sys
 import os
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 # Windows UTF-8 设置
 if sys.platform == 'win32':
@@ -1827,7 +1830,7 @@ Type /help for commands""",
         # 修复：添加 step_callback 实时显示执行详情
 
         # 检查是否显示步骤详情
-        show_details = self.config.get("show_step_details", False)
+        show_details = self.state.config.get("show_step_details", False)
 
         # 创建 step_callback 显示执行详情（实时）
         def show_step_detail(step: Dict[str, Any]):
