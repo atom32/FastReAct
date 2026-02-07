@@ -1901,6 +1901,135 @@ class FastReAct:
                 "tool_calls": [工具调用列表]  # 如果有工具调用
             }
         """
+        # Phase 3: 优先使用 LLMDriver（如果可用）
+        if self._use_driver and self._llm_driver is not None:
+            return await self._chat_with_driver_streaming(messages, callback)
+        else:
+            # 旧方式：直接调用 OpenAI 客户端（向后兼容）
+            return await self._chat_with_client_streaming(messages, callback)
+
+    async def _chat_with_driver_streaming(
+        self,
+        messages: List[Dict[str, str]],
+        callback: Optional[Callable[[str], None]] = None,
+    ) -> Dict[str, Any]:
+        """
+        使用 LLMDriver 发送流式聊天请求
+
+        注意：LLMDriver.stream() 只 yield 内容片段，不支持 tool_calls。
+        因此我们需要使用底层客户端来实现完整的流式 + tool_calls 功能。
+
+        Returns:
+            {
+                "content": "响应内容",
+                "tool_calls": [工具调用列表]  # 如果有工具调用
+            }
+        """
+        from ..llm import LLMDriverConfig
+
+        # 构建 tools schema
+        tools_schema = None
+        if self.tools:
+            tools_schema = self._build_tools_schema()
+
+        # 获取 LLMDriver 的底层客户端
+        # 注意：这是绕过 LLMDriver.chat() 的流式实现
+        # 但我们使用的是同一个 client 实例，所以配置是一致的
+        client = self._llm_driver._get_client()
+
+        full_response = ""
+        accumulated_tool_calls = {}
+
+        # 构建请求参数（与 LLMDriver 一致的配置）
+        request_params = {
+            "model": self._llm_driver.config.model,
+            "messages": messages,
+            "temperature": self._llm_driver.config.temperature,
+            "max_tokens": self._llm_driver.config.max_tokens,
+            "stream": True,
+        }
+
+        # 如果有工具，添加 tools 参数
+        if tools_schema:
+            request_params["tools"] = tools_schema
+            request_params["tool_choice"] = "auto"
+
+        stream = await client.chat.completions.create(**request_params)
+
+        async for chunk in stream:
+            # 处理内容流
+            delta = chunk.choices[0].delta
+            if delta.content:
+                full_response += delta.content
+                if callback:
+                    try:
+                        if asyncio.iscoroutinefunction(callback):
+                            await callback(delta.content)
+                        else:
+                            callback(delta.content)
+                    except Exception as e:
+                        logger.warning(f"[Engine] Stream callback error: {e}")
+
+            # 处理工具调用流
+            if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                for tool_call in delta.tool_calls:
+                    index = tool_call.index
+
+                    # 初始化工具调用
+                    if index not in accumulated_tool_calls:
+                        accumulated_tool_calls[index] = {
+                            "id": tool_call.id or f"call_{index}",
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.function.name if tool_call.function else "",
+                                "arguments": ""
+                            }
+                        }
+
+                    # 累积参数
+                    if tool_call.function:
+                        if tool_call.function.name:
+                            accumulated_tool_calls[index]["function"]["name"] = tool_call.function.name
+                        if tool_call.function.arguments:
+                            accumulated_tool_calls[index]["function"]["arguments"] += tool_call.function.arguments
+
+        # 构建返回结果
+        result = {"content": full_response}
+
+        # 如果有工具调用，转换为对象列表
+        if accumulated_tool_calls:
+            result["tool_calls"] = [
+                {
+                    "id": tc["id"],
+                    "type": tc["type"],
+                    "function": {
+                        "name": tc["function"]["name"],
+                        "arguments": tc["function"]["arguments"]
+                    }
+                }
+                for tc in accumulated_tool_calls.values()
+            ]
+
+        return result
+
+    async def _chat_with_client_streaming(
+        self,
+        messages: List[Dict[str, str]],
+        callback: Optional[Callable[[str], None]] = None,
+    ) -> Dict[str, Any]:
+        """
+        使用原始 OpenAI 客户端发送流式聊天请求（向后兼容）
+
+        [DEPRECATED] 此方法为向后兼容保留，新代码应使用 _chat_with_driver_streaming()
+
+        注意：此路径不包含 LLMDriver 的自动重试、缓存和日志功能。
+
+        Returns:
+            {
+                "content": "完整响应内容",
+                "tool_calls": [工具调用列表]  # 如果有工具调用
+            }
+        """
         client = self._get_client()
 
         full_response = ""
