@@ -152,6 +152,14 @@ class StatefulShellTool(Tool):
 
         hint = shell_hints.get(self.shell_type, f"检测到 Shell 类型: {self.shell_type}")
 
+        # Python 命令提示（平台特定）
+        if sys.platform == "win32":
+            python_cmd = "python"
+            python_hint = "重要：在 Windows 上使用 'python' 而不是 'python3'"
+        else:
+            python_cmd = "python3"
+            python_hint = "使用 'python3' 运行 Python 脚本"
+
         return f"""在持久化的 Shell 会话中执行命令
 
 **当前环境**：
@@ -161,6 +169,7 @@ class StatefulShellTool(Tool):
 
 **命令提示**：
 - {hint}
+- {python_hint}
 
 **核心特性**：
 - **状态保持**：cd、export 等命令的副作用会持续生效
@@ -169,6 +178,7 @@ class StatefulShellTool(Tool):
 
 **常用场景**：
 - 文件系统导航：cd, ls/dir, pwd
+- Python 脚本：{python_cmd} script.py
 - 代码操作：git commands, npm install, make
 - 测试执行：pytest, npm test
 - 文件查看：cat/type, grep/findstr, head
