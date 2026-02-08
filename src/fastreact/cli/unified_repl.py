@@ -670,6 +670,105 @@ class UnifiedAgentREPL:
             except KeyboardInterrupt:
                 print()
 
+    async def run_script(self, script_path: str):
+        """
+        运行批处理脚本文件
+
+        Args:
+            script_path: 脚本文件路径
+
+        脚本格式：
+            # 这是注释
+            /tools
+            /help
+            写一个 hello world 脚本
+            WAIT 2  # 等待2秒
+            /exit
+
+        特殊指令：
+            # 注释
+            WAIT <seconds>  # 等待指定秒数
+            空行自动跳过
+        """
+        import asyncio
+
+        path = Path(script_path)
+        if not path.exists():
+            if self.console:
+                self.console.print(f"[red][ERROR] Script file not found: {script_path}[/red]")
+            else:
+                print(f"[ERROR] Script file not found: {script_path}")
+            return
+
+        if self.console:
+            self.console.print(f"[bold blue][SCRIPT] Running: {script_path}[/bold blue]")
+        else:
+            print(f"[SCRIPT] Running: {script_path}")
+
+        # 读取脚本
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except Exception as e:
+            if self.console:
+                self.console.print(f"[red][ERROR] Failed to read script: {e}[/red]")
+            else:
+                print(f"[ERROR] Failed to read script: {e}")
+            return
+
+        # 执行每一行
+        for i, line in enumerate(lines):
+            line = line.strip()
+
+            # 跳过空行和注释
+            if not line or line.startswith('#'):
+                continue
+
+            # 显示当前执行的命令
+            if self.console:
+                self.console.print(f"[dim]Line {i+1} >[/] [bold]{line}[/]")
+            else:
+                print(f"Line {i+1} > {line}")
+
+            # 处理特殊指令
+            if line.startswith("WAIT "):
+                try:
+                    seconds = int(line.split()[1])
+                    if self.console:
+                        self.console.print(f"[dim]Waiting {seconds}s...[/dim]")
+                    else:
+                        print(f"Waiting {seconds}s...")
+                    await asyncio.sleep(seconds)
+                    continue
+                except (ValueError, IndexError):
+                    if self.console:
+                        self.console.print(f"[yellow][WARN] Invalid WAIT syntax: {line}[/yellow]")
+                    else:
+                        print(f"[WARN] Invalid WAIT syntax: {line}")
+                    continue
+
+            # 执行命令
+            try:
+                keep_running = await self.execute_command(line)
+                if not keep_running:
+                    if self.console:
+                        self.console.print("\n[yellow][SCRIPT] Script execution terminated (exit command)[/yellow]")
+                    else:
+                        print("\n[SCRIPT] Script execution terminated (exit command)")
+                    break
+            except Exception as e:
+                if self.console:
+                    self.console.print(f"\n[red][ERROR] Command failed at line {i+1}: {e}[/red]")
+                else:
+                    print(f"\n[ERROR] Command failed at line {i+1}: {e}")
+                # 继续执行后续命令
+                continue
+
+        if self.console:
+            self.console.print("\n[green][SCRIPT] Script execution completed[/green]")
+        else:
+            print("\n[SCRIPT] Script execution completed")
+
     def get_prompt(self) -> str:
         """获取提示符（无 emoji）"""
         mode_display = {
@@ -2561,14 +2660,73 @@ Type /help for commands""",
 # 入口点
 # ============================================================================
 
-def run_unified_repl():
-    """启动统一 REPL"""
-    # 检查是否有历史会话
-    session_dir = Path.cwd() / ".fastreact" / "sessions"
+def run_unified_repl(script_path: str = None):
+    """
+    启动统一 REPL
 
+    Args:
+        script_path: 脚本文件路径（可选），如果提供则运行脚本后退出
+    """
+    import argparse
+
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(
+        description="FastReAct CLI - AI Agent REPL",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # 交互模式
+  python -m fastreact.cli.unified_repl
+
+  # 脚本模式
+  python -m fastreact.cli.unified_repl script.txt
+  python -m fastreact.cli.unified_repl --script script.txt
+
+  # 带参数
+  python -m fastreact.cli.unified_repl --script test.txt --no-session
+        """
+    )
+
+    parser.add_argument(
+        "script",
+        nargs="?",
+        help="Path to script file to execute (non-interactive mode)"
+    )
+
+    parser.add_argument(
+        "--script",
+        dest="script_arg",
+        help="Path to script file (alternative form)"
+    )
+
+    parser.add_argument(
+        "--no-session",
+        action="store_true",
+        help="Skip session restoration prompt"
+    )
+
+    args = parser.parse_args()
+
+    # 确定脚本路径
+    target_script = args.script or args.script_arg
+
+    # 脚本模式：不加载会话，直接运行脚本
+    if target_script:
+        repl = UnifiedAgentREPL(session_to_load=None)
+        try:
+            asyncio.run(repl.run_script(target_script))
+        except KeyboardInterrupt:
+            if repl.console:
+                repl.console.print("\n[yellow][INTERRUPTED] Script interrupted by user[/yellow]")
+            else:
+                print("\n[INTERRUPTED] Script interrupted by user")
+        return
+
+    # 交互模式：检查历史会话
+    session_dir = Path.cwd() / ".fastreact" / "sessions"
     session_to_load = None
 
-    if session_dir.exists():
+    if not args.no_session and session_dir.exists():
         # 找到最新的会话
         session_files = sorted(
             session_dir.glob("unified_*.json"),
