@@ -1884,36 +1884,75 @@ Type /help for commands""",
                     answer_preview = answer[:100].replace("\n", " ")
                     self.console.print(f"[green]  ✓ Complete[/green]")
 
-        if self.console and show_details:
-            # 显示步骤详情模式：不使用 spinner，直接输出
-            self.console.print("[bold yellow][REACT] Executing tasks...[/bold yellow]")
-            result = await agent.run_async(
-                query,
-                session_context=self.state.session_context,
-                stream_callback=show_streaming_content,  # 流式显示
-                step_callback=show_step_detail  # 步骤详情
-            )
-        elif self.console:
-            # 默认模式：使用 spinner（简洁输出）
-            # 注意：spinner 模式下不使用 stream_callback，避免输出混乱
-            with self.console.status("[bold green][REACT] Thinking and executing...[/bold green]", spinner="dots"):
+        # 执行 agent 并处理中断
+        result = None
+        interrupted = False
+
+        try:
+            if self.console and show_details:
+                # 显示步骤详情模式：不使用 spinner，直接输出
+                self.console.print("[bold yellow][REACT] Executing tasks...[/bold yellow]")
+                self.console.print("[dim]提示：按 Ctrl+C 可中断执行[/dim]")
                 result = await agent.run_async(
                     query,
                     session_context=self.state.session_context,
-                    stream_callback=None,  # spinner 模式不流式显示
-                    step_callback=None  # 不显示步骤详情
+                    stream_callback=show_streaming_content,  # 流式显示
+                    step_callback=show_step_detail  # 步骤详情
                 )
-        else:
-            self.print_info("Executing tasks...")
-            result = await agent.run_async(
-                query,
-                session_context=self.state.session_context,
-                stream_callback=None,
-                step_callback=None
-            )
+            elif self.console:
+                # 默认模式：使用 spinner（简洁输出）
+                # 注意：spinner 模式下不使用 stream_callback，避免输出混乱
+                with self.console.status("[bold green][REACT] Thinking and executing... (Ctrl+C to interrupt)[/bold green]", spinner="dots"):
+                    result = await agent.run_async(
+                        query,
+                        session_context=self.state.session_context,
+                        stream_callback=None,  # spinner 模式不流式显示
+                        step_callback=None  # 不显示步骤详情
+                    )
+            else:
+                self.print_info("Executing tasks...")
+                result = await agent.run_async(
+                    query,
+                    session_context=self.state.session_context,
+                    stream_callback=None,
+                    step_callback=None
+                )
+
+        except KeyboardInterrupt:
+            # 用户按 Ctrl+C 中断执行
+            interrupted = True
+
+            if self.console:
+                self.console.print("\n[yellow][INTERRUPTED] Execution interrupted by user[/yellow]")
+
+                # 显示友好提示
+                self.console.print("""
+[dim]执行已中断。当前状态：
+- 对话历史已保存
+- 可以继续使用 REPL
+- 输入新问题继续对话
+- 输入 /help 查看可用命令[/dim]
+""")
+            else:
+                self.print_info("\n[INTERRUPTED] Execution interrupted by user")
+
+            # 即使中断也保存用户消息到历史
+            self.state.history.append({
+                "role": "user",
+                "content": query,
+            })
+            # 添加中断标记
+            self.state.history.append({
+                "role": "assistant",
+                "content": "[INTERRUPTED] 执行被用户中断",
+            })
+            self.state.session_context["history"] = self.state.history.copy()
+
+            # 直接返回，不继续执行后续处理
+            return True
 
         # 修复：更新对话历史
-        if result:
+        if result and not interrupted:
             # 添加用户消息
             self.state.history.append({
                 "role": "user",
