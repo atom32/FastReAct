@@ -715,15 +715,31 @@ class UnifiedAgentREPL:
                 print(f"[ERROR] Failed to read script: {e}")
             return
 
-        # 提取所有命令（非注释、非空行）
+        # 提取所有命令（保留断言，过滤普通注释）
         commands = []
         for line in raw_lines:
             stripped = line.strip()
-            if stripped and not stripped.startswith('#'):
-                commands.append({
-                    'line': stripped,
-                    'original': line.rstrip('\n')
-                })
+
+            # 跳过空行
+            if not stripped:
+                continue
+
+            # 跳过普通注释，但保留断言
+            if stripped.startswith('#'):
+                if stripped.startswith('# EXPECT:') or stripped.startswith('# FORBID:'):
+                    # 保留断言
+                    commands.append({
+                        'line': stripped,
+                        'original': line.rstrip('\n')
+                    })
+                # 其他注释跳过
+                continue
+
+            # 保留普通命令
+            commands.append({
+                'line': stripped,
+                'original': line.rstrip('\n')
+            })
 
         if not commands:
             if self.console:
@@ -748,6 +764,55 @@ class UnifiedAgentREPL:
         # 执行每个命令
         for i, cmd_info in enumerate(commands):
             cmd_line = cmd_info['line']
+
+            # 处理断言（验证上一个命令的输出）
+            if cmd_line.startswith("# EXPECT:"):
+                expected = cmd_line.split(":", 1)[1].strip()
+                total_tests += 1
+
+                if expected.lower() in last_output.lower():
+                    passed_tests += 1
+                    if self.console:
+                        self.console.print(f"[green]  [PASS] Found: '{expected}'[/]")
+                    else:
+                        print(f"  [PASS] Found: '{expected}'")
+                else:
+                    if self.console:
+                        self.console.print(f"[red]  [FAIL] Expected '{expected}' not found[/]")
+                        self.console.print(f"[dim]  Output preview: {last_output[:200]}...[/]")
+                    else:
+                        print(f"  [FAIL] Expected '{expected}' not found")
+                        print(f"  Output preview: {last_output[:200]}...")
+
+                    if self.console:
+                        self.console.print(f"\n[bold red][TEST FAILED] {passed_tests}/{total_tests} assertions passed[/]")
+                    else:
+                        print(f"\n[TEST FAILED] {passed_tests}/{total_tests} assertions passed")
+                    return  # 测试失败，停止执行
+                continue
+
+            if cmd_line.startswith("# FORBID:"):
+                forbidden = cmd_line.split(":", 1)[1].strip()
+                total_tests += 1
+
+                if forbidden.lower() not in last_output.lower():
+                    passed_tests += 1
+                    if self.console:
+                        self.console.print(f"[green]  [PASS] Absent: '{forbidden}'[/]")
+                    else:
+                        print(f"  [PASS] Absent: '{forbidden}'")
+                else:
+                    if self.console:
+                        self.console.print(f"[red]  [FAIL] Forbidden text '{forbidden}' found[/]")
+                    else:
+                        print(f"  [FAIL] Forbidden text '{forbidden}' found")
+
+                    if self.console:
+                        self.console.print(f"\n[bold red][TEST FAILED] {passed_tests}/{total_tests} assertions passed[/]")
+                    else:
+                        print(f"\n[TEST FAILED] {passed_tests}/{total_tests} assertions passed")
+                    return  # 测试失败，停止执行
+                continue
 
             # 显示当前命令
             if self.console:
@@ -813,60 +878,6 @@ class UnifiedAgentREPL:
                     print(f"  [ERROR] Command failed: {e}")
                 last_output = f"ERROR: {e}"
                 continue
-
-            # 检查下一行是否有断言
-            if i + 1 < len(commands):
-                next_cmd = commands[i + 1]['line']
-
-                # EXPECT 断言
-                if next_cmd.startswith("EXPECT "):
-                    expected = next_cmd.split(" ", 1)[1].strip()
-                    total_tests += 1
-
-                    # 检查输出（不区分大小写）
-                    if expected.lower() in last_output.lower():
-                        passed_tests += 1
-                        if self.console:
-                            self.console.print(f"[green]  [PASS] Found: '{expected}'[/]")
-                        else:
-                            print(f"  [PASS] Found: '{expected}'")
-                    else:
-                        if self.console:
-                            self.console.print(f"[red]  [FAIL] Expected '{expected}' not found[/]")
-                            self.console.print(f"[dim]  Output preview: {last_output[:200]}...[/]")
-                        else:
-                            print(f"  [FAIL] Expected '{expected}' not found")
-                            print(f"  Output preview: {last_output[:200]}...")
-
-                        # 显示测试结果
-                        if self.console:
-                            self.console.print(f"\n[bold red][TEST FAILED] {passed_tests}/{total_tests} assertions passed[/]")
-                        else:
-                            print(f"\n[TEST FAILED] {passed_tests}/{total_tests} assertions passed")
-                        return  # 停止测试
-
-                # FORBID 断言
-                elif next_cmd.startswith("FORBID "):
-                    forbidden = next_cmd.split(" ", 1)[1].strip()
-                    total_tests += 1
-
-                    if forbidden.lower() not in last_output.lower():
-                        passed_tests += 1
-                        if self.console:
-                            self.console.print(f"[green]  [PASS] Absent: '{forbidden}'[/]")
-                        else:
-                            print(f"  [PASS] Absent: '{forbidden}'")
-                    else:
-                        if self.console:
-                            self.console.print(f"[red]  [FAIL] Forbidden text '{forbidden}' found[/]")
-                        else:
-                            print(f"  [FAIL] Forbidden text '{forbidden}' found")
-
-                        if self.console:
-                            self.console.print(f"\n[bold red][TEST FAILED] {passed_tests}/{total_tests} assertions passed[/]")
-                        else:
-                            print(f"\n[TEST FAILED] {passed_tests}/{total_tests} assertions passed")
-                        return  # 停止测试
 
             # 检查是否应该终止
             if not keep_running:
