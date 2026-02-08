@@ -842,22 +842,28 @@ class UnifiedAgentREPL:
             # 捕获输出
             old_stdout = sys.stdout
             old_stderr = sys.stderr
-            captured = StringIO()
+            captured_stdout = StringIO()
+            captured_stderr = StringIO()
 
             try:
                 # 重定向标准输出
-                sys.stdout = captured
-                sys.stderr = captured
+                sys.stdout = captured_stdout
+                sys.stderr = captured_stderr
 
-                # 执行命令
-                keep_running = await self.execute_command(cmd_line)
+                # 如果有 Rich console，使用其 capture 功能
+                if self.console:
+                    with self.console.capture():
+                        keep_running = await self.execute_command(cmd_line)
+                        # Rich console 输出会被 capture
+                        console_output = self.console.get_text()
+                else:
+                    # 没有 console，直接捕获 stdout
+                    keep_running = await self.execute_command(cmd_line)
+                    console_output = captured_stdout.getvalue()
 
                 # 恢复标准输出
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
-
-                # 获取捕获的控制台输出
-                console_output = captured.getvalue()
 
                 # 获取 LLM 的回复（如果有）
                 llm_output = ""
