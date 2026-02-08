@@ -852,10 +852,11 @@ class UnifiedAgentREPL:
 
                 # 如果有 Rich console，使用其 capture 功能
                 if self.console:
-                    with self.console.capture():
+                    self.console.begin_capture()
+                    try:
                         keep_running = await self.execute_command(cmd_line)
-                        # Rich console 输出会被 capture
-                        console_output = self.console.get_text()
+                    finally:
+                        console_output = self.console.end_capture()
                 else:
                     # 没有 console，直接捕获 stdout
                     keep_running = await self.execute_command(cmd_line)
