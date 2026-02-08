@@ -970,13 +970,13 @@ Type /help for commands""",
             return True
 
         # 分类工具
-        builtin_tools = []
+        builtin_tools = {}
         mcp_tools = {}
 
         for tool_name, tool in tools_dict.items():
             tool_info = {
                 "name": tool.name,
-                "description": tool.description[:80] + "..." if len(tool.description) > 80 else tool.description,
+                "description": tool.description,
                 "group": getattr(tool, 'group', 'builtin')
             }
 
@@ -987,36 +987,61 @@ Type /help for commands""",
                     mcp_tools[server] = []
                 mcp_tools[server].append(tool_info)
             else:
-                builtin_tools.append(tool_info)
+                # 按group分类内建工具
+                group = tool_info["group"] or "other"
+                if group not in builtin_tools:
+                    builtin_tools[group] = []
+                builtin_tools[group].append(tool_info)
 
         # 显示统计
-        total_builtin = len(builtin_tools)
+        total_builtin = sum(len(tools) for tools in builtin_tools.values())
         total_mcp = sum(len(tools) for tools in mcp_tools.values())
         total = total_builtin + total_mcp
 
         print()
-        print(f"[统计] 总计 {total} 个工具")
-        print(f"  - 内建工具: {total_builtin}")
-        print(f"  - MCP工具: {total_mcp}")
+        print(f"[统计] 总计 {total} 个工具 (内建: {total_builtin}, MCP: {total_mcp})")
         print()
 
-        # 显示内建工具
+        # 显示内建工具（按分组）
         if builtin_tools:
-            print(f"[内建工具] ({total_builtin}个)")
-            for tool in builtin_tools[:10]:  # 只显示前10个
-                print(f"  - {tool['name']}")
-            if len(builtin_tools) > 10:
-                print(f"  ... 还有 {len(builtin_tools) - 10} 个")
-            print()
+            # 定义分组的显示顺序
+            group_order = ["file_ops", "code", "web", "system", "ai", "other"]
+            group_names = {
+                "file_ops": "文件操作",
+                "code": "代码工具",
+                "web": "网络工具",
+                "system": "系统工具",
+                "ai": "AI工具",
+                "other": "其他"
+            }
+
+            for group in group_order:
+                if group not in builtin_tools:
+                    continue
+
+                tools = builtin_tools[group]
+                group_name = group_names.get(group, group)
+                print(f"[{group_name}] ({len(tools)}个)")
+
+                for tool in tools:
+                    # 截断过长的描述
+                    desc = tool["description"]
+                    if len(desc) > 70:
+                        desc = desc[:67] + "..."
+                    print(f"  - {tool['name']:20s} : {desc}")
+                print()
 
         # 显示MCP工具
         if mcp_tools:
             for server, tools in mcp_tools.items():
-                print(f"[{server}] ({len(tools)}个)")
-                for tool in tools[:10]:  # 只显示前10个
-                    print(f"  - {tool['name']}")
-                if len(tools) > 10:
-                    print(f"  ... 还有 {len(tools) - 10} 个")
+                print(f"[MCP: {server}] ({len(tools)}个)")
+                for tool in tools[:15]:  # MCP工具可能很多，限制显示
+                    desc = tool["description"]
+                    if len(desc) > 70:
+                        desc = desc[:67] + "..."
+                    print(f"  - {tool['name']:20s} : {desc}")
+                if len(tools) > 15:
+                    print(f"  ... 还有 {len(tools) - 15} 个工具")
                 print()
 
         return True
