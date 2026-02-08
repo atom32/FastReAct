@@ -672,7 +672,7 @@ class UnifiedAgentREPL:
 
     async def run_script(self, script_path: str):
         """
-        运行批处理脚本文件
+        运行批处理脚本文件（支持断言）
 
         Args:
             script_path: 脚本文件路径
@@ -680,17 +680,21 @@ class UnifiedAgentREPL:
         脚本格式：
             # 这是注释
             /tools
+            # EXPECT: ls_repo          (断言：输出必须包含 "ls_repo")
+            # FORBID: ERROR            (断言：输出不能包含 "ERROR")
             /help
-            写一个 hello world 脚本
-            WAIT 2  # 等待2秒
+            WAIT 2                     (等待2秒)
             /exit
 
         特殊指令：
             # 注释
-            WAIT <seconds>  # 等待指定秒数
-            空行自动跳过
+            # EXPECT: <string>          (上一步输出必须包含此字符串)
+            # FORBID: <string>          (上一步输出不能包含此字符串)
+            WAIT <seconds>             (等待指定秒数)
         """
         import asyncio
+        from io import StringIO
+        import sys
 
         path = Path(script_path)
         if not path.exists():
@@ -700,15 +704,10 @@ class UnifiedAgentREPL:
                 print(f"[ERROR] Script file not found: {script_path}")
             return
 
-        if self.console:
-            self.console.print(f"[bold blue][SCRIPT] Running: {script_path}[/bold blue]")
-        else:
-            print(f"[SCRIPT] Running: {script_path}")
-
-        # 读取脚本
+        # 读取并预处理脚本（合并多行，去除空行）
         try:
             with open(path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+                raw_lines = f.readlines()
         except Exception as e:
             if self.console:
                 self.console.print(f"[red][ERROR] Failed to read script: {e}[/red]")
@@ -716,58 +715,185 @@ class UnifiedAgentREPL:
                 print(f"[ERROR] Failed to read script: {e}")
             return
 
-        # 执行每一行
-        for i, line in enumerate(lines):
-            line = line.strip()
+        # 提取所有命令（非注释、非空行）
+        commands = []
+        for line in raw_lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#'):
+                commands.append({
+                    'line': stripped,
+                    'original': line.rstrip('\n')
+                })
 
-            # 跳过空行和注释
-            if not line or line.startswith('#'):
-                continue
-
-            # 显示当前执行的命令
+        if not commands:
             if self.console:
-                self.console.print(f"[dim]Line {i+1} >[/] [bold]{line}[/]")
+                self.console.print("[yellow][WARN] No commands found in script[/yellow]")
             else:
-                print(f"Line {i+1} > {line}")
+                print("[WARN] No commands found in script")
+            return
 
-            # 处理特殊指令
-            if line.startswith("WAIT "):
+        # 开始执行
+        if self.console:
+            self.console.print(f"\n[bold blue][TEST SUITE] {path.name}[/]")
+            self.console.print(f"[dim]Total commands: {len(commands)}[/]\n")
+        else:
+            print(f"\n[TEST SUITE] {path.name}")
+            print(f"Total commands: {len(commands)}\n")
+
+        # 测试统计
+        total_tests = 0
+        passed_tests = 0
+        last_output = ""
+
+        # 执行每个命令
+        for i, cmd_info in enumerate(commands):
+            cmd_line = cmd_info['line']
+
+            # 显示当前命令
+            if self.console:
+                self.console.print(f"[bold cyan]test[{i+1}][/] [bold]{cmd_line}[/]")
+            else:
+                print(f"test[{i+1}]> {cmd_line}")
+
+            # 处理 WAIT 指令
+            if cmd_line.startswith("WAIT "):
                 try:
-                    seconds = int(line.split()[1])
+                    seconds = int(cmd_line.split()[1])
                     if self.console:
-                        self.console.print(f"[dim]Waiting {seconds}s...[/dim]")
+                        self.console.print(f"[dim]  Waiting {seconds}s...[/]")
                     else:
-                        print(f"Waiting {seconds}s...")
+                        print(f"  Waiting {seconds}s...")
                     await asyncio.sleep(seconds)
+                    last_output = f"WAIT {seconds}s"
                     continue
                 except (ValueError, IndexError):
                     if self.console:
-                        self.console.print(f"[yellow][WARN] Invalid WAIT syntax: {line}[/yellow]")
+                        self.console.print(f"[yellow]  [WARN] Invalid WAIT syntax: {cmd_line}[/]")
                     else:
-                        print(f"[WARN] Invalid WAIT syntax: {line}")
+                        print(f"  [WARN] Invalid WAIT syntax: {cmd_line}")
                     continue
 
-            # 执行命令
+            # 捕获输出
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            captured = StringIO()
+
             try:
-                keep_running = await self.execute_command(line)
-                if not keep_running:
-                    if self.console:
-                        self.console.print("\n[yellow][SCRIPT] Script execution terminated (exit command)[/yellow]")
-                    else:
-                        print("\n[SCRIPT] Script execution terminated (exit command)")
-                    break
+                # 重定向标准输出
+                sys.stdout = captured
+                sys.stderr = captured
+
+                # 执行命令
+                keep_running = await self.execute_command(cmd_line)
+
+                # 恢复标准输出
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+
+                # 获取捕获的控制台输出
+                console_output = captured.getvalue()
+
+                # 获取 LLM 的回复（如果有）
+                llm_output = ""
+                if self.state.history and len(self.state.history) > 0:
+                    last_msg = self.state.history[-1]
+                    if last_msg.get('role') == 'assistant':
+                        llm_output = last_msg.get('content', '')
+
+                # 合并输出（控制台 + LLM）
+                last_output = console_output + "\n" + llm_output
+
             except Exception as e:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+
                 if self.console:
-                    self.console.print(f"\n[red][ERROR] Command failed at line {i+1}: {e}[/red]")
+                    self.console.print(f"[red]  [ERROR] Command failed: {e}[/]")
                 else:
-                    print(f"\n[ERROR] Command failed at line {i+1}: {e}")
-                # 继续执行后续命令
+                    print(f"  [ERROR] Command failed: {e}")
+                last_output = f"ERROR: {e}"
                 continue
 
+            # 检查下一行是否有断言
+            if i + 1 < len(commands):
+                next_cmd = commands[i + 1]['line']
+
+                # EXPECT 断言
+                if next_cmd.startswith("EXPECT "):
+                    expected = next_cmd.split(" ", 1)[1].strip()
+                    total_tests += 1
+
+                    # 检查输出（不区分大小写）
+                    if expected.lower() in last_output.lower():
+                        passed_tests += 1
+                        if self.console:
+                            self.console.print(f"[green]  [PASS] Found: '{expected}'[/]")
+                        else:
+                            print(f"  [PASS] Found: '{expected}'")
+                    else:
+                        if self.console:
+                            self.console.print(f"[red]  [FAIL] Expected '{expected}' not found[/]")
+                            self.console.print(f"[dim]  Output preview: {last_output[:200]}...[/]")
+                        else:
+                            print(f"  [FAIL] Expected '{expected}' not found")
+                            print(f"  Output preview: {last_output[:200]}...")
+
+                        # 显示测试结果
+                        if self.console:
+                            self.console.print(f"\n[bold red][TEST FAILED] {passed_tests}/{total_tests} assertions passed[/]")
+                        else:
+                            print(f"\n[TEST FAILED] {passed_tests}/{total_tests} assertions passed")
+                        return  # 停止测试
+
+                # FORBID 断言
+                elif next_cmd.startswith("FORBID "):
+                    forbidden = next_cmd.split(" ", 1)[1].strip()
+                    total_tests += 1
+
+                    if forbidden.lower() not in last_output.lower():
+                        passed_tests += 1
+                        if self.console:
+                            self.console.print(f"[green]  [PASS] Absent: '{forbidden}'[/]")
+                        else:
+                            print(f"  [PASS] Absent: '{forbidden}'")
+                    else:
+                        if self.console:
+                            self.console.print(f"[red]  [FAIL] Forbidden text '{forbidden}' found[/]")
+                        else:
+                            print(f"  [FAIL] Forbidden text '{forbidden}' found")
+
+                        if self.console:
+                            self.console.print(f"\n[bold red][TEST FAILED] {passed_tests}/{total_tests} assertions passed[/]")
+                        else:
+                            print(f"\n[TEST FAILED] {passed_tests}/{total_tests} assertions passed")
+                        return  # 停止测试
+
+            # 检查是否应该终止
+            if not keep_running:
+                if self.console:
+                    self.console.print("\n[yellow][TEST] Script terminated by exit command[/]")
+                else:
+                    print("\n[TEST] Script terminated by exit command")
+                break
+
+        # 测试完成
         if self.console:
-            self.console.print("\n[green][SCRIPT] Script execution completed[/green]")
+            self.console.print(f"\n[bold green][TEST COMPLETED] {passed_tests}/{total_tests} assertions passed[/]")
+
+            if total_tests > 0:
+                if passed_tests == total_tests:
+                    self.console.print("[bold green]All tests passed![/]")
+                else:
+                    self.console.print(f"[yellow]{total_tests - passed_tests} test(s) failed[/]")
+            else:
+                self.console.print("[dim]No assertions found (consider adding EXPECT/FORBID checks)[/]")
         else:
-            print("\n[SCRIPT] Script execution completed")
+            print(f"\n[TEST COMPLETED] {passed_tests}/{total_tests} assertions passed")
+
+            if total_tests > 0 and passed_tests == total_tests:
+                print("All tests passed!")
+            elif total_tests > 0:
+                print(f"{total_tests - passed_tests} test(s) failed")
 
     def get_prompt(self) -> str:
         """获取提示符（无 emoji）"""
