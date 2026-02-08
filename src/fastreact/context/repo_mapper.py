@@ -266,20 +266,20 @@ class RepoMapper:
             格式化的文本
         """
         if entry.is_folded:
-            return "  " * indent + f"📁 {entry.name}/ [folded]"
+            return "  " * indent + f"[DIR] {entry.name}/ [folded]"
 
         lines = []
         prefix = "  " * indent
 
         if entry.is_dir:
-            lines.append(f"{prefix}📁 {entry.name}/")
+            lines.append(f"{prefix}[DIR] {entry.name}/")
 
             # 递归格式化子条目
             for child in entry.children:
                 lines.append(self.format_map(child, indent + 1))
         else:
             # 文件
-            icon = "⭐" if entry.is_priority else "📄"
+            icon = "[*]" if entry.is_priority else "[FILE]"
             lines.append(f"{prefix}{icon} {entry.name}")
 
         return "\n".join(lines)
@@ -336,7 +336,7 @@ class RepoMapper:
             map_text = self.format_map(root_entry)
 
             # 添加元信息
-            header = f"""📁 Current Directory: {self._cwd}
+            header = f"""[DIR] Current Directory: {self._cwd}
 [STATS] Project Structure (scanned {scan_time:.2f}s, {self._count_entries(root_entry)} items):
 
 """
@@ -355,7 +355,7 @@ class RepoMapper:
 
         except Exception as e:
             logger.error(f"Failed to generate repo map: {e}")
-            return f"[ERROR] Failed to scan directory: {e}\n📁 Current: {self._cwd}"
+            return f"[ERROR] Failed to scan directory: {e}\n[DIR] Current: {self._cwd}"
 
     def change_directory(self, new_path: str) -> str:
         """
@@ -376,10 +376,10 @@ class RepoMapper:
 
             # 检查路径是否存在
             if not new_cwd.exists():
-                return f"[ERROR] Directory not found: {new_path}\n📁 Current: {self._cwd}"
+                return f"[ERROR] Directory not found: {new_path}\n[DIR] Current: {self._cwd}"
 
             if not new_cwd.is_dir():
-                return f"[ERROR] Not a directory: {new_path}\n📁 Current: {self._cwd}"
+                return f"[ERROR] Not a directory: {new_path}\n[DIR] Current: {self._cwd}"
 
             # 切换目录
             self._cwd = new_cwd
@@ -389,7 +389,7 @@ class RepoMapper:
             return self.generate_map(force_refresh=True)
 
         except Exception as e:
-            return f"[ERROR] Failed to change directory: {e}\n📁 Current: {self._cwd}"
+            return f"[ERROR] Failed to change directory: {e}\n[DIR] Current: {self._cwd}"
 
     @property
     def current_directory(self) -> str:
