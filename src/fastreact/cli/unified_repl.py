@@ -29,6 +29,7 @@ Architecture:
 import sys
 import os
 import logging
+import inspect
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -966,7 +967,7 @@ Type /help for commands""",
         # 执行命令
         if cmd in self.commands:
             handler = self.commands[cmd]
-            result = await handler(args) if asyncio.iscoroutinefunction(handler) else handler(args)
+            result = await handler(args) if inspect.iscoroutinefunction(handler) else handler(args)
             return result if isinstance(result, bool) else True
         else:
             # 当作查询执行
