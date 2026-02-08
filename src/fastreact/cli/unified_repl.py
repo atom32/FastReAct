@@ -718,11 +718,14 @@ class UnifiedAgentREPL:
 
         # 提取所有命令（保留断言，过滤普通注释）
         commands = []
-        for line in raw_lines:
+        i = 0
+        while i < len(raw_lines):
+            line = raw_lines[i]
             stripped = line.strip()
 
             # 跳过空行
             if not stripped:
+                i += 1
                 continue
 
             # 跳过普通注释，但保留断言
@@ -734,6 +737,51 @@ class UnifiedAgentREPL:
                         'original': line.rstrip('\n')
                     })
                 # 其他注释跳过
+                i += 1
+                continue
+
+            # 检测多行内容命令（with this content: 或 HEREDOC）
+            if stripped.endswith('with this content:') or 'with this HEREDOC content:' in stripped:
+                is_heredoc = 'HEREDOC' in stripped
+                # 收集多行内容
+                content_lines = [stripped]
+                i += 1
+
+                # 收集后续行
+                collected_count = 0
+                while i < len(raw_lines):
+                    next_line = raw_lines[i]
+                    next_stripped = next_line.strip()
+
+                    # HEREDOC模式：遇到HEREDOC标记行时停止
+                    if is_heredoc and next_stripped == 'HEREDOC':
+                        i += 1  # 跳过HEREDOC标记
+                        break
+
+                    # 非HEREDOC模式：遇到空行时停止
+                    if not is_heredoc and not next_stripped:
+                        break
+
+                    # 只对断言行停止收集
+                    if next_stripped.startswith('# EXPECT:') or next_stripped.startswith('# FORBID:'):
+                        break
+
+                    # 其他所有行（包括注释）都添加到内容
+                    content_lines.append(next_stripped)
+                    collected_count += 1
+                    i += 1
+
+                # 调试输出
+                import sys
+                mode = "HEREDOC" if is_heredoc else "standard"
+                print(f"[DEBUG] Multi-line command ({mode}): collected {collected_count} lines", file=sys.stderr)
+
+                # 合并为单行命令（用换行符连接）
+                multi_line_cmd = '\n'.join(content_lines)
+                commands.append({
+                    'line': multi_line_cmd,
+                    'original': multi_line_cmd
+                })
                 continue
 
             # 保留普通命令
@@ -741,6 +789,7 @@ class UnifiedAgentREPL:
                 'line': stripped,
                 'original': line.rstrip('\n')
             })
+            i += 1
 
         if not commands:
             if self.console:
@@ -753,9 +802,13 @@ class UnifiedAgentREPL:
         if self.console:
             self.console.print(f"\n[bold blue][TEST SUITE] {path.name}[/]")
             self.console.print(f"[dim]Total commands: {len(commands)}[/]\n")
+            # Debug: show command types
+            multi_cmds = sum(1 for c in commands if '\n' in c['line'])
+            self.console.print(f"[dim]Multi-line commands: {multi_cmds}[/]\n")
         else:
             print(f"\n[TEST SUITE] {path.name}")
-            print(f"Total commands: {len(commands)}\n")
+            print(f"Total commands: {len(commands)}")
+            print(f"Multi-line commands: {sum(1 for c in commands if '\n' in c['line'])}\n")
 
         # 测试统计
         total_tests = 0
@@ -1891,6 +1944,11 @@ Type /help for commands""",
             直接回答内容，如果需要工具则返回None
         """
         query_lower = query.lower().strip()
+
+        # 检测工具调用关键字（优先检查）
+        tool_keywords = ["create", "write", "delete", "run", "execute", "list", "read", "check"]
+        if any(kw in query_lower for kw in tool_keywords):
+            return None  # 需要工具，让系统处理
 
         # 简单问候
         greetings = ["你好", "嗨", "hello", "hi", "早上好", "下午好", "晚上好"]
