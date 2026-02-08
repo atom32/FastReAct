@@ -953,7 +953,13 @@ Type /help for commands""",
     # ========================================================================
 
     async def cmd_tools(self, args: str) -> bool:
-        """列出所有可用工具（包括MCP工具）"""
+        """列出所有可用工具（包括MCP工具）
+
+        未来改进：
+        - 添加 --verbose 参数，使用 pager 分页显示所有工具详情
+        - 实现 /tools filter <pattern> 来搜索特定工具
+        - 使用 Rich Paginator 实现交互式翻页
+        """
         self.print_info("正在获取工具列表...")
 
         # 获取当前agent
