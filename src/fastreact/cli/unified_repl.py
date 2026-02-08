@@ -856,7 +856,12 @@ class UnifiedAgentREPL:
                     try:
                         keep_running = await self.execute_command(cmd_line)
                     finally:
-                        console_output = self.console.end_capture()
+                        raw_console_output = self.console.end_capture()
+
+                    # 去除 ANSI 颜色代码（断言检查时需要纯文本）
+                    import re
+                    ansi_escape = re.compile(r'\x1B\[[0-9;]*m')
+                    console_output = ansi_escape.sub('', raw_console_output)
                 else:
                     # 没有 console，直接捕获 stdout
                     keep_running = await self.execute_command(cmd_line)
