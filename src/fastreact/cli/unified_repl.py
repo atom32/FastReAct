@@ -1832,6 +1832,17 @@ Type /help for commands""",
         # 检查是否显示步骤详情
         show_details = self.state.config.get("show_step_details", False)
 
+        # 创建 stream_callback 显示流式内容（实时）
+        def show_streaming_content(chunk: str):
+            """显示 LLM 流式生成的内容（实时）"""
+            if not self.console:
+                return
+
+            # 直接输出，不换行（保持流畅）
+            from rich.text import Text
+            text = Text(chunk, style="white")
+            self.console.print(text, end="")
+
         # 创建 step_callback 显示执行详情（实时）
         def show_step_detail(step: Dict[str, Any]):
             """显示执行步骤详情（实时）"""
@@ -1849,7 +1860,7 @@ Type /help for commands""",
                 for tc in tool_calls:
                     tool_name = tc.get("name", "unknown")
                     params = tc.get("parameters", {})
-                    self.console.print(f"[cyan]Step {iteration}: {tool_name}[/cyan]")
+                    self.console.print(f"\n[cyan]Step {iteration}: {tool_name}[/cyan]")
                     # 显示关键参数
                     if "command" in params:
                         cmd = params["command"].split("\n")[0][:100]  # 只显示第一行
@@ -1867,6 +1878,7 @@ Type /help for commands""",
 
             # 显示最终答案
             if step.get("is_final"):
+                self.console.print("")  # 换行
                 answer = step.get("answer", "")
                 if answer:
                     answer_preview = answer[:100].replace("\n", " ")
@@ -1878,14 +1890,17 @@ Type /help for commands""",
             result = await agent.run_async(
                 query,
                 session_context=self.state.session_context,
-                step_callback=show_step_detail
+                stream_callback=show_streaming_content,  # 流式显示
+                step_callback=show_step_detail  # 步骤详情
             )
         elif self.console:
             # 默认模式：使用 spinner（简洁输出）
-            with self.console.status("[bold green][REACT] Executing tasks...[/bold green]", spinner="dots"):
+            # 注意：spinner 模式下不使用 stream_callback，避免输出混乱
+            with self.console.status("[bold green][REACT] Thinking and executing...[/bold green]", spinner="dots"):
                 result = await agent.run_async(
                     query,
                     session_context=self.state.session_context,
+                    stream_callback=None,  # spinner 模式不流式显示
                     step_callback=None  # 不显示步骤详情
                 )
         else:
@@ -1893,6 +1908,7 @@ Type /help for commands""",
             result = await agent.run_async(
                 query,
                 session_context=self.state.session_context,
+                stream_callback=None,
                 step_callback=None
             )
 
