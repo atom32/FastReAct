@@ -395,7 +395,7 @@ class StatefulShellTool(Tool):
 
         # 添加状态信息
         cwd_display = self._current_cwd or self._get_cwd_indicator()
-        return f"""📁 {cwd_display}
+        return f"""[DIR] {cwd_display}
 $ {command}
 
 {output}
