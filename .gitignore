@@ -97,3 +97,6 @@ demo_clean.py
 nul
 test_workspace/
 models/
+
+# Third-party source code (reference only)
+nanobot-main/
