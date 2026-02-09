@@ -2,124 +2,129 @@
 
 ## Overview
 
-FastReAct 文档已精简，只保留核心和实用的文档。
+FastReAct Nano Branch - Lightweight agent framework based on nanobot architecture.
 
 ---
 
-## 核心文档 (Must Read)
+## Core Documentation (Root Level)
 
-### Getting Started
-- **[README.md](README.md)** - 项目概述，当前状态 v1.1.0-alpha
-- **[INSTALLATION.md](INSTALLATION.md)** - 安装指南
-- **[NEW_ENVIRONMENT_SETUP.md](NEW_ENVIRONMENT_SETUP.md)** - 新环境配置
-- **[CLI_TROUBLESHOOTING.md](CLI_TROUBLESHOOTING.md)** - CLI常见问题解答 ⭐ 最新
-
-### Configuration
-- **[CONFIG_PRIORITY.md](CONFIG_PRIORITY.md)** - 配置优先级系统（4 层）
+### Essential Reading
+- **[README.md](README.md)** - Project overview and features
+- **[CLAUDE.md](CLAUDE.md)** - Development rules and constraints (MUST READ for developers)
+- **[LICENSE](LICENSE)** - MIT License
 
 ### Development
-- **[CLAUDE.md](CLAUDE.md)** - 开发规则和约束 ⭐ 必读
-- **[CODING_STANDARDS.md](CODING_STANDARDS.md)** - 文档和测试管理规范 ⭐ 新增
-- **[DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)** - 开发历程
+- **[pyproject.toml](pyproject.toml)** - Project configuration and dependencies
+- **[setup.py](setup.py)** - Package setup script (version dynamically read from `__init__.py`)
+
+### Configuration
+- **[.env.example](.env.example)** - Environment variables template (copy to `.env` and configure)
 
 ---
 
-## 功能文档
+## Code Directories
 
-### Core Features
-- **[SESSION_RESUME.md](SESSION_RESUME.md)** - 会话恢复功能
-- **[MCP_INTEGRATION_SUCCESS.md](MCP_INTEGRATION_SUCCESS.md)** - MCP 集成成功记录
-- **[CONTEXT_SAVE.md](CONTEXT_SAVE.md)** - 上下文保存机制
+### Source Code (v1.1.0)
+- **[src/](src/)** - FastReAct v1.1.0 source code (128 Python files)
+  - Core engine, tools, LLM providers, MCP integration
+  - Graph Agent, Tool Graph v2, SubGraph support
+  - Context management, streaming callbacks
 
-### Technical Details
-- **[IEL.md](IEL.md)** - IEL (Interactive Execution Loop) 完整指南
-- **[IEL_TECHNICAL_DEEP_DIVE.md](IEL_TECHNICAL_DEEP_DIVE.md)** - IEL 技术深度分析
-- **[GRAPHAGENT_REPL_GUIDE.md](GRAPHAGENT_REPL_GUIDE.md)** - GraphAgent REPL 使用指南
-- **[REPL_FLOW.md](REPL_FLOW.md)** - REPL 执行流程详解
+### Nano Development
+- **[fastreact-nano/](fastreact-nano/)** - Nano version (based on nanobot)
+  - Lightweight architecture (91.9% code reduction)
+  - Progressive loading, plugin system, MessageBus pattern
+
+### Tests
+- **[tests/](tests/)** - Test suite (pytest)
+
+### Examples & Demos
+- **[examples/](examples/)** - Usage examples and demos
+- **[demos/](demos/)** - Demo scripts
+- **[scripts/](scripts/)** - Utility and development scripts
+
+### Web Interface
+- **[public/](public/)** - Web UI static files
 
 ---
 
-## 系统文档
+## Nano Architecture
 
-### Architecture
-- **[MULTI_TENANT_WORKSPACE.md](MULTI_TENANT_WORKSPACE.md)** - 多租户工作区
-- **[WORKSPACE_ISOLATION.md](WORKSPACE_ISOLATION.md)** - 工作区隔离机制
-
-### Quick Reference
-- **[DOCKER_QUICKREF.md](DOCKER_QUICKREF.md)** - Docker 快速参考
+### Research & Planning (Archived)
+See **[docs_archive/temp/](docs_archive/temp/)** for nano research:
+- `nanobot_deep_analysis.md` - nanobot architecture analysis
+- `fastreact_v2_final_plan.md` - Nano implementation plan
+- `fastreact_v2_architecture_final.md` - Architecture design
+- `nanobot_to_fastreact_migration.md` - Migration guide
+- `v2_phase_*.md` - Phase-by-phase development documentation (Phases 1-7)
 
 ---
 
-## Archived (Historical)
+## Archived Documentation
+
+### v1.0 Documentation
+- **[docs_archive/v1_docs/](docs_archive/v1_docs/)** - Archived v1.0 specific docs
+  - CHANGELOG.md, INSTALLATION.md, CLI_TROUBLESHOOTING.md
+  - IEL.md, SESSION_RESUME.md, MCP integration docs
+  - Configuration guides, technical deep dives
+  - Development logs and sprint summaries
 
 ### Bug Fixes
-- **docs_archive/bugfixes/** - Bug修复记录
+- **[docs_archive/bugfixes/](docs_archive/bugfixes/)** - Bug fix records
 
 ### Sprint Summaries
-- **docs_archive/sprints/** - Sprint总结文档
-
-### Temporary Analysis
-- **docs_archive/temp/** - 临时分析报告
-  - **v2.0 Research** - FastReAct v2.0 研究文档
-    - `nanobot_deep_analysis.md` - nanobot 深度分析（核心代码、设计模式）
-    - `fastreact_v2_final_plan.md` - v2.0 最终方案（基于 nanobot 改造）
-    - `fastreact_v2_architecture_final.md` - v2.0 架构设计（分层架构、组件设计）
-    - `nanobot_to_fastreact_migration.md` - 迁移指南（分阶段实施）
-    - `nanobot_vs_rewrite.md` - 决策分析（改造 vs 从头写）
-    - `research_phase_complete.md` - 研究阶段完成总结
+- **[docs_archive/sprints/](docs_archive/sprints/)** - Sprint summaries
 
 ---
 
-## 文档结构
+## Document Structure
 
 ```
-FastReAct/
-├── README.md                    # 项目主页
-├── DOCS_INDEX.md               # 文档导航（本文件）
-├── CLAUDE.md                   # 开发规则
-├── INSTALLATION.md             # 安装指南
-├── CLI_TROUBLESHOOTING.md      # CLI问题解答
+FastReAct/ (nano branch)
+├── README.md                    # Project overview
+├── DOCS_INDEX.md               # Documentation index (this file)
+├── CLAUDE.md                   # Development rules
+├── LICENSE                     # MIT License
 │
-├── [Feature Docs]              # 功能文档
-│   ├── SESSION_RESUME.md
-│   ├── MCP_INTEGRATION_SUCCESS.md
-│   ├── IEL.md
-│   └── GRAPHAGENT_REPL_GUIDE.md
+├── src/                        # v1.1.0 source code
+├── tests/                      # Test suite
+├── examples/                   # Usage examples
+├── demos/                      # Demo scripts
+├── scripts/                    # Utility scripts
+├── public/                     # Web UI files
 │
-├── [Technical Docs]            # 技术文档
-│   ├── CONFIG_PRIORITY.md
-│   ├── CONTEXT_SAVE.md
-│   └── REPL_FLOW.md
+├── fastreact-nano/             # Nano version (WIP)
 │
-└── docs_archive/               # 归档文档
-    ├── bugfixes/
-    ├── sprints/
-    └── temp/
+├── pyproject.toml              # Project configuration
+├── setup.py                    # Package setup
+├── .env.example                # Environment template
+│
+└── docs_archive/               # Archived documentation
+    ├── v1_docs/                # v1.0 specific docs
+    ├── temp/                   # Nano research & planning
+    ├── bugfixes/               # Bug fix records
+    └── sprints/                # Sprint summaries
 ```
 
 ---
 
-## 最新更新 (2026-02-07)
+## Documentation Principles
 
-### 新增文档
-- **CLI_TROUBLESHOOTING.md** - CLI使用常见问题
-
-### 更新内容
-- ContextMonitor显示改进（token数而非百分比）
-- Memory Flush阈值百分比化（自动适配context window）
-- 会话存储逻辑修复（更新同一文件）
-- 历史消息截断（2000字符限制）
+1. **Single Source of Truth** - Keep one canonical doc per topic
+2. **Archive, Don't Delete** - Move outdated docs to `docs_archive/`
+3. **No Emojis** - Use text markers: `[OK]`, `[ERROR]`, `[WARNING]`
+4. **UTF-8 Encoding** - Specify for all file operations
+5. **Cross-Platform** - Use `pathlib.Path`, never hardcode paths
 
 ---
 
-## 文档原则
+## Version Management
 
-1. **诚实**: 只描述已实现且验证的功能
-2. **简洁**: 避免过度详细的文档
-3. **实用**: 专注于用户真正需要的信息
-4. **可维护**: 及时归档过时文档
-5. **无Emoji**: 使用文本标记 ([OK], [ERROR], [WARNING])
+**v1.1.0**: `src/fastreact/__init__.py`
+**Read By**: `pyproject.toml`, `setup.py`
+
+**Nano**: `fastreact-nano/` (independent development)
 
 ---
 
-**最后更新**: 2026-02-07
+**Last Updated**: 2026-02-10
