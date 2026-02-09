@@ -19,18 +19,15 @@ from fastreact.core.context import ContextManager
 from fastreact.core.tools import Tool, ToolRegistry
 
 # Gateway exports
-from fastreact.gateway.server import GatewayServer
+from fastreact.gateway.server import GatewayServer, run_gateway
 from fastreact.gateway.session import Session, SessionManager
 
 # Channel exports
-from fastreact.channels.base import Channel, ChannelMeta
-from fastreact.channels.registry import ChannelRegistry
+from fastreact.channels.base import Channel, ChannelMeta, CLIChannel
+from fastreact.channels.registry import ChannelRegistry, get_channel_registry, list_channels
 
 # Provider exports
 from fastreact.providers.litellm import LiteLLMProvider
-
-# Cache exports
-from fastreact.cache.lru import LRUCache
 
 __all__ = [
     # Version
@@ -45,14 +42,16 @@ __all__ = [
     "ToolRegistry",
     # Gateway
     "GatewayServer",
+    "run_gateway",
     "Session",
     "SessionManager",
     # Channels
     "Channel",
     "ChannelMeta",
+    "CLIChannel",
     "ChannelRegistry",
+    "get_channel_registry",
+    "list_channels",
     # Providers
     "LiteLLMProvider",
-    # Cache
-    "LRUCache",
 ]
