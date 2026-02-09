@@ -158,15 +158,22 @@ class FileContextStore(ContextStore):
         if not path.exists():
             return None
 
+        # Read file in thread
+        def read_file():
+            with open(path, "r", encoding="utf-8") as f:
+                return f.readlines()
+
+        lines = await asyncio.to_thread(read_file)
+
         messages = []
-        async with asyncio.to_thread.open(path, "r", encoding="utf-8") as f:
-            async for line in f:
-                if line.strip():
-                    try:
-                        msg = json.loads(line)
-                        messages.append(msg)
-                    except json.JSONDecodeError:
-                        continue
+        for line in lines:
+            line = line.strip()
+            if line:
+                try:
+                    msg = json.loads(line)
+                    messages.append(msg)
+                except json.JSONDecodeError:
+                    continue
 
         return Context(
             messages=messages,
@@ -177,18 +184,26 @@ class FileContextStore(ContextStore):
         """Save context to file (overwrite)"""
         path = self._get_session_path(context.session_id)
 
-        async with asyncio.to_thread.open(path, "w", encoding="utf-8") as f:
-            for msg in context.messages:
-                line = json.dumps(msg, ensure_ascii=False)
-                await f.write(line + "\n")
+        # Write file in thread
+        def write_file():
+            with open(path, "w", encoding="utf-8") as f:
+                for msg in context.messages:
+                    line = json.dumps(msg, ensure_ascii=False)
+                    f.write(line + "\n")
+
+        await asyncio.to_thread(write_file)
 
     async def append(self, session_id: str, message: dict[str, Any]):
         """Append message to session file"""
         path = self._get_session_path(session_id)
 
-        async with asyncio.to_thread.open(path, "a", encoding="utf-8") as f:
-            line = json.dumps(message, ensure_ascii=False)
-            await f.write(line + "\n")
+        # Append to file in thread
+        def append_file():
+            with open(path, "a", encoding="utf-8") as f:
+                line = json.dumps(message, ensure_ascii=False)
+                f.write(line + "\n")
+
+        await asyncio.to_thread(append_file)
 
 
 class ContextManager:
