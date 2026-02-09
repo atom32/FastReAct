@@ -60,6 +60,13 @@ FastReAct 文档已精简，只保留核心和实用的文档。
 
 ### Temporary Analysis
 - **docs_archive/temp/** - 临时分析报告
+  - **v2.0 Research** - FastReAct v2.0 研究文档
+    - `nanobot_deep_analysis.md` - nanobot 深度分析（核心代码、设计模式）
+    - `fastreact_v2_final_plan.md` - v2.0 最终方案（基于 nanobot 改造）
+    - `fastreact_v2_architecture_final.md` - v2.0 架构设计（分层架构、组件设计）
+    - `nanobot_to_fastreact_migration.md` - 迁移指南（分阶段实施）
+    - `nanobot_vs_rewrite.md` - 决策分析（改造 vs 从头写）
+    - `research_phase_complete.md` - 研究阶段完成总结
 
 ---
 
