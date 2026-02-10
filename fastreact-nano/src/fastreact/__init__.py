@@ -20,6 +20,14 @@ from fastreact.core.callbacks import CallbackManager
 from fastreact.core.react import ReActCore, Phase, StepEvent
 from fastreact.core.context import ContextManager
 from fastreact.core.tools import Tool, ToolRegistry
+from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig
+from fastreact.core.streaming import (
+    StreamChunk,
+    StreamCallback,
+    PrintStreamCallback,
+    CollectStreamCallback,
+    stream_with_callback,
+)
 
 # Gateway exports
 from fastreact.gateway.server import GatewayServer, run_gateway
@@ -57,6 +65,17 @@ __all__ = [
     "ReActCore",
     "Phase",
     "StepEvent",
+    # Config
+    "Config",
+    "LLMConfig",
+    "ToolConfig",
+    "ReactConfig",
+    # Streaming
+    "StreamChunk",
+    "StreamCallback",
+    "PrintStreamCallback",
+    "CollectStreamCallback",
+    "stream_with_callback",
     # Gateway
     "GatewayServer",
     "run_gateway",
