@@ -48,6 +48,16 @@ from fastreact.tools import (
     EditFileTool,
 )
 
+# Skill exports
+from fastreact.skills import (
+    Skill,
+    SkillMetadata,
+    SkillLoader,
+    SkillRegistry,
+    SkillParser,
+    ParsedSkill,
+)
+
 __all__ = [
     # Version
     "__version__",
@@ -95,4 +105,11 @@ __all__ = [
     "WriteFileTool",
     "ExecTool",
     "EditFileTool",
+    # Skills
+    "Skill",
+    "SkillMetadata",
+    "SkillLoader",
+    "SkillRegistry",
+    "SkillParser",
+    "ParsedSkill",
 ]
