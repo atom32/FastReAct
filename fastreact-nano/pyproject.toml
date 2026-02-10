@@ -5,34 +5,57 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fastreact-nano"
 version = "2.0.0-alpha"
-description = "Lightweight multi-channel ReAct agent framework"
-readme = "README.md"
+description = "Lightweight ReAct agent with kernel + adapters architecture"
+readme = "README_NANO.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "FastReAct Team", email = "contact@fastreact.dev"}
 ]
-keywords = ["react", "agent", "llm", "ai", "multi-channel", "lite"]
+keywords = ["react", "agent", "llm", "ai", "lite", "fast"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: MIT",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
+# Core dependencies - minimal!
 dependencies = [
     "litellm>=1.0.0",
-    "fastapi>=0.104.0",
-    "websockets>=12.0",
-    "pydantic>=2.0.0",
     "pyyaml>=6.0",
 ]
 
+# Optional adapters - install only what you need
 [project.optional-dependencies]
+# CLI adapter
+cli = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+# HTTP adapter
+http = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+]
+
+# WebSocket adapter
+ws = [
+    "websockets>=12.0",
+]
+
+# Full gateway (HTTP + WebSocket + sessions)
+gateway = [
+    "fastapi>=0.104.0",
+    "websockets>=12.0",
+    "aiofiles>=23.0.0",
+]
+
+# Development tools
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
@@ -41,18 +64,19 @@ dev = [
     "mypy>=1.0.0",
 ]
 
-channels = [
-    "python-telegram-bot>=20.0",
-]
-
+# Everything
 all = [
-    "fastreact-nano[dev,channels]",
+    "fastreact-nano[cli,gateway,dev]",
 ]
 
 [project.urls]
 Homepage = "https://github.com/atom32/FastReAct"
 Repository = "https://github.com/atom32/FastReAct"
 Issues = "https://github.com/atom32/FastReAct/issues"
+
+[project.scripts]
+# CLI command (when cli adapter is installed)
+fastreact = "fastreact.adapters.cli:app"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -62,7 +86,7 @@ where = ["src"]
 
 [tool.black]
 line-length = 100
-target-version = ['py311']
+target-version = ['py11']
 
 [tool.mypy]
 python_version = "3.11"
