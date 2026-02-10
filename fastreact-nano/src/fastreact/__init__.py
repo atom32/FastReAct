@@ -1,12 +1,13 @@
 """
-FastReAct Nano - 轻量级多渠道 ReAct 智能体框架
+FastReAct Nano v2.0 - 轻量级高级 ReAct 智能体核心
 
 核心特性:
+- 双层循环: Moltbot 风格的内层/外层循环
+- 转向消息: 实时干预能力
+- 后续消息: 异步任务延续
+- 极简工具: Pi 哲学（4个核心工具）
 - Gateway 架构: WebSocket 实时通信
-- 多渠道支持: Telegram, WeChat, CLI, HTTP
 - Token 监控: 智能上下文管理
-- 插件系统: 技能/工具热加载
-- 文件存储: 简单可靠的 JSONL
 """
 
 __version__ = "2.0.0-alpha"
@@ -14,7 +15,9 @@ __author__ = "FastReAct Team"
 
 # Core exports
 from fastreact.core.bus import MessageBus, InboundMessage, OutboundMessage
-from fastreact.core.react import ReActCore
+from fastreact.core.messages import Message, MessageQueue
+from fastreact.core.callbacks import CallbackManager
+from fastreact.core.react import ReActCore, Phase, StepEvent
 from fastreact.core.context import ContextManager
 from fastreact.core.tools import Tool, ToolRegistry
 
@@ -32,14 +35,20 @@ from fastreact.providers.litellm import LiteLLMProvider
 __all__ = [
     # Version
     "__version__",
-    # Core
+    # Core v1
     "MessageBus",
     "InboundMessage",
     "OutboundMessage",
-    "ReActCore",
     "ContextManager",
     "Tool",
     "ToolRegistry",
+    # Core v2.0
+    "Message",
+    "MessageQueue",
+    "CallbackManager",
+    "ReActCore",
+    "Phase",
+    "StepEvent",
     # Gateway
     "GatewayServer",
     "run_gateway",
