@@ -1,24 +1,21 @@
 """
-FastReAct Nano v2.0 - 轻量级高级 ReAct 智能体核心
+FastReAct Nano v2.0 - 真正独立的AI Agent
 
-核心特性:
-- 双层循环: Moltbot 风格的内层/外层循环
+基于Nanobot哲学的极简ReAct Agent:
+- 双层循环: Moltbot风格的内层/外层循环
 - 转向消息: 实时干预能力
 - 后续消息: 异步任务延续
-- 极简工具: Pi 哲学（4个核心工具）
-- Gateway 架构: WebSocket 实时通信
-- Token 监控: 智能上下文管理
+- 极简工具: Pi哲学(4个核心工具)
+- Skills系统: Markdown渐进式披露
 """
 
 __version__ = "2.0.0-alpha"
 __author__ = "FastReAct Team"
 
-# Core exports
-from fastreact.core.bus import MessageBus, InboundMessage, OutboundMessage
+# Core v2.0
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.callbacks import CallbackManager
 from fastreact.core.react import ReActCore, Phase, StepEvent
-from fastreact.core.context import ContextManager
 from fastreact.core.tools import Tool, ToolRegistry
 from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig
 from fastreact.core.streaming import (
@@ -29,18 +26,10 @@ from fastreact.core.streaming import (
     stream_with_callback,
 )
 
-# Gateway exports
-from fastreact.gateway.server import GatewayServer, run_gateway
-from fastreact.gateway.session import Session, SessionManager
-
-# Channel exports
-from fastreact.channels.base import Channel, ChannelMeta, CLIChannel
-from fastreact.channels.registry import ChannelRegistry, get_channel_registry, list_channels
-
-# Provider exports
+# Provider
 from fastreact.providers.litellm import LiteLLMProvider
 
-# Tool exports
+# Tools
 from fastreact.tools import (
     ReadFileTool,
     WriteFileTool,
@@ -48,7 +37,7 @@ from fastreact.tools import (
     EditFileTool,
 )
 
-# Skill exports
+# Skills
 from fastreact.skills import (
     Skill,
     SkillMetadata,
@@ -58,23 +47,21 @@ from fastreact.skills import (
     ParsedSkill,
 )
 
+# Agent
+from fastreact.agent import Agent, ask, ask_sync
+
 __all__ = [
     # Version
     "__version__",
-    # Core v1
-    "MessageBus",
-    "InboundMessage",
-    "OutboundMessage",
-    "ContextManager",
-    "Tool",
-    "ToolRegistry",
-    # Core v2.0
+    # Core
     "Message",
     "MessageQueue",
     "CallbackManager",
     "ReActCore",
     "Phase",
     "StepEvent",
+    "Tool",
+    "ToolRegistry",
     # Config
     "Config",
     "LLMConfig",
@@ -86,19 +73,7 @@ __all__ = [
     "PrintStreamCallback",
     "CollectStreamCallback",
     "stream_with_callback",
-    # Gateway
-    "GatewayServer",
-    "run_gateway",
-    "Session",
-    "SessionManager",
-    # Channels
-    "Channel",
-    "ChannelMeta",
-    "CLIChannel",
-    "ChannelRegistry",
-    "get_channel_registry",
-    "list_channels",
-    # Providers
+    # Provider
     "LiteLLMProvider",
     # Tools
     "ReadFileTool",
@@ -112,4 +87,8 @@ __all__ = [
     "SkillRegistry",
     "SkillParser",
     "ParsedSkill",
+    # Agent
+    "Agent",
+    "ask",
+    "ask_sync",
 ]
