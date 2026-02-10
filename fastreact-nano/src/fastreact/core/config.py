@@ -151,15 +151,122 @@ class Config:
         Load configuration from file or environment
 
         Args:
-            config_path: Path to config file (JSON/YAML). If None, uses environment.
+            config_path: Path to config file (JSON). If None, tries default locations.
+
+        Returns:
+            Config instance with loaded settings
         """
+        import json
+        from pathlib import Path as LibPath
+
+        # Default config locations to try
+        if config_path is None:
+            default_paths = [
+                LibPath.home() / ".fastreact" / "config.json",
+                LibPath.cwd() / ".fastreact" / "config.json",
+                LibPath.cwd() / "config.json",
+            ]
+            for path in default_paths:
+                if path.exists():
+                    config_path = path
+                    break
+
         if config_path and config_path.exists():
-            import json
             with open(config_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # TODO: Implement proper deserialization
-            return cls()
 
+            # Parse v1 config format (multi-provider)
+            llm_config = LLMConfig()
+            tools_config = ToolConfig()
+            react_config = ReactConfig()
+
+            # Extract LLM configuration
+            if "llm" in data:
+                llm_data = data["llm"]
+
+                # v1 format: has providers dict
+                if "providers" in llm_data:
+                    providers = llm_data["providers"]
+                    default_provider = llm_data.get("default_provider", "")
+
+                    # Find enabled provider
+                    for provider_name, provider_data in providers.items():
+                        is_enabled = provider_data.get("enabled", True)
+
+                        # Check if this is the default or first enabled provider
+                        if provider_name == default_provider or is_enabled:
+                            # Extract API key
+                            api_key = provider_data.get("api_key")
+                            if not api_key and "api_key_env" in provider_data:
+                                # Read from environment variable
+                                api_key = os.getenv(provider_data["api_key_env"])
+
+                            # Convert model name to LiteLLM format
+                            model = provider_data.get("model", "gpt-4o-mini")
+
+                            # Map provider names to LiteLLM format
+                            provider_map = {
+                                "siliconflow": "openai",  # SiliconFlow uses OpenAI-compatible API
+                                "openai": "openai",
+                                "anthropic": "anthropic",
+                                "deepseek": "deepseek",
+                                "ollama": "openai",  # Ollama uses OpenAI-compatible
+                            }
+
+                            # For SiliconFlow, use the model as-is (it's a DeepSeek model hosted there)
+                            # For others, add provider prefix
+                            if provider_name == "siliconflow":
+                                # SiliconFlow hosts DeepSeek, use model directly
+                                litellm_model = model
+                            elif provider_name in provider_map and "/" not in model:
+                                litellm_model = f"{provider_map[provider_name]}/{model}"
+                            else:
+                                litellm_model = model
+
+                            llm_config = LLMConfig(
+                                model=litellm_model,
+                                api_base=provider_data.get("base_url"),
+                                api_key=api_key,
+                                temperature=provider_data.get("temperature", 0.7),
+                                max_tokens=provider_data.get("max_tokens", 4096),
+                            )
+                            break
+                else:
+                    # Simple format (direct config)
+                    llm_config = LLMConfig(
+                        model=llm_data.get("model", "gpt-4o-mini"),
+                        api_base=llm_data.get("api_base"),
+                        api_key=llm_data.get("api_key"),
+                        temperature=llm_data.get("temperature", 0.7),
+                        max_tokens=llm_data.get("max_tokens", 4096),
+                    )
+
+            # Extract tools configuration
+            if "tools" in data:
+                tools_data = data["tools"]
+                tools_config = ToolConfig(
+                    max_file_size=tools_data.get("max_file_size", 1024*1024),
+                    protected_paths=tools_data.get("protected_paths", []),
+                    exec_timeout=tools_data.get("shell_timeout", 30),
+                    working_dir=Path(tools_data.get("allowed_dir")) if tools_data.get("allowed_dir") else None,
+                )
+
+            # Extract react configuration
+            if "react" in data:
+                react_data = data["react"]
+                react_config = ReactConfig(
+                    max_iterations=react_data.get("max_iterations", 20),
+                    enable_steering=react_data.get("enable_steering", True),
+                    enable_followup=react_data.get("enable_followup", True),
+                )
+
+            return cls(
+                llm=llm_config,
+                tools=tools_config,
+                react=react_config,
+            )
+
+        # Fallback to environment variables
         return cls.from_env()
 
     def save(self, config_path: Path) -> None:

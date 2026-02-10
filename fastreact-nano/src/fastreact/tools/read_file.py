@@ -133,12 +133,8 @@ class ReadFileTool(Tool):
             else:
                 truncated = False
 
-            # Join lines with line numbers
-            result = []
-            for i, line in enumerate(lines, 1):
-                result.append(f"{i:6d}\u2192{line}")
-
-            content = "".join(result)
+            # Join lines without line numbers (for LLM consumption)
+            content = "".join(lines)
 
             if truncated:
                 content += f"\n[... Truncated at {self._max_lines} lines ...]"

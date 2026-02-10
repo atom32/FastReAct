@@ -147,20 +147,26 @@ class ReActCore:
                         # Add to conversation
                         llm_messages.append(msg.to_llm_format())
 
-                # 2. Inject filesystem memory if enabled (Ghost Map)
+                # 2. Build messages for LLM call (inject system messages at beginning)
+                messages_for_llm = []
+
+                # 2a. Inject filesystem memory if enabled (Ghost Map) - add first as system message
                 if self._filesystem_memory:
                     memory_injection = self._filesystem_memory.get_prompt_injection()
                     if memory_injection:
-                        # Add as system message before LLM call
-                        llm_messages.append({
+                        # Prepend system message at the beginning
+                        messages_for_llm.append({
                             "role": "system",
                             "content": memory_injection,
                         })
 
+                # 2b. Add all conversation messages
+                messages_for_llm.extend(llm_messages)
+
                 # 3. Call LLM
                 try:
                     response = await self._llm.chat(
-                        llm_messages,
+                        messages_for_llm,
                         tools=self._tools.schemas(),
                     )
                 except Exception as e:
@@ -184,6 +190,25 @@ class ReActCore:
 
                 # 5. Execute tools
                 if has_more_tool_calls:
+                    # IMPORTANT: Add assistant message with tool_calls to history
+                    # This is required for OpenAI API format
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": response.content or "",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": str(tc.params),
+                                },
+                            }
+                            for tc in response.tool_calls
+                        ],
+                    }
+                    llm_messages.append(assistant_msg)
+
                     await self._emit(Phase.ACTION)
 
                     for tool_call in response.tool_calls:
@@ -336,6 +361,15 @@ class ReActCore:
                                 error=error_msg,
                                 tool_call=tool_call,
                             )
+
+                else:
+                    # No tool calls - add assistant's response to history
+                    # This is important for multi-turn conversations
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": response.content or "",
+                    }
+                    llm_messages.append(assistant_msg)
 
                 # 6. Check for steering messages (real-time intervention)
                 steering = await self._callbacks.get_steering_messages()

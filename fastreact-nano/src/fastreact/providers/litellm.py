@@ -72,17 +72,44 @@ class LiteLLMProvider:
         self._temperature = temperature
         self._max_tokens = max_tokens
 
-        # Lazy import of litellm
-        try:
-            import litellm
-            self._litellm = litellm
-        except ImportError:
-            raise ImportError(
-                "litellm is required. Install with: pip install litellm"
-            )
+        # Detect if using custom OpenAI-compatible endpoint (like SiliconFlow)
+        self._use_openai_client = api_base is not None
 
-        # Configure litellm
-        self._configure_litellm()
+        if self._use_openai_client:
+            # Use OpenAI client directly for custom endpoints (like v1)
+            try:
+                from openai import AsyncOpenAI
+                import httpx
+
+                # Create HTTP client
+                self._http_client = httpx.AsyncClient(
+                    timeout=120.0,
+                    limits=httpx.Limits(max_connections=100),
+                )
+
+                # Create OpenAI client with custom base_url
+                self._openai_client = AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=api_base,
+                    http_client=self._http_client,
+                )
+            except ImportError:
+                raise ImportError(
+                    "openai>=1.0.0 and httpx>=0.25.0 required for custom endpoints. "
+                    "Install with: pip install openai httpx"
+                )
+        else:
+            # Use LiteLLM for standard providers
+            try:
+                import litellm
+                self._litellm = litellm
+            except ImportError:
+                raise ImportError(
+                    "litellm is required. Install with: pip install litellm"
+                )
+
+            # Configure litellm
+            self._configure_litellm()
 
     def _detect_model(self) -> str:
         """Detect model from environment variables"""
@@ -135,6 +162,51 @@ class LiteLLMProvider:
         """
         model = model or self._model
 
+        # Use OpenAI client for custom endpoints (like SiliconFlow)
+        if self._use_openai_client:
+            return await self._chat_openai(messages, tools, model, **kwargs)
+
+        # Use LiteLLM for standard providers
+        return await self._chat_litellm(messages, tools, model, **kwargs)
+
+    async def _chat_openai(
+        self,
+        messages: list[dict[str, str]],
+        tools: Optional[list[dict]],
+        model: str,
+        **kwargs,
+    ) -> LLMResponse:
+        """Chat using OpenAI client directly (for custom endpoints like SiliconFlow)"""
+        # Build parameters
+        params = {
+            "model": model,
+            "messages": messages,
+            "temperature": self._temperature,
+            "max_tokens": self._max_tokens,
+        }
+
+        # Add tools if provided
+        if tools:
+            params["tools"] = tools
+            params["tool_choice"] = "auto"
+
+        # Add extra kwargs
+        params.update(kwargs)
+
+        # Call OpenAI client
+        response = await self._openai_client.chat.completions.create(**params)
+
+        # Parse OpenAI response
+        return self._parse_openai_response(response, model)
+
+    async def _chat_litellm(
+        self,
+        messages: list[dict[str, str]],
+        tools: Optional[list[dict]],
+        model: str,
+        **kwargs,
+    ) -> LLMResponse:
+        """Chat using LiteLLM (for standard providers)"""
         # Build parameters
         params = {
             "model": model,
@@ -205,6 +277,45 @@ class LiteLLMProvider:
             },
         )
 
+    def _parse_openai_response(self, response: Any, model: str) -> LLMResponse:
+        """Parse OpenAI client response"""
+        # Get first choice
+        choice = response.choices[0]
+        message = choice.message
+
+        # Get content
+        content = message.content or ""
+
+        # Get tool calls
+        tool_calls = []
+        if hasattr(message, 'tool_calls') and message.tool_calls:
+            for tc in message.tool_calls:
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        params=self._parse_function_args(
+                            tc.function.arguments
+                        ),
+                    )
+                )
+
+        # Get usage
+        usage = {}
+        if hasattr(response, 'usage') and response.usage:
+            usage = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
+            model=model,
+            usage=usage,
+        )
+
     def _parse_function_args(self, arguments: str) -> dict[str, Any]:
         """Parse JSON function arguments"""
         import json
@@ -235,7 +346,49 @@ class LiteLLMProvider:
         """
         model = model or self._model
 
-        # Build parameters
+        # Use OpenAI client for custom endpoints
+        if self._use_openai_client:
+            async for chunk in self._stream_openai(messages, tools, model, **kwargs):
+                yield chunk
+        else:
+            async for chunk in self._stream_litellm(messages, tools, model, **kwargs):
+                yield chunk
+
+    async def _stream_openai(
+        self,
+        messages: list[dict[str, str]],
+        tools: Optional[list[dict]],
+        model: str,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        """Stream using OpenAI client"""
+        params = {
+            "model": model,
+            "messages": messages,
+            "temperature": self._temperature,
+            "max_tokens": self._max_tokens,
+            "stream": True,
+            **kwargs,
+        }
+
+        if tools:
+            params["tools"] = tools
+            params["tool_choice"] = "auto"
+
+        stream = await self._openai_client.chat.completions.create(**params)
+
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    async def _stream_litellm(
+        self,
+        messages: list[dict[str, str]],
+        tools: Optional[list[dict]],
+        model: str,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        """Stream using LiteLLM"""
         params = {
             "model": model,
             "messages": messages,
@@ -254,7 +407,6 @@ class LiteLLMProvider:
         if self._api_base:
             params["api_base"] = self._api_base
 
-        # Stream response
         response = await asyncio.to_thread(
             self._litellm.completion,
             **params,
