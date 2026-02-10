@@ -15,6 +15,16 @@ __author__ = "FastReAct Team"
 # Core v2.0
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.callbacks import CallbackManager
+from fastreact.core.context import ContextMonitor, ContextStats, FilesystemMemory, FilesystemNode
+from fastreact.core.safety import (
+    SafetyLevel,
+    SafetyDecision,
+    SafetyPolicy,
+    ConfirmationCallback,
+    CLIConfirmationCallback,
+    AlwaysAllowCallback,
+    AlwaysDenyCallback,
+)
 from fastreact.core.react import ReActCore, Phase, StepEvent
 from fastreact.core.tools import Tool, ToolRegistry
 from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig
@@ -57,6 +67,17 @@ __all__ = [
     "Message",
     "MessageQueue",
     "CallbackManager",
+    "ContextMonitor",
+    "ContextStats",
+    "FilesystemMemory",
+    "FilesystemNode",
+    "SafetyLevel",
+    "SafetyDecision",
+    "SafetyPolicy",
+    "ConfirmationCallback",
+    "CLIConfirmationCallback",
+    "AlwaysAllowCallback",
+    "AlwaysDenyCallback",
     "ReActCore",
     "Phase",
     "StepEvent",

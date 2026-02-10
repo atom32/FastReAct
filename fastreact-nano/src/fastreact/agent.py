@@ -16,6 +16,8 @@ from fastreact.core.config import Config
 from fastreact.core.tools import ToolRegistry
 from fastreact.core.callbacks import CallbackManager
 from fastreact.core.messages import Message
+from fastreact.core.context import ContextMonitor, FilesystemMemory
+from fastreact.core.safety import SafetyPolicy, CLIConfirmationCallback
 from fastreact.core.react import ReActCore
 from fastreact.skills import SkillRegistry
 from fastreact.providers.litellm import LiteLLMProvider
@@ -80,11 +82,40 @@ class Agent:
                 followup_callback=QueueFollowUpCallback(),
             )
 
+        # Initialize context monitor
+        self._context_monitor = ContextMonitor(
+            max_tokens=self._config.react.max_context_tokens,
+            warning_threshold=self._config.react.context_warning_threshold,
+            max_tool_output_chars=self._config.react.max_tool_output_chars,
+        )
+
+        # Initialize filesystem memory (Ghost Map)
+        self._filesystem_memory = None
+        if self._config.react.enable_filesystem_memory:
+            self._filesystem_memory = FilesystemMemory(
+                max_tree_depth=self._config.react.max_tree_depth,
+                max_files_per_dir=self._config.react.max_files_per_dir,
+            )
+
+        # Initialize safety policy (Guardrails)
+        self._safety_policy = None
+        self._confirmation_callback = None
+        if self._config.react.enable_safety:
+            self._safety_policy = SafetyPolicy(
+                strict_mode=self._config.react.strict_mode,
+            )
+            # Use CLI confirmation by default
+            self._confirmation_callback = CLIConfirmationCallback()
+
         # Initialize ReAct core
         self._core = ReActCore(
             llm=self._llm,
             tools=self._tools,
             callbacks=self._callbacks,
+            context_monitor=self._context_monitor,
+            filesystem_memory=self._filesystem_memory,
+            safety_policy=self._safety_policy,
+            confirmation_callback=self._confirmation_callback,
             max_iterations=self._config.react.max_iterations,
         )
 

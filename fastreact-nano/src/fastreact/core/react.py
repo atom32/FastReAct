@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.tools import ToolRegistry, ValidationError
 from fastreact.core.callbacks import CallbackManager
+from fastreact.core.context import ContextMonitor, FilesystemMemory
+from fastreact.core.safety import SafetyPolicy, ConfirmationCallback, CLIConfirmationCallback
 from fastreact.providers.litellm import LiteLLMProvider, LLMResponse, ToolCall
 
 
@@ -61,6 +63,10 @@ class ReActCore:
         llm: LiteLLMProvider,
         tools: ToolRegistry,
         callbacks: Optional[CallbackManager] = None,
+        context_monitor: Optional[ContextMonitor] = None,
+        filesystem_memory: Optional[FilesystemMemory] = None,
+        safety_policy: Optional[SafetyPolicy] = None,
+        confirmation_callback: Optional[ConfirmationCallback] = None,
         max_iterations: int = 20,
     ):
         """
@@ -70,11 +76,19 @@ class ReActCore:
             llm: LLM provider
             tools: Tool registry
             callbacks: Callback manager for steering/follow-up
+            context_monitor: Context monitor for token management
+            filesystem_memory: Filesystem memory (Ghost Map)
+            safety_policy: Safety policy for guardrails
+            confirmation_callback: User confirmation callback
             max_iterations: Maximum loop iterations
         """
         self._llm = llm
         self._tools = tools
         self._callbacks = callbacks or CallbackManager()
+        self._context_monitor = context_monitor or ContextMonitor()
+        self._filesystem_memory = filesystem_memory
+        self._safety_policy = safety_policy
+        self._confirmation_callback = confirmation_callback
         self._max_iterations = max_iterations
 
         # Event handlers
@@ -113,6 +127,9 @@ class ReActCore:
         """
         pending_messages = MessageQueue()
 
+        # Convert initial messages to LLM format
+        llm_messages = [msg.to_llm_format() if isinstance(msg, Message) else msg for msg in messages]
+
         # === Outer loop: Process follow-up messages ===
         while True:
             has_more_tool_calls = True
@@ -128,12 +145,22 @@ class ReActCore:
                             await self._emit(Phase.STEERING, content=msg.content)
 
                         # Add to conversation
-                        messages.append(msg.to_llm_format())
+                        llm_messages.append(msg.to_llm_format())
 
-                # 2. Call LLM
+                # 2. Inject filesystem memory if enabled (Ghost Map)
+                if self._filesystem_memory:
+                    memory_injection = self._filesystem_memory.get_prompt_injection()
+                    if memory_injection:
+                        # Add as system message before LLM call
+                        llm_messages.append({
+                            "role": "system",
+                            "content": memory_injection,
+                        })
+
+                # 3. Call LLM
                 try:
                     response = await self._llm.chat(
-                        messages,
+                        llm_messages,
                         tools=self._tools.schemas(),
                     )
                 except Exception as e:
@@ -167,48 +194,142 @@ class ReActCore:
 
                         # Execute tool
                         try:
+                            # Safety check (guardrails)
+                            if self._safety_policy:
+                                decision = self._safety_policy.check(
+                                    tool_call.name,
+                                    tool_call.params,
+                                )
+
+                                # Log the decision
+                                self._safety_policy.log(
+                                    tool_call.name,
+                                    tool_call.params,
+                                    decision,
+                                )
+
+                                # Check if forbidden
+                                if not decision.should_allow:
+                                    error_result = (
+                                        f"[FORBIDDEN] Operation blocked by safety policy.\n"
+                                        f"Reason: {decision.reason}\n"
+                                        f"Pattern: {decision.pattern_matched}"
+                                    )
+                                    tool_msg = Message.tool(
+                                        name=tool_call.name,
+                                        result=error_result,
+                                        call_id=tool_call.id,
+                                    )
+                                    llm_messages.append(tool_msg.to_llm_format())
+
+                                    await self._emit(
+                                        Phase.ERROR,
+                                        error=error_result,
+                                        tool_call=tool_call,
+                                    )
+                                    continue  # Skip execution
+
+                                # Check if requires confirmation
+                                if decision.should_ask and self._confirmation_callback:
+                                    user_approved = await self._confirmation_callback.request_confirmation(
+                                        tool_call.name,
+                                        tool_call.params,
+                                        decision.reason,
+                                    )
+
+                                    # Update audit log with user decision
+                                    self._safety_policy.log(
+                                        tool_call.name,
+                                        tool_call.params,
+                                        decision,
+                                        user_approved=user_approved,
+                                    )
+
+                                    if not user_approved:
+                                        deny_result = (
+                                            f"[DENIED] Operation blocked by user.\n"
+                                            f"Reason: {decision.reason}"
+                                        )
+                                        tool_msg = Message.tool(
+                                            name=tool_call.name,
+                                            result=deny_result,
+                                            call_id=tool_call.id,
+                                        )
+                                        llm_messages.append(tool_msg.to_llm_format())
+
+                                        await self._emit(
+                                            Phase.ERROR,
+                                            error=deny_result,
+                                            tool_call=tool_call,
+                                        )
+                                        continue  # Skip execution
+
                             result = await self._tools.execute(
                                 tool_call.name,
                                 tool_call.params,
                             )
 
+                            # Update filesystem memory (Ghost Map)
+                            if self._filesystem_memory:
+                                self._filesystem_memory.update_from_tool_call(
+                                    tool_call.name,
+                                    tool_call.params,
+                                    result,
+                                )
+
+                            # Apply context truncation
+                            safe_result = self._context_monitor.truncate_tool_output(
+                                result,
+                                tool_name=tool_call.name,
+                            )
+
                             # Add tool result message
                             tool_msg = Message.tool(
                                 name=tool_call.name,
-                                result=result,
+                                result=safe_result,
                                 call_id=tool_call.id,
                             )
-                            messages.append(tool_msg.to_llm_format())
+                            llm_messages.append(tool_msg.to_llm_format())
 
                             await self._emit(
                                 Phase.OBSERVE,
-                                content=result,
+                                content=safe_result,
                                 tool_call=tool_call,
                             )
 
                         except ValidationError as e:
                             error_msg = f"Validation error: {e}"
+                            # Apply context truncation to errors too
+                            safe_error = self._context_monitor.truncate_tool_output(
+                                error_msg,
+                                tool_name=tool_call.name,
+                            )
                             tool_msg = Message.tool(
                                 name=tool_call.name,
-                                result=error_msg,
+                                result=safe_error,
                                 call_id=tool_call.id,
                             )
-                            messages.append(tool_msg.to_llm_format())
+                            llm_messages.append(tool_msg.to_llm_format())
 
                             await self._emit(
                                 Phase.ERROR,
-                                error=error_msg,
+                                error=safe_error,
                                 tool_call=tool_call,
                             )
 
                         except Exception as e:
                             error_msg = f"Tool execution error: {str(e)}"
+                            # Apply context truncation to errors too
+                            safe_error = self._context_monitor.truncate_tool_output(
+                                error_msg,
+                                tool_name=tool_call.name,
+                            )
                             tool_msg = Message.tool(
                                 name=tool_call.name,
-                                result=error_msg,
+                                result=safe_error,
                                 call_id=tool_call.id,
                             )
-                            messages.append(tool_msg.to_llm_format())
+                            llm_messages.append(tool_msg.to_llm_format())
 
                             await self._emit(
                                 Phase.ERROR,
@@ -239,7 +360,7 @@ class ReActCore:
 
         # 8. Return final response
         # Find last assistant message
-        for msg in reversed(messages):
+        for msg in reversed(llm_messages):
             if msg.get("role") == "assistant":
                 return msg.get("content", "")
 

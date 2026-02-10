@@ -67,6 +67,21 @@ class ReactConfig:
     enable_followup: bool = True
     steering_file: Path = field(default_factory=lambda: Path.cwd() / ".steering.jsonl")
 
+    # Context monitoring
+    max_context_tokens: int = 128000
+    context_warning_threshold: float = 0.8
+    max_tool_output_chars: int = 5000
+
+    # Filesystem memory (Ghost Map)
+    enable_filesystem_memory: bool = True
+    max_tree_depth: int = 3
+    max_files_per_dir: int = 50
+
+    # Safety policy (Guardrails)
+    enable_safety: bool = True
+    strict_mode: bool = False
+    auto_approve_safe: bool = True
+
     @classmethod
     def from_env(cls) -> "ReactConfig":
         """Create from environment variables"""
@@ -76,6 +91,15 @@ class ReactConfig:
             enable_steering=os.getenv("FASTRACT_ENABLE_STEERING", "true").lower() == "true",
             enable_followup=os.getenv("FASTRACT_ENABLE_FOLLOWUP", "true").lower() == "true",
             steering_file=Path(steering_path) if steering_path else Path.cwd() / ".steering.jsonl",
+            max_context_tokens=int(os.getenv("FASTRACT_MAX_CONTEXT_TOKENS", "128000")),
+            context_warning_threshold=float(os.getenv("FASTRACT_CONTEXT_WARNING_THRESHOLD", "0.8")),
+            max_tool_output_chars=int(os.getenv("FASTRACT_MAX_TOOL_OUTPUT_CHARS", "5000")),
+            enable_filesystem_memory=os.getenv("FASTRACT_ENABLE_FILESYSTEM_MEMORY", "true").lower() == "true",
+            max_tree_depth=int(os.getenv("FASTRACT_MAX_TREE_DEPTH", "3")),
+            max_files_per_dir=int(os.getenv("FASTRACT_MAX_FILES_PER_DIR", "50")),
+            enable_safety=os.getenv("FASTRACT_ENABLE_SAFETY", "true").lower() == "true",
+            strict_mode=os.getenv("FASTRICT_MODE", "false").lower() == "true",
+            auto_approve_safe=os.getenv("FASTRACT_AUTO_APPROVE_SAFE", "true").lower() == "true",
         )
 
 
@@ -97,6 +121,15 @@ class Config:
         FASTRACT_ENABLE_STEERING: Enable steering (default: true)
         FASTRACT_ENABLE_FOLLOWUP: Enable follow-up (default: true)
         FASTRACT_STEERING_FILE: Steering file path
+        FASTRACT_MAX_CONTEXT_TOKENS: Max context window size (default: 128000)
+        FASTRACT_CONTEXT_WARNING_THRESHOLD: Context warning threshold (default: 0.8)
+        FASTRACT_MAX_TOOL_OUTPUT_CHARS: Max tool output chars (default: 5000)
+        FASTRACT_ENABLE_FILESYSTEM_MEMORY: Enable filesystem memory (default: true)
+        FASTRACT_MAX_TREE_DEPTH: Max tree depth for filesystem memory (default: 3)
+        FASTRACT_MAX_FILES_PER_DIR: Max files per dir in tree (default: 50)
+        FASTRACT_ENABLE_SAFETY: Enable safety guardrails (default: true)
+        FASTRICT_MODE: Require confirmation for all modifications (default: false)
+        FASTRACT_AUTO_APPROVE_SAFE: Auto-approve safe operations (default: true)
     """
 
     llm: LLMConfig = field(default_factory=LLMConfig)
