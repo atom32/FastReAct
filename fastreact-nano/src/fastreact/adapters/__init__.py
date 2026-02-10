@@ -2,10 +2,18 @@
 FastReAct Nano Adapters
 
 Peripheral systems for interacting with the Nano kernel:
-- cli: Command-line interface
-- http: REST API server
-- ws: WebSocket server
-- gateway: Full gateway server
+
+CLI Adapter:
+    pip install fastreact-nano[cli]
+    fastreact "help me analyze code"
+
+HTTP Adapter:
+    pip install fastreact-nano[http]
+    python -m fastreact.adapters.http
+
+Gateway Adapter:
+    pip install fastreact-nano[gateway]
+    python -m fastreact.adapters.gateway
 """
 
 __all__ = []
