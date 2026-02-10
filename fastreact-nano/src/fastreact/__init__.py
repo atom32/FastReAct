@@ -32,6 +32,14 @@ from fastreact.channels.registry import ChannelRegistry, get_channel_registry, l
 # Provider exports
 from fastreact.providers.litellm import LiteLLMProvider
 
+# Tool exports
+from fastreact.tools import (
+    ReadFileTool,
+    WriteFileTool,
+    ExecTool,
+    EditFileTool,
+)
+
 __all__ = [
     # Version
     "__version__",
@@ -63,4 +71,9 @@ __all__ = [
     "list_channels",
     # Providers
     "LiteLLMProvider",
+    # Tools
+    "ReadFileTool",
+    "WriteFileTool",
+    "ExecTool",
+    "EditFileTool",
 ]
