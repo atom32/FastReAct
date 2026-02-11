@@ -257,6 +257,13 @@ class Agent:
                         # Capture STEP_END to handle tool execution
                         elif event.type == EventType.STEP_END:
                             step_end = event
+                            # CRITICAL: Add LLM response to message history
+                            # Without this, LLM will forget it answered and repeat
+                            if step_end.content:
+                                messages.append({
+                                    "role": "assistant",
+                                    "content": step_end.content,
+                                })
                             break
 
                     # 2. Body: Execute tools (if any)
@@ -314,10 +321,11 @@ class Agent:
                         has_more_tool_calls = False
 
                 # Check for follow-up messages before looping
-                if not self._session_queues.get(session_id, MessageQueue()):
+                if self._session_queues.get(session_id, MessageQueue()):
+                    # Has follow-up messages, continue to next iteration
                     continue
 
-                # No more tool calls and no pending messages
+                # No more tool calls and no pending messages - EXIT!
                 break
 
             # Extract final answer from last assistant message
