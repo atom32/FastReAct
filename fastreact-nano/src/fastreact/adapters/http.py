@@ -1,16 +1,21 @@
 """
 HTTP Adapter for FastReAct Nano
 
-Provides REST API interface for the Nano kernel.
+Provides SSE (Server-Sent Events) API interface.
 Install with: pip install fastreact-nano[http]
+
+This is a CONSUMER of the AgentEvent stream.
+All HTTP responses are driven by AgentEvent protocol.
 """
 
 import asyncio
+import json
+import uuid
 from typing import Optional, List
 from contextlib import asynccontextmanager
 
 try:
-    from fastapi import FastAPI, HTTPException, BackgroundTasks
+    from fastapi import FastAPI, HTTPException
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
     import uvicorn
@@ -19,32 +24,32 @@ try:
 except ImportError:
     FASTAPI_AVAILABLE = False
 
-from fastreact import Agent, Config
+from fastreact import Agent, Config, EventType
 
 
 # Request/Response models
-class RunRequest(BaseModel):
-    query: str
+class ChatRequest(BaseModel):
+    """Chat completion request (OpenAI-compatible format)"""
+    messages: List[dict]
     model: Optional[str] = None
-    skills: Optional[List[str]] = None
-    stream: bool = False
+    stream: bool = True
+    session_id: Optional[str] = None
 
 
-class RunResponse(BaseModel):
-    response: str
+class ChatResponse(BaseModel):
+    """Chat completion response"""
+    content: str
     model: str
-    iterations: int
+    session_id: str
 
 
-class SkillListResponse(BaseModel):
-    skills: List[dict]
+class ErrorResponse(BaseModel):
+    """Error response"""
+    error: str
+    type: str
 
 
-class ToolListResponse(BaseModel):
-    tools: List[str]
-
-
-# Global agent instance
+# Global agent instance (stateless, so safe to share)
 _agent: Optional[Agent] = None
 
 
@@ -77,67 +82,125 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="FastReAct Nano API",
-        description="REST API for FastReAct Nano kernel",
+        description="Event-Driven SSE API for FastReAct Nano",
         version="2.0.0",
         lifespan=lifespan,
     )
 
     @app.get("/")
     async def root():
-        """Root endpoint"""
+        """Root endpoint - API info"""
         return {
             "name": "FastReAct Nano",
             "version": "2.0.0",
-            "description": "Lightweight ReAct agent with kernel + adapters architecture",
+            "architecture": "Event-Driven",
+            "protocol": "AgentEvent (SSE)",
             "endpoints": {
-                "run": "POST /run",
-                "skills": "GET /skills",
-                "tools": "GET /tools",
+                "chat_completions": "POST /v1/chat/completions",
                 "health": "GET /health",
+                "skills": "GET /v1/skills",
+                "tools": "GET /v1/tools",
             }
         }
 
     @app.get("/health")
     async def health():
         """Health check"""
-        return {"status": "healthy", "agent": _agent is not None}
+        return {
+            "status": "healthy",
+            "agent_ready": _agent is not None,
+            "event_protocol": "AgentEvent",
+        }
 
-    @app.post("/run", response_model=RunResponse)
-    async def run(request: RunRequest):
+    @app.post("/v1/chat/completions")
+    async def chat_completions(request: ChatRequest):
         """
-        Run agent query
+        Chat completion endpoint with SSE streaming
+
+        OpenAI-compatible format with AgentEvent streaming.
 
         Args:
-            request: Run request with query and optional parameters
+            request: Chat request with messages
 
         Returns:
-            Agent response
+            SSE stream of AgentEvent objects
         """
         agent = get_agent()
 
-        # Override model if specified
-        if request.model:
-            original_model = agent.config.llm.model
-            agent.config.llm.model = request.model
+        # Extract query from last message
+        if not request.messages:
+            raise HTTPException(status_code=400, detail="No messages provided")
 
-        try:
-            response = await agent.run(
-                request.query,
-                skills=request.skills,
-            )
+        last_message = request.messages[-1]
+        query = last_message.get("content", "")
 
-            return RunResponse(
-                response=response,
-                model=agent.config.llm.model,
-                iterations=0,  # TODO: track iterations
-            )
+        # Generate session_id if not provided
+        session_id = request.session_id or str(uuid.uuid4())
 
-        finally:
-            # Restore model
-            if request.model:
-                agent.config.llm.model = original_model
+        # Extract skills from messages (optional enhancement)
+        skills = None
+        # TODO: Parse skills from request if needed
 
-    @app.get("/skills", response_model=SkillListResponse)
+        async def event_generator():
+            """Generate SSE events from AgentEvent stream"""
+            try:
+                async for event in agent.run_event_stream(query, skills=skills, session_id=session_id):
+                    # Convert AgentEvent to SSE format
+                    payload = {
+                        "type": event.type.value,
+                        "content": event.content,
+                        "tool_name": event.tool_name,
+                        "tool_args": event.tool_args,
+                        "session_id": event.session_id,
+                        "timestamp": event.timestamp,
+                    }
+
+                    # SSE format: data: {json}\n\n
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                # Signal completion
+                yield f"data: [DONE]\n\n"
+
+            except Exception as e:
+                # Send error event
+                error_payload = {
+                    "type": "error",
+                    "content": str(e),
+                    "session_id": session_id,
+                    "timestamp": asyncio.get_event_loop().time(),
+                }
+                yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n"
+                yield f"data: [DONE]\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    # Legacy endpoint for backward compatibility
+    @app.post("/run")
+    async def run_legacy(request: dict):
+        """
+        Legacy run endpoint (non-streaming)
+
+        Deprecated: Use /v1/chat/completions instead.
+        """
+        agent = get_agent()
+
+        query = request.get("query", "")
+        if not query:
+            raise HTTPException(status_code=400, detail="Query required")
+
+        # Run agent (non-streaming)
+        response = await agent.run(query)
+
+        return {"response": response}
+
+    @app.get("/v1/skills")
     async def list_skills():
         """List available skills"""
         agent = get_agent()
@@ -153,13 +216,13 @@ def create_app() -> FastAPI:
                     "version": skill.metadata.version,
                 })
 
-        return SkillListResponse(skills=skills)
+        return {"skills": skills}
 
-    @app.get("/tools", response_model=ToolListResponse)
+    @app.get("/v1/tools")
     async def list_tools():
         """List available tools"""
         agent = get_agent()
-        return ToolListResponse(tools=agent.list_tools())
+        return {"tools": agent.list_tools()}
 
     return app
 
@@ -178,7 +241,7 @@ def run_server(
         log_level: Log level
     """
     if not FASTAPI_AVAILABLE:
-        print("Error: FastAPI not available")
+        print("[ERROR] FastAPI not available")
         print("Install with: pip install fastreact-nano[http]")
         return
 
