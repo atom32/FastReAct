@@ -14,6 +14,11 @@ from fastreact.core.streaming import (
     stream_to_iterator,
     stream_with_callback,
 )
+from fastreact.core.events import (
+    EventType,
+    AgentEvent,
+    EventStream,
+)
 
 __all__ = [
     # Messages
@@ -37,4 +42,9 @@ __all__ = [
     "CollectStreamCallback",
     "stream_to_iterator",
     "stream_with_callback",
+    # Events (Unified Protocol)
+    "EventType",
+    "AgentEvent",
+    "EventStream",
 ]
+

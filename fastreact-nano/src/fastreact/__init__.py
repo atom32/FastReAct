@@ -35,6 +35,11 @@ from fastreact.core.streaming import (
     CollectStreamCallback,
     stream_with_callback,
 )
+from fastreact.core.events import (
+    EventType,
+    AgentEvent,
+    EventStream,
+)
 
 # Provider
 from fastreact.providers.litellm import LiteLLMProvider
@@ -94,6 +99,10 @@ __all__ = [
     "PrintStreamCallback",
     "CollectStreamCallback",
     "stream_with_callback",
+    # Events (Unified Protocol)
+    "EventType",
+    "AgentEvent",
+    "EventStream",
     # Provider
     "LiteLLMProvider",
     # Tools

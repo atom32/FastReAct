@@ -171,6 +171,59 @@ class Agent:
 
         return response
 
+    async def run_event_stream(
+        self,
+        query: str,
+        skills: Optional[list[str]] = None,
+        session_id: Optional[str] = None,
+    ):
+        """
+        Run the agent with unified event stream
+
+        This is the NEW preferred API that provides complete visibility
+        into the agent's execution through AgentEvent objects.
+
+        Args:
+            query: User query
+            skills: List of skills to use (None = auto-select)
+            session_id: Session identifier (auto-generated if None)
+
+        Yields:
+            AgentEvent objects (SESSION_START, THINK, TOOL_CALL, TOOL_RESULT, ERROR, SESSION_END)
+
+        Example:
+            agent = Agent()
+
+            async for event in agent.run_event_stream("What is 2+2?"):
+                if event.type == EventType.THINK:
+                    print(f"Thinking: {event.content}")
+                elif event.type == EventType.TOOL_CALL:
+                    print(f"Calling: {event.tool_name}")
+                elif event.type == EventType.SESSION_END:
+                    print(f"Answer: {event.content}")
+        """
+        import uuid
+        from fastreact.core.events import AgentEvent, EventType
+
+        # Generate session_id if not provided
+        session_id = session_id or str(uuid.uuid4())
+
+        # Inject skills into query if specified
+        enhanced_query = query
+        if skills:
+            skill_prompts = []
+            for skill_name in skills:
+                skill_prompt = self._skills.get_prompt(skill_name)
+                if skill_prompt:
+                    skill_prompts.append(f"[SKILL: {skill_name}]\n{skill_prompt}")
+
+            if skill_prompts:
+                enhanced_query = "\n\n".join([query] + skill_prompts)
+
+        # Delegate to core
+        async for event in self._core.run_event_stream(enhanced_query, session_id):
+            yield event
+
     async def chat(
         self,
         message: str,
