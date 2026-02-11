@@ -78,12 +78,13 @@ class Agent:
         self._config = config or Config.load()
 
         # Initialize LLM provider
+        llm_config = self._config.llm
         self._llm = LiteLLMProvider(
-            model=self._config.llm.model,
-            api_base=self._config.llm.api_base,
-            api_key=self._config.llm.api_key,
-            temperature=self._config.llm.temperature,
-            max_tokens=self._config.llm.max_tokens,
+            model=llm_config.model,
+            api_base=llm_config.api_base,
+            api_key=llm_config.api_key,
+            temperature=llm_config.temperature,
+            max_tokens=llm_config.max_tokens,
         )
 
         # Initialize tools
