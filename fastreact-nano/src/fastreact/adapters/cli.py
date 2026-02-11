@@ -3,10 +3,14 @@ CLI Adapter for FastReAct Nano
 
 Provides command-line interface for the Nano kernel.
 Install with: pip install fastreact-nano[cli]
+
+This is a CONSUMER of the AgentEvent stream.
+All UI rendering is driven by AgentEvent protocol.
 """
 
 import asyncio
 import sys
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -16,12 +20,14 @@ try:
     from rich.markdown import Markdown
     from rich.panel import Panel
     from rich.syntax import Syntax
+    from rich.live import Live
+    from rich.spinner import Spinner
 
     TYPER_AVAILABLE = True
 except ImportError:
     TYPER_AVAILABLE = False
 
-from fastreact import Agent, Config
+from fastreact import Agent, Config, EventType
 
 app = typer.Typer(
     name="fastreact",
@@ -39,11 +45,88 @@ def print_banner():
 ║                                                               ║
 ║        FastReAct Nano v2.0 - 轻量级 AI Agent               ║
 ║                                                               ║
-║   Kernel: 2,847 lines | Tools: 4 | Skills: Markdown        ║
+║   Kernel: ~3000 lines | Tools: 4 | Event-Driven            ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     """
     console.print(banner, style="bold blue")
+
+
+async def run_event_stream(agent: Agent, query: str, skills: Optional[list[str]] = None):
+    """
+    Run agent with event stream visualization
+
+    This function subscribes to AgentEvent stream and renders each event
+    using Rich UI components.
+
+    Event → UI Mapping:
+    - SESSION_START → Show session ID
+    - THINK → Stream thinking content (cyan)
+    - TOOL_CALL → Show tool call (yellow)
+    - TOOL_RESULT → Show result preview (dim)
+    - ERROR → Show error (red)
+    - SESSION_END → Show completion (green)
+    """
+    session_id = str(uuid.uuid4())
+
+    # Print query
+    console.print(f"\n[bold blue]Query:[/bold blue] {query}")
+    console.print(f"[dim]Session: {session_id}[/dim]\n")
+
+    # Event counters
+    event_counts = {}
+    final_answer = None
+
+    try:
+        async for event in agent.run_event_stream(query, skills=skills, session_id=session_id):
+            # Count events
+            event_counts[event.type] = event_counts.get(event.type, 0) + 1
+
+            # Render based on event type
+            if event.type == EventType.SESSION_START:
+                # Already printed above
+                pass
+
+            elif event.type == EventType.THINK:
+                # Stream thinking content (no newline)
+                console.print(f"[cyan]{event.content}[/]", end="")
+
+            elif event.type == EventType.TOOL_CALL:
+                # Show tool call with newline
+                args_preview = str(event.tool_args)[:80] if event.tool_args else ""
+                console.print(f"\n[yellow]→ {event.tool_name}[/yellow]")
+                if args_preview:
+                    console.print(f"[dim]   {args_preview}...[/dim]")
+
+            elif event.type == EventType.TOOL_RESULT:
+                # Show result preview (folded)
+                lines = event.content.split("\n")
+                if len(lines) > 3:
+                    preview = "\n".join(lines[:3]) + f"\n... ({len(lines)} lines total)"
+                else:
+                    preview = event.content[:200]
+                console.print(f"[dim]{preview}[/dim]")
+
+            elif event.type == EventType.ERROR:
+                console.print(f"\n[bold red]ERROR: {event.content}[/bold red]")
+
+            elif event.type == EventType.SESSION_END:
+                final_answer = event.content
+                console.print(f"\n[bold green]✓ Done[/bold green]")
+
+    except KeyboardInterrupt:
+        console.print(f"\n[yellow] interrupted[/yellow]")
+    except Exception as e:
+        console.print(f"\n[bold red]ERROR: {e}[/bold red]")
+
+    # Show final answer in panel
+    if final_answer:
+        console.print("\n")
+        console.print(Panel(final_answer, title="[bold green]Answer[/bold green]", border_style="green"))
+
+    # Show event summary if verbose
+    if event_counts:
+        console.print(f"\n[dim]Events: {', '.join(f'{k.value}:{v}' for k, v in event_counts.items())}[/dim]")
 
 
 @app.command()
@@ -54,7 +137,7 @@ def run(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="显示详细信息"),
 ):
     """
-    运行FastReAct Agent
+    运行FastReAct Agent (事件流模式)
 
     示例:
         fastreact "分析这个代码库"
@@ -79,29 +162,15 @@ def run(
 
     agent = Agent(config=config)
 
-    # Run query
-    try:
-        skills = [skill] if skill else None
-
-        console.print(f"\n[bold]Query:[/bold] {query}\n")
-
-        response = asyncio.run(agent.run(query, skills=skills))
-
-        # Display response
-        console.print(Panel(response, title="[bold green]Response[/bold green]"))
-
-    except KeyboardInterrupt:
-        console.print("\n[yellow]中断[/yellow]")
-        raise typer.Exit(0)
-    except Exception as e:
-        console.print(f"\n[red]错误: {e}[/red]")
-        raise typer.Exit(1)
+    # Run with event stream
+    skills = [skill] if skill else None
+    asyncio.run(run_event_stream(agent, query, skills))
 
 
 @app.command()
 def interactive():
     """
-    启动交互式模式
+    启动交互式模式 (事件流模式)
 
     示例:
         fastreact interactive
@@ -127,10 +196,8 @@ def interactive():
                 console.print("[yellow]再见![/yellow]")
                 break
 
-            response = asyncio.run(agent.run(query))
-
-            console.print(Panel(response, title="[bold green]Response[/bold green]"))
-            console.print()
+            # Run with event stream
+            asyncio.run(run_event_stream(agent, query))
 
         except KeyboardInterrupt:
             console.print("\n[yellow]中断[/yellow]")
