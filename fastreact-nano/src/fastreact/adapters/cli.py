@@ -112,7 +112,7 @@ async def run_event_stream(agent: Agent, query: str, skills: Optional[list[str]]
 
             elif event.type == EventType.SESSION_END:
                 final_answer = event.content
-                console.print(f"\n[bold green]✓ Done[/bold green]")
+                console.print(f"\n[bold green][DONE] Complete[/bold green]")
 
     except KeyboardInterrupt:
         console.print(f"\n[yellow] interrupted[/yellow]")

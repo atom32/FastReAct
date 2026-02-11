@@ -9,12 +9,40 @@ This demonstrates:
 
 import asyncio
 from pathlib import Path
+import sys
 
 # Add src to path
-import sys
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from fastreact import Agent, EventType, Config
+
+
+def _load_config():
+    """
+    Load config from standard locations
+
+    Tries multiple standard config locations in order:
+    1. ~/.fastreact/config.json (user home)
+    2. ./.fastreact/config.json (current directory)
+    3. config.json (current directory)
+    4. Environment variables (fallback)
+    """
+    from pathlib import Path as LibPath
+
+    # Standard config locations
+    config_locations = [
+        LibPath.home() / ".fastreact" / "config.json",
+        LibPath.cwd() / ".fastreact" / "config.json",
+        LibPath.cwd() / "config.json",
+    ]
+
+    # Try each location
+    for config_path in config_locations:
+        if config_path.exists():
+            return Config.load(config_path)
+
+    # Fallback to environment
+    return Config.from_env()
 
 
 async def test_event_stream():
@@ -24,9 +52,8 @@ async def test_event_stream():
     print("  FastReAct Nano v2.0 - Event Stream Test")
     print("=" * 60)
 
-    # Load config from v1
-    config_path = Path("C:/Users/admin/.fastreact/config.json")
-    config = Config.load(config_path) if config_path.exists() else Config.from_env()
+    # Load config from standard locations
+    config = _load_config()
 
     # Create agent
     print("\n[INIT] Creating Agent...")
@@ -101,9 +128,7 @@ async def test_with_tools():
     print("  Test 2: Tool Usage")
     print("=" * 60)
 
-    config_path = Path("C:/Users/admin/.fastreact/config.json")
-    config = Config.load(config_path) if config_path.exists() else Config.from_env()
-
+    config = _load_config()
     agent = Agent(config=config)
     query = "List files in the current directory"
 
