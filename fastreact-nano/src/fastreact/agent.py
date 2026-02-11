@@ -1,24 +1,22 @@
 """
-FastReAct Nano v2.0 - Complete Agent Implementation
+FastReAct Nano v2.0 - Event-Driven Agent
 
-Integrates all components into a fully autonomous agent:
-- ReActCore: Dual-layer loop engine
-- Skills: Progressive disclosure capabilities
-- Tools: 4 core tools (Pi's philosophy)
-- Config: Centralized configuration
+Agent facade over ReActCore event generator.
+All communication through AgentEvent stream.
 """
 
 import asyncio
+import uuid
 from pathlib import Path
 from typing import Optional
 
 from fastreact.core.config import Config
 from fastreact.core.tools import ToolRegistry
-from fastreact.core.callbacks import CallbackManager
 from fastreact.core.messages import Message
 from fastreact.core.context import ContextMonitor, FilesystemMemory
 from fastreact.core.safety import SafetyPolicy, CLIConfirmationCallback
 from fastreact.core.react import ReActCore
+from fastreact.core.events import EventType
 from fastreact.skills import SkillRegistry
 from fastreact.providers.litellm import LiteLLMProvider
 
@@ -27,9 +25,10 @@ from fastreact.tools import ReadFileTool, WriteFileTool, ExecTool, EditFileTool
 
 class Agent:
     """
-    Complete autonomous agent
+    Event-driven Agent facade
 
-    Integrates ReActCore with skills, tools, and configuration.
+    Provides a simple interface over ReActCore event generator.
+    All execution happens through AgentEvent stream.
     """
 
     def __init__(
@@ -67,21 +66,6 @@ class Agent:
             loader = SkillLoader(skills_dir=skills_dir)
             self._skills = SkillRegistry(loader=loader)
 
-        # Initialize callbacks
-        self._callbacks = CallbackManager()
-        if self._config.react.enable_steering:
-            from fastreact.core.callbacks import FileSteeringCallback
-            self._callbacks = CallbackManager(
-                steering_callback=FileSteeringCallback(
-                    self._config.react.steering_file
-                ),
-            )
-        if self._config.react.enable_followup:
-            from fastreact.core.callbacks import QueueFollowUpCallback
-            self._callbacks = CallbackManager(
-                followup_callback=QueueFollowUpCallback(),
-            )
-
         # Initialize context monitor
         self._context_monitor = ContextMonitor(
             max_tokens=self._config.react.max_context_tokens,
@@ -107,11 +91,10 @@ class Agent:
             # Use CLI confirmation by default
             self._confirmation_callback = CLIConfirmationCallback()
 
-        # Initialize ReAct core
+        # Initialize ReAct core (no callbacks)
         self._core = ReActCore(
             llm=self._llm,
             tools=self._tools,
-            callbacks=self._callbacks,
             context_monitor=self._context_monitor,
             filesystem_memory=self._filesystem_memory,
             safety_policy=self._safety_policy,
@@ -134,43 +117,6 @@ class Agent:
         ))
         self._tools.register(EditFileTool(max_size=tool_config.max_file_size))
 
-    async def run(
-        self,
-        query: str,
-        skills: Optional[list[str]] = None,
-        stream_callback: Optional[callable] = None,
-    ) -> str:
-        """
-        Run the agent
-
-        Args:
-            query: User query
-            skills: List of skills to use (None = auto-select)
-            stream_callback: Optional callback for streaming
-
-        Returns:
-            Agent response
-        """
-        # Build messages
-        messages = [Message.user(query)]
-
-        # Inject skill prompts if specified
-        if skills:
-            for skill_name in skills:
-                skill_prompt = self._skills.get_prompt(skill_name)
-                if skill_prompt:
-                    messages.append(Message.user(
-                        f"[SKILL: {skill_name}]\n{skill_prompt}"
-                    ))
-
-        # Run ReAct loop
-        response = await self._core.run(
-            messages=messages,
-            stream_callback=stream_callback,
-        )
-
-        return response
-
     async def run_event_stream(
         self,
         query: str,
@@ -178,10 +124,10 @@ class Agent:
         session_id: Optional[str] = None,
     ):
         """
-        Run the agent with unified event stream
+        Run the agent with event stream
 
-        This is the NEW preferred API that provides complete visibility
-        into the agent's execution through AgentEvent objects.
+        This is the PREFERRED API. It yields AgentEvent objects,
+        providing complete visibility into execution.
 
         Args:
             query: User query
@@ -199,12 +145,7 @@ class Agent:
                     print(f"Thinking: {event.content}")
                 elif event.type == EventType.TOOL_CALL:
                     print(f"Calling: {event.tool_name}")
-                elif event.type == EventType.SESSION_END:
-                    print(f"Answer: {event.content}")
         """
-        import uuid
-        from fastreact.core.events import AgentEvent, EventType
-
         # Generate session_id if not provided
         session_id = session_id or str(uuid.uuid4())
 
@@ -224,13 +165,43 @@ class Agent:
         async for event in self._core.run_event_stream(enhanced_query, session_id):
             yield event
 
+    async def run(
+        self,
+        query: str,
+        skills: Optional[list[str]] = None,
+    ) -> str:
+        """
+        Run the agent (simplified API)
+
+        This is a convenience method that aggregates all THINK events
+        and returns the final answer. Use run_event_stream() for
+        complete visibility.
+
+        Args:
+            query: User query
+            skills: List of skills to use (None = auto-select)
+
+        Returns:
+            Agent's final response
+        """
+        final_content = []
+
+        async for event in self.run_event_stream(query, skills=skills):
+            if event.type == EventType.THINK:
+                final_content.append(event.content)
+            elif event.type == EventType.SESSION_END:
+                # Return final answer from SESSION_END
+                return event.content or "".join(final_content)
+
+        return "".join(final_content)
+
     async def chat(
         self,
         message: str,
         history: Optional[list[Message]] = None,
     ) -> str:
         """
-        Simple chat interface
+        Simple chat interface (legacy compatibility)
 
         Args:
             message: User message
@@ -239,10 +210,7 @@ class Agent:
         Returns:
             Agent response
         """
-        messages = history or []
-        messages.append(Message.user(message))
-
-        return await self._core.run(messages)
+        return await self.run(message)
 
     def list_skills(self) -> list[str]:
         """List available skills"""
@@ -268,18 +236,6 @@ class Agent:
         return self._tools
 
 
-async def main():
-    """Example usage"""
-    # Create agent
-    agent = Agent()
-
-    # Run query
-    response = await agent.run("Read the file README.md")
-
-    print(response)
-
-
-# Convenience function
 async def ask(
     query: str,
     skills: Optional[list[str]] = None,
