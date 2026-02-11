@@ -146,6 +146,10 @@ class SkillRegistry:
         """Get the skill loader"""
         return self._loader
 
+    def list_skills(self) -> list[str]:
+        """List all available skill names (alias for list_available)"""
+        return self.list_available()
+
     def list_available(self) -> list[str]:
         """List all available skill names"""
         return self._loader.list_skills()

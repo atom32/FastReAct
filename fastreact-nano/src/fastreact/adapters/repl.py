@@ -115,6 +115,7 @@ class REPLAdapter:
 
     def __init__(
         self,
+        agent: Optional[Agent] = None,
         config: Optional[Config] = None,
         max_history: int = 50,
     ):
@@ -122,7 +123,8 @@ class REPLAdapter:
         Initialize REPL adapter
 
         Args:
-            config: Agent configuration
+            agent: Pre-configured Agent instance (optional)
+            config: Agent configuration (used only if agent not provided)
             max_history: Maximum messages to keep in history
         """
         if not RICH_AVAILABLE:
@@ -131,12 +133,16 @@ class REPLAdapter:
                 "Install with: pip install rich"
             )
 
-        self.config = config or Config.load()  # Load from config file
-        self.max_history = max_history
         self.console = Console()
+        self.max_history = max_history
 
-        # Create agent
-        self.agent = Agent(config=self.config)
+        # Use provided agent or create new one
+        if agent:
+            self.agent = agent
+            self.config = agent._config
+        else:
+            self.config = config or Config.load()
+            self.agent = Agent(config=self.config)
 
         # Current session
         self.session: Optional[REPLSession] = None
