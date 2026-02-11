@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastreact-nano"
-version = "2.0.0-alpha"
-description = "Lightweight ReAct agent with kernel + adapters architecture"
+version = "2.0.0"
+description = "Lightweight ReAct agent with event-driven architecture"
 readme = "README_NANO.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -26,6 +26,8 @@ classifiers = [
 # Core dependencies - minimal!
 dependencies = [
     "litellm>=1.0.0",
+    "openai>=1.0.0",
+    "httpx>=0.25.0",
     "pyyaml>=6.0",
 ]
 

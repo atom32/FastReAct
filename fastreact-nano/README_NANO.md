@@ -1,167 +1,259 @@
 # FastReAct Nano v2.0
 
-**极简AI Agent - 内核 + 适配器架构**
+**Event-Driven AI Agent - Microkernel + Adapters Architecture**
 
 ```
-内核: 2,847行核心代码
-适配器: 可选的交互层
-哲学: 按需使用，快速启动
+Core: ~3,000 lines of pure logic
+Adapters: Optional interface layers
+Philosophy: Zero-Copy, Event-Driven, Stateless
 ```
 
-## ⚡ 快速开始
+## Performance Benchmark
 
-### 最小安装 (核心)
+**Zero-Copy Protocol: 74% Faster**
+
+| Operation | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| File Listing (with tool) | 50.74s | **13.38s** | **4x faster** |
+| Simple Calculation | 2.87s | **1.45s** | **49% faster** |
+
+**How?** By not repeating tool outputs that the user can already see in their terminal.
+
+```python
+# Old way (50s):
+User: "List files"
+→ LLM: "I will list files..." (5s)
+→ Tool: ls -la (0.1s)
+→ LLM: "Here are ALL the files: 1. file1, 2. file2..." (45s) # WASTE
+
+# New way (13s):
+User: "List files"
+→ LLM: [uses tool directly] (5s)
+→ Tool: ls -la (0.1s)
+→ LLM: "Found 32 items." (1s) # EFFICIENT
+```
+
+## Quick Start
+
+### Minimal Installation (Core Only)
 
 ```bash
 pip install fastreact-nano
 ```
 
 ```python
-from fastreact import ask_sync
-
-response = ask_sync("分析这个代码库")
-print(response)
-```
-
-### CLI使用
-
-```bash
-pip install fastreact-nano[cli]
-fastreact "分析这个代码库"
-fastreact interactive  # 交互模式
-```
-
-### HTTP服务
-
-```bash
-pip install fastreact-nano[http]
-python -m fastreact.adapters.http
-# 访问 http://localhost:8000
-```
-
-### WebSocket Gateway
-
-```bash
-pip install fastreact-nano[gateway]
-python -m fastreact.adapters.gateway
-# 访问 http://localhost:9000
-```
-
-## 📦 架构
-
-```
-┌─────────────────────────────────────┐
-│    用户接口 (可选适配器)              │
-│  CLI | HTTP | WebSocket | Gateway   │
-└──────────────┬──────────────────────┘
-               │
-┌──────────────▼──────────────────────┐
-│     FastReAct Nano Kernel           │
-│     (2,847 lines, minimal deps)     │
-│                                     │
-│  • ReActCore (双层循环)             │
-│  • 4 Tools (Pi哲学)                 │
-│  • Skills (Markdown渐进式)          │
-│  • Config (环境变量)                │
-│  • Agent (完整实现)                 │
-└──────────────┬──────────────────────┘
-               │
-    ┌──────────┴──────────┐
-    │                     │
-┌───▼────┐         ┌─────▼────┐
-│ LiteLLM │         │  Skills  │
-└─────────┘         └──────────┘
-```
-
-## 🛠️ 核心工具
-
-- **read_file** - 读取文件 (支持行范围)
-- **write_file** - 写入文件 (原子操作)
-- **exec** - 执行Shell命令 (跨平台)
-- **edit_file** - 文本替换编辑
-
-## 📚 内置Skills
-
-- **file_ops** - 高级文件操作
-- **code_review** - 代码质量分析
-- **git_workflow** - Git工作流
-
-## ⚙️ 配置
-
-```bash
-# 环境变量
-export FASTRACT_MODEL=gpt-4o-mini
-export FASTRACT_API_KEY=sk-xxx
-export FASTRACT_MAX_ITERATIONS=20
-```
-
-```python
-# Python配置
-from fastreact import Config, Agent
-
-config = Config()
-config.llm.model = "gpt-4o"
-
-agent = Agent(config=config)
-```
-
-## 📖 文档
-
-- [USAGE.md](USAGE.md) - 完整使用指南
-- [PROJECT_STATUS.md](PROJECT_STATUS.md) - 项目现状分析
-
-## 🚀 使用示例
-
-```python
-# 最简单
-from fastreact import ask_sync
-response = ask_sync("分析代码")
-
-# 完整控制
 import asyncio
 from fastreact import Agent
 
 async def main():
     agent = Agent()
-    response = await agent.run(
-        "创建git分支",
-        skills=["git_workflow"]
-    )
-    print(response)
+
+    # Event streaming (full visibility)
+    async for event in agent.run_event_stream("What is 2+2?"):
+        if event.type == EventType.THINK:
+            print(f"Thinking: {event.content}")
+        elif event.type == EventType.SESSION_END:
+            print(f"Done: {event.content}")
 
 asyncio.run(main())
 ```
 
-## 📊 依赖管理
+### CLI Usage
 
 ```bash
-# 核心 (必需)
-pip install fastreact-nano
-
-# CLI适配器
+# Install with CLI adapter
 pip install fastreact-nano[cli]
 
-# HTTP适配器
+# Run queries
+fastreact "List files in current directory"
+fastreact "Analyze this codebase" --model deepseek-chat
+
+# Interactive mode
+fastreact interactive
+```
+
+### HTTP Server (SSE Streaming)
+
+```bash
+# Install with HTTP adapter
 pip install fastreact-nano[http]
 
-# Gateway适配器
+# Start server
+python -m fastreact.adapters.http
+
+# OpenAI-compatible endpoint
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"content": "What is 2+2?"}], "stream": true}'
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│     User Interfaces (Adapters)           │
+│  CLI  │  HTTP-SSE  │  Gateway  │  SDK   │
+└──────────────┬───────────────────────────┘
+               │ AgentEvent Stream
+┌──────────────▼───────────────────────────┐
+│        FastReAct Nano Kernel             │
+│      (Stateless, Event-Driven)           │
+│                                          │
+│  • ReActCore - Pure event generator      │
+│  • Zero-Copy Protocol - No repetition    │
+│  • Token Guard - Context monitoring      │
+│  • Ghost Map - Filesystem memory         │
+│  • Safety - Guardrails & confirmation    │
+│  • 4 Tools (read/write/exec/edit)        │
+└──────────────┬───────────────────────────┘
+               │
+    ┌──────────┴──────────┐
+    │                     │
+┌───▼─────────┐    ┌─────▼─────┐
+│  LiteLLM    │    │  Skills   │
+│  Provider   │    │  (MD)     │
+└─────────────┘    └───────────┘
+```
+
+## Key Features
+
+### Event-Driven Architecture
+
+All communication through `AgentEvent` stream:
+
+```python
+class EventType(Enum):
+    SESSION_START = "session_start"
+    THINK = "think"           # LLM reasoning
+    TOOL_CALL = "tool_call"   # Tool invocation
+    TOOL_RESULT = "tool_result"
+    ERROR = "error"
+    SESSION_END = "session_end"
+```
+
+### Cortex Components (Advanced)
+
+- **Token Guard** - Context monitoring with smart truncation
+- **Ghost Map** - Filesystem memory for efficient navigation
+- **Safety** - Guardrails with confirmation dialogs
+
+### Zero-Copy Protocol
+
+LLM doesn't repeat what user already sees:
+- Tool outputs visible in terminal → LLM stays silent
+- File contents shown → LLM confirms briefly
+- Directory listed → LLM reports count only
+
+## Configuration
+
+```bash
+# Environment variables
+export FASTRACT_MODEL=deepseek-ai/DeepSeek-V3.2
+export FASTRACT_API_BASE=https://api.siliconflow.cn/v1
+export FASTRACT_API_KEY=sk-xxx
+export FASTRACT_MAX_TOKENS=4096
+```
+
+```python
+# Python config
+from fastreact import Config, Agent
+
+config = Config()
+config.llm.model = "gpt-4o"
+config.llm.temperature = 0.7
+config.react.max_iterations = 20
+
+agent = Agent(config=config)
+```
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read file content with line range support |
+| `write_file` | Atomic file write with backup |
+| `exec` | Execute shell commands (cross-platform) |
+| `edit_file` | Text replacement editing |
+
+## Skills (Optional)
+
+Load skills from Markdown files:
+
+```python
+agent = Agent(skills_dir="./skills")
+response = await agent.run("Create git branch", skills=["git_workflow"])
+```
+
+Built-in skills:
+- `file_ops` - Advanced file operations
+- `code_review` - Code quality analysis
+- `git_workflow` - Git workflow automation
+
+## Installation Variants
+
+```bash
+# Core (minimal)
+pip install fastreact-nano
+
+# CLI adapter
+pip install fastreact-nano[cli]
+
+# HTTP adapter (SSE)
+pip install fastreact-nano[http]
+
+# WebSocket gateway
 pip install fastreact-nano[gateway]
 
-# 全功能
+# Everything
 pip install fastreact-nano[all]
 ```
 
-## 🧪 测试
+## Python SDK
 
-```bash
-pip install fastreact-nano[dev]
-pytest tests/ -v
+```python
+# Simple (blocking)
+from fastreact import ask_sync
+response = ask_sync("What is 2+2?")
+
+# Async with streaming
+import asyncio
+from fastreact import Agent, EventType
+
+async def main():
+    agent = Agent()
+
+    async for event in agent.run_event_stream("List files"):
+        if event.type == EventType.TOOL_CALL:
+            print(f"Calling: {event.tool_name}")
+        elif event.type == EventType.THINK:
+            print(f"Thinking: {event.content}")
+
+asyncio.run(main())
 ```
 
-## 📝 License
+## Testing
 
-MIT
+```bash
+# Install dev dependencies
+pip install fastreact-nano[dev]
+
+# Run tests
+pytest tests/ -v
+
+# E2E test with real LLM
+python test_e2e_real.py
+```
+
+## Documentation
+
+- [USAGE.md](USAGE.md) - Complete usage guide
+- [INSTALLATION.md](INSTALLATION.md) - Installation instructions
+- [PROJECT_STATUS.md](PROJECT_STATUS.md) - Development status
+
+## License
+
+MIT License - see LICENSE file for details
 
 ---
 
-**FastReAct Nano - 极简、快速、强大** ⚡
+**FastReAct Nano v2.0 - Event-Driven, Zero-Copy, Production Ready**

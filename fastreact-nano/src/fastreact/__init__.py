@@ -8,7 +8,7 @@ FastReAct Nano v2.0 - Event-Driven AI Agent SDK
 - Skills系统: Markdown渐进式披露
 """
 
-__version__ = "2.0.0-alpha"
+__version__ = "2.1.0"
 __author__ = "FastReAct Team"
 
 # Core v2.0 - Event-Driven Architecture

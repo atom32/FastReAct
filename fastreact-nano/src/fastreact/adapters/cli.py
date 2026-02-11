@@ -151,7 +151,7 @@ def run(
     print_banner()
 
     # Build config
-    config = Config.from_env()
+    config = Config.load()  # Load from config file
     if model:
         config.llm.model = model
 

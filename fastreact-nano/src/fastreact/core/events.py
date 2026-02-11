@@ -37,6 +37,7 @@ class EventType(str, Enum):
     TOOL_RESULT = "tool_result"      # Tool execution result
 
     # === Control Events ===
+    STEP_END = "step_end"            # Core reasoning step complete
     INTERRUPT = "interrupt"          # User/system interruption
     ASK_USER = "ask_user"            # Require user confirmation
 
@@ -152,6 +153,16 @@ class AgentEvent:
             tool_name=tool_name,
             tool_args=tool_args,
             session_id=session_id,
+        )
+
+    @staticmethod
+    def step_end(session_id: str, final_answer: str = "", has_tool_calls: bool = False) -> "AgentEvent":
+        """Create step end event - Core reasoning complete, waiting for body execution"""
+        return AgentEvent(
+            type=EventType.STEP_END,
+            content=final_answer,
+            session_id=session_id,
+            metadata={"has_tool_calls": has_tool_calls},
         )
 
     # === Utility Methods ===
