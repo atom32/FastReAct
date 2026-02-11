@@ -229,7 +229,7 @@ class Agent:
                     pending_messages = self._session_queues.get(session_id, MessageQueue())
 
                     # Process pending messages (steering/followup)
-                    if not pending_messages.empty():
+                    if not pending_messages:
                         for msg in pending_messages.drain():
                             messages.append(msg.to_llm_format())
                             # Emit steering event for visibility
@@ -314,7 +314,7 @@ class Agent:
                         has_more_tool_calls = False
 
                 # Check for follow-up messages before looping
-                if not self._session_queues.get(session_id, MessageQueue()).empty():
+                if not self._session_queues.get(session_id, MessageQueue()):
                     continue
 
                 # No more tool calls and no pending messages
