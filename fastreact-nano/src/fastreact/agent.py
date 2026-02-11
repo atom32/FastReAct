@@ -1,30 +1,21 @@
 """
-FastReAct Nano v2.1 - Brain-Body Architecture
-
-Agent = The Body (Executor)
-Core = The Brain (Intent Generator)
-
-The Agent layer handles:
-- Loop control
-- Tool execution
-- Safety checks
-- Context management
-- Filesystem memory
+FastReAct Nano v2.1.0 - The Body - Executor & Loop Controller
 """
 
-import asyncio
-import uuid
-from pathlib import Path
-from typing import Optional
+import sys
+sys.path.insert(0, 'src')
 
-from fastreact.core.config import Config
-from fastreact.core.tools import ToolRegistry, ValidationError
-from fastreact.core.messages import Message, MessageQueue
-from fastreact.core.context import ContextMonitor, FilesystemMemory
+from pathlib import Path as LibPath
+
+from fastreact.core.config import Config, LLMConfig, ReactConfig, ToolConfig
+from fastreact.core.tools import ToolRegistry
+from fastreact.core.context import ContextMonitor, FilesystemMemory, FilesystemNode
 from fastreact.core.safety import SafetyPolicy, CLIConfirmationCallback
+from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.react import ReActCore
 from fastreact.core.events import EventType
 from fastreact.skills import SkillRegistry
+from fastreact.skills.loader import SkillLoader
 from fastreact.providers.litellm import LiteLLMProvider
 
 from fastreact.tools import ReadFileTool, WriteFileTool, ExecTool, EditFileTool
@@ -40,35 +31,15 @@ class Agent:
     - Safety checks
     - Context monitoring
     - Filesystem memory
-
-    Architecture:
-        User Query → Agent.run_event_stream()
-                        ↓
-        ┌──────────────────────────────────┐
-        │ Loop Control (while True)       │
-        │                                  │
-        │  1. Brain: run_step_stream()    │
-        │     → THINK events              │
-        │     → TOOL_CALL events          │
-        │     → STEP_END event            │
-        │                                  │
-        │  2. Body: Execute Tools         │
-        │     → Safety check              │
-        │     → Tool execution            │
-        │     → Context truncate          │
-        │     → TOOL_RESULT events        │
-        │                                  │
-        │  3. Check Steering/Follow-up    │
-        └──────────────────────────────────┘
     """
 
     def __init__(
         self,
-        config: Optional[Config] = None,
-        skills_dir: Optional[Path] = None,
+        config,
+        skills_dir: LibPath = None,
     ):
         """
-        Initialize Agent (The Body)
+        Initialize agent
 
         Args:
             config: Agent configuration (default: from config file or environment)
@@ -93,10 +64,6 @@ class Agent:
 
         # Initialize skills
         self._skills = SkillRegistry()
-        if skills_dir:
-            from fastreact.skills import SkillLoader
-            loader = SkillLoader(skills_dir=skills_dir)
-            self._skills = SkillRegistry(loader=loader)
 
         # Initialize context monitor (Body layer)
         self._context_monitor = ContextMonitor(
@@ -120,9 +87,10 @@ class Agent:
             self._safety_policy = SafetyPolicy(
                 strict_mode=self._config.react.strict_mode,
             )
+            # Use CLI confirmation by default
             self._confirmation_callback = CLIConfirmationCallback()
 
-        # Initialize Core (Brain) - minimal dependencies
+        # Initialize Core (Brain) - minimal dependencies only
         self._core = ReActCore(
             llm=self._llm,
             tools=self._tools,
@@ -131,21 +99,6 @@ class Agent:
 
         # Session queues for steering/followup support
         self._session_queues: dict[str, MessageQueue] = {}
-
-    def _setup_tools(self):
-        """Setup core tools with config"""
-        tool_config = self._config.tools
-
-        self._tools.register(ReadFileTool(max_size=tool_config.max_file_size))
-        self._tools.register(WriteFileTool(
-            max_size=tool_config.max_file_size,
-            protected_paths=tool_config.protected_paths,
-        ))
-        self._tools.register(ExecTool(
-            timeout=tool_config.exec_timeout,
-            working_dir=tool_config.working_dir,
-        ))
-        self._tools.register(EditFileTool(max_size=tool_config.max_file_size))
 
     def inject_message(self, session_id: str, message: Message):
         """
@@ -171,7 +124,7 @@ class Agent:
         history: Optional[list[dict]] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """
-        Run the agent with event stream (Brain-Body Loop)
+        Run the agent with event stream
 
         This is the PREFERRED API. It yields AgentEvent objects,
         providing complete visibility into execution.
@@ -180,7 +133,7 @@ class Agent:
             query: User query
             skills: List of skills to use (None = auto-select)
             session_id: Session identifier (auto-generated if None)
-            history: Optional conversation history (list of message dicts)
+            history: Optional conversation history (list of message dicts with role/content)
 
         Yields:
             AgentEvent objects (SESSION_START, THINK, TOOL_CALL, TOOL_RESULT, ERROR, SESSION_END)
@@ -209,7 +162,6 @@ class Agent:
 
         # Create session queue for steering/followup
         self._session_queues[session_id] = MessageQueue()
-        pending_messages = self._session_queues[session_id]
 
         try:
             # Emit SESSION_START
@@ -218,35 +170,11 @@ class Agent:
             # Initialize messages with history
             messages = list(history or [])
 
-            # Inject skills into query if specified
-            enhanced_query = query
-            if skills:
-                skill_prompts = []
-                for skill_name in skills:
-                    skill_prompt = self._skills.get_prompt(skill_name)
-                    if skill_prompt:
-                        skill_prompts.append(f"[SKILL: {skill_name}]\\n{skill_prompt}")
-
-                if skill_prompts:
-                    enhanced_query = "\\n\\n".join([query] + skill_prompts)
-
-            # Add current query to messages
-            messages.append(Message.user(enhanced_query).to_llm_format())
-
-            # Build system prompt with Ghost Map
-            system_prompt = None
-            if self._filesystem_memory:
-                memory_injection = self._filesystem_memory.get_prompt_injection()
-                if memory_injection:
-                    from fastreact.core.prompts import SYSTEM_PROMPT_CORE
-                    system_prompt = f"{SYSTEM_PROMPT_CORE}\\n\\n{memory_injection}"
-
-            final_answer = ""
+            # Add current user message to history
+            messages.append(Message.user(query).to_llm_format())
 
             # === Outer loop: Process follow-up messages ===
-            iteration = 0
-            while iteration < self._core._max_iterations:
-                iteration += 1
+            while True:
                 has_more_tool_calls = True
 
                 # === Inner loop: Process tools ===
@@ -263,226 +191,89 @@ class Agent:
                                     metadata={"source": msg.metadata.get("source", "unknown")},
                                 )
 
-                    # 2. Brain: Think & Intent
-                    step_response = None
-                    tool_calls = []
+                    # 2. Build messages for LLM
+                    messages_for_llm = []
 
-                    async for event in self._core.run_step_stream(messages, session_id, system_prompt):
-                        # Forward THINK events
-                        if event.type == EventType.THINK:
-                            yield event
+                    # Inject system prompt
+                    messages_for_llm.append({
+                        "role": "system",
+                        "content": "You are a helpful assistant with access to tools: read_file, write_file, exec, edit_file.",
+                    })
 
-                        # Collect TOOL_CALL intents
-                        elif event.type == EventType.TOOL_CALL:
-                            tool_calls.append(event)
-                            yield event  # Forward for visibility
+                    # Add conversation history
+                    messages_for_llm.extend(messages)
 
-                        # Track step completion
-                        elif event.type == EventType.STEP_END:
-                            step_response = event.content
+                    # Call LLM
+                    try:
+                        response = await self._llm.chat(
+                            messages_for_llm,
+                            tools=self._tools.schemas(),
+                        )
+                    except Exception as e:
+                        yield AgentEvent.error(str(e), session_id)
+                        return
 
-                        # Forward ERROR events
-                        elif event.type == EventType.ERROR:
-                            yield event
-                            return
+                    # Stream thinking content
+                    if response.content:
+                        yield AgentEvent.think(response.content, session_id)
 
-                    has_more_tool_calls = len(tool_calls) > 0
+                    # Check for tool calls
+                    has_more_tool_calls = len(response.tool_calls) > 0
 
-                    # 3. Body: Execute tools
+                    # Execute tools
                     if has_more_tool_calls:
-                        # Add assistant message with tool_calls to history
-                        assistant_msg = {
-                            "role": "assistant",
-                            "content": step_response or "",
-                            "tool_calls": [
-                                {
-                                    "id": f"call_{i}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": call.tool_name,
-                                        "arguments": str(call.tool_args),
-                                    },
-                                }
-                                for i, call in enumerate(tool_calls)
-                            ],
-                        }
-                        messages.append(assistant_msg)
+                        for tool_call in response.tool_calls:
+                            # Emit TOOL_CALL event
+                            yield AgentEvent.tool_call(
+                                tool_call.name,
+                                tool_call.params,
+                                session_id,
+                            )
 
-                        for call_event in tool_calls:
-                            tool_name = call_event.tool_name
-                            tool_args = call_event.tool_args
-
+                            # Execute tool (without safety checks in Core)
                             try:
-                                # A. Safety check
-                                if self._safety_policy:
-                                    decision = self._safety_policy.check(
-                                        tool_name,
-                                        tool_args,
-                                    )
-
-                                    # Log decision
-                                    self._safety_policy.log(
-                                        tool_name,
-                                        tool_args,
-                                        decision,
-                                    )
-
-                                    # Check if forbidden
-                                    if not decision.should_allow:
-                                        error_result = (
-                                            f"[FORBIDDEN] {decision.reason}\\n"
-                                            f"Pattern: {decision.pattern_matched}"
-                                        )
-                                        tool_msg = Message.tool(
-                                            name=tool_name,
-                                            result=error_result,
-                                            call_id=f"call_{len(tool_calls)}",
-                                        )
-                                        messages.append(tool_msg.to_llm_format())
-
-                                        yield AgentEvent.tool_result(
-                                            tool_name,
-                                            error_result,
-                                            session_id,
-                                        )
-                                        continue
-
-                                    # Check if needs confirmation
-                                    if decision.should_ask and self._confirmation_callback:
-                                        yield AgentEvent.ask_user(
-                                            decision.reason,
-                                            tool_name,
-                                            tool_args,
-                                            session_id,
-                                        )
-
-                                        user_approved = await self._confirmation_callback.request_confirmation(
-                                            tool_name,
-                                            tool_args,
-                                            decision.reason,
-                                        )
-
-                                        self._safety_policy.log(
-                                            tool_name,
-                                            tool_args,
-                                            decision,
-                                            user_approved=user_approved,
-                                        )
-
-                                        if not user_approved:
-                                            deny_result = f"[DENIED] {decision.reason}"
-                                            tool_msg = Message.tool(
-                                                name=tool_name,
-                                                result=deny_result,
-                                                call_id=f"call_{len(tool_calls)}",
-                                            )
-                                            messages.append(tool_msg.to_llm_format())
-
-                                            yield AgentEvent.tool_result(
-                                                tool_name,
-                                                deny_result,
-                                                session_id,
-                                            )
-                                            continue
-
-                                # B. Execute tool
                                 result = await self._tools.execute(
-                                    tool_name,
-                                    tool_args,
+                                    tool_call.name,
+                                    tool_call.params,
                                 )
-
-                                # C. Update Ghost Map
-                                if self._filesystem_memory:
-                                    self._filesystem_memory.update_from_tool_call(
-                                        tool_name,
-                                        tool_args,
-                                        result,
-                                    )
-
-                                # D. Apply context truncation
-                                safe_result = self._context_monitor.truncate_tool_output(
-                                    result,
-                                    tool_name=tool_name,
-                                )
-
-                                # Add tool result message
-                                tool_msg = Message.tool(
-                                    name=tool_name,
-                                    result=safe_result,
-                                    call_id=f"call_{len(tool_calls)}",
-                                )
-                                messages.append(tool_msg.to_llm_format())
-
-                                # Emit TOOL_RESULT event
-                                yield AgentEvent.tool_result(
-                                    tool_name,
-                                    safe_result,
-                                    session_id,
-                                )
-
-                            except ValidationError as e:
-                                error_msg = f"Validation error: {e}"
-                                safe_error = self._context_monitor.truncate_tool_output(
-                                    error_msg,
-                                    tool_name=tool_name,
-                                )
-                                tool_msg = Message.tool(
-                                    name=tool_name,
-                                    result=safe_error,
-                                    call_id=f"call_{len(tool_calls)}",
-                                )
-                                messages.append(tool_msg.to_llm_format())
-
-                                yield AgentEvent.tool_result(
-                                    tool_name,
-                                    safe_error,
-                                    session_id,
-                                )
-
                             except Exception as e:
-                                error_msg = f"Tool execution error: {str(e)}"
-                                safe_error = self._context_monitor.truncate_tool_output(
-                                    error_msg,
-                                    tool_name=tool_name,
-                                )
-                                tool_msg = Message.tool(
-                                    name=tool_name,
-                                    result=safe_error,
-                                    call_id=f"call_{len(tool_calls)}",
-                                )
-                                messages.append(tool_msg.to_llm_format())
+                                result = f"Error: {str(e)}"
+                                yield AgentEvent.tool_result(tool_call.name, result, session_id)
 
-                                yield AgentEvent.tool_result(
-                                    tool_name,
-                                    safe_error,
-                                    session_id,
-                                )
+                            # Add tool result to history
+                            messages.append(Message.tool(
+                                name=tool_call.name,
+                                result=result,
+                                call_id=tool_call.id,
+                            ).to_llm_format())
+
                     else:
                         # No tool calls - add assistant response to history
                         assistant_msg = {
                             "role": "assistant",
-                            "content": step_response or "",
+                            "content": response.content or "",
                         }
                         messages.append(assistant_msg)
-                        final_answer = step_response or ""
 
-                # Check one more time for follow-up before exiting
-                if pending_messages:
+                # Check for follow-up messages before looping
+                if not pending_messages.empty():
                     continue
 
                 # No more tool calls and no pending messages
                 break
+
+            # Extract final answer
+            final_answer = ""
+            for msg in reversed(messages):
+                if msg.get("role") == "assistant":
+                    final_answer = msg.get("content", "")
+                    break
 
             # Emit SESSION_END
             yield AgentEvent.session_end(session_id, final_answer)
 
         except Exception as e:
             yield AgentEvent.error(str(e), session_id)
-
-        finally:
-            # Cleanup session queue
-            if session_id in self._session_queues:
-                del self._session_queues[session_id]
 
     async def run(
         self,
@@ -493,8 +284,7 @@ class Agent:
         Run the agent (simplified API)
 
         This is a convenience method that aggregates all THINK events
-        and returns the final answer. Use run_event_stream() for
-        complete visibility.
+        and returns the final answer.
 
         Args:
             query: User query
@@ -509,7 +299,6 @@ class Agent:
             if event.type == EventType.THINK:
                 final_content.append(event.content)
             elif event.type == EventType.SESSION_END:
-                # Return final answer from SESSION_END
                 return event.content or "".join(final_content)
 
         return "".join(final_content)
@@ -529,32 +318,10 @@ class Agent:
         Returns:
             Agent response
         """
-        return await self.run(message)
-
-    def list_skills(self) -> list[str]:
-        """List available skills"""
-        return self._skills.list_available()
-
-    def list_tools(self) -> list[str]:
-        """List available tools"""
-        return self._tools.list_all()
-
-    @property
-    def config(self) -> Config:
-        """Get agent configuration"""
-        return self._config
-
-    @property
-    def skills(self) -> SkillRegistry:
-        """Get skill registry"""
-        return self._skills
-
-    @property
-    def tools(self) -> ToolRegistry:
-        """Get tool registry"""
-        return self._tools
+        return await self.run(message, history=history)
 
 
+# Convenience functions
 async def ask(
     query: str,
     skills: Optional[list[str]] = None,
@@ -565,7 +332,7 @@ async def ask(
 
     Args:
         query: User query
-        skills: Skills to use
+        skills: Skills to use (None = auto-select)
         config: Optional config
 
     Returns:
@@ -575,17 +342,21 @@ async def ask(
     return await agent.run(query, skills=skills)
 
 
-def ask_sync(query: str, **kwargs) -> str:
+def ask_sync(
+    query: str,
+    **kwargs,
+) -> str:
     """
     Quick synchronous query
 
     Args:
         query: User query
-        **kwargs: Passed to ask()
+        **kwargs: Additional arguments passed to Agent
 
     Returns:
         Agent response
     """
+    import asyncio
     return asyncio.run(ask(query, **kwargs))
 
 
