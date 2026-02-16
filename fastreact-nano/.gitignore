@@ -49,8 +49,13 @@ ENV/
 session_data/
 memory.json
 *.log
+config.json
 
 # Debug/quick test scripts in root
 debug_*.py
+demo*.py
+test_event_stream.py
+test_gateway*.py
+test_web*.py
 quick_test.py
 !tests/
