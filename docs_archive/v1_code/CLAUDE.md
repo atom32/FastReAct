@@ -282,18 +282,118 @@ print("❌ Failed")     # Cross-platform problems
 
 ## Testing
 
-### Test File Location Rules
+### Test Execution Requirements (CRITICAL)
+
+**MANDATORY: All tests MUST run through the unified test suite**
+
+**FORBIDDEN**: Creating standalone test scripts outside the pytest framework
+
+**RATIONALE**:
+- Ensure all tests are discoverable and runnable with a single command
+- Prevents orphaned test scripts that break or become unmaintained
+- Enables CI/CD integration and automated testing
+
+**RULES**:
+1. **Use pytest framework ONLY** - All tests must be pytest-compatible
+2. **No standalone scripts** - Do NOT create `test_xxx.py` with `if __name__ == "__main__"`
+3. **Use unified runner** - Run tests via `run_tests.py` or `pytest` command
+4. **Follow test structure** - Organize in `tests/unit/` and `tests/integration/`
+5. **Use conftest.py fixtures** - Leverage shared fixtures and configuration
+
+**FORBIDDEN**:
+```python
+# FORBIDDEN - Standalone test script
+#!/usr/bin/env python3
+"""Test something"""
+import sys
+sys.path.insert(0, "src")
+
+def test_feature():
+    assert True
+
+if __name__ == "__main__":
+    test_feature()  # BAD - Not discoverable by pytest
+```
+
+**CORRECT**:
+```python
+# CORRECT - pytest-compatible test
+import pytest
+from fastreact import Feature
+
+class TestFeature:
+    """Test Feature functionality"""
+
+    def test_basic_operation(self):
+        """Test basic feature works"""
+        feature = Feature()
+        assert feature.works()
+
+    @pytest.mark.asyncio
+    async def test_async_operation(self):
+        """Test async feature"""
+        feature = Feature()
+        result = await feature.async_work()
+        assert result
+```
+
+**Test Execution**:
+```bash
+# Run all tests
+python3 run_tests.py all
+
+# Run unit tests only
+python3 run_tests.py unit
+
+# Run integration tests only
+python3 run_tests.py integration
+
+# Run specific test with pytest
+pytest tests/unit/test_config.py::TestConfig::test_load -v
+
+# Run tests with markers
+pytest tests/ -m "not slow"  # Skip slow tests
+pytest tests/ -m "not api"   # Skip tests requiring API
+```
+
+**Test File Location Rules**
 
 **CRITICAL: Where to put test code**
 
 **Designated locations**:
-- `tests/` - Unit tests and integration tests (pytest style)
-- `examples/` - Demo scripts and usage examples
+- `tests/unit/` - Unit tests (pytest style, fast, no external dependencies)
+- `tests/integration/` - Integration tests (pytest style, may require fixtures)
+- `examples/` - Demo scripts and usage examples (NOT tests, but demonstrations)
 - `scripts/` - Utility scripts (not tests, but development tools)
 
 **FORBIDDEN locations**:
 - Root directory - No `test_*.py` or `demo_*.py` files in root
 - Scattered test files - Keep tests organized in `tests/`
+- Standalone test scripts with `if __name__ == "__main__"` - Use pytest instead
+
+### Test File Organization
+
+**tests/ directory structure**:
+```
+tests/
+├── conftest.py              # pytest configuration, shared fixtures
+├── README.md                # Test documentation
+├── unit/                    # Unit tests (fast, no API)
+│   ├── test_config.py       # Configuration loading
+│   ├── test_tools.py        # Tool execution
+│   └── test_react_core.py   # Core reasoning
+└── integration/             # Integration tests
+    ├── test_agent_mock.py   # Agent with mocked LLM
+    ├── test_skills.py       # Skills integration
+    └── test_e2e_real_api.py # E2E tests (marked @pytest.mark.api)
+```
+
+**Test Markers**:
+- `@pytest.mark.unit` - Unit tests (fast, no external deps)
+- `@pytest.mark.integration` - Integration tests
+- `@pytest.mark.slow` - Slow tests (> 1 second each)
+- `@pytest.mark.api` - Requires real API key (optional, skip by default)
+- `@pytest.mark.e2e` - End-to-end tests
 
 ### Before Creating New Test Files
 
@@ -301,66 +401,97 @@ print("❌ Failed")     # Cross-platform problems
 ```
 Need to test something?
     ↓
-Check tests/ for similar test files
+Is it a unit test (single component, fast)?
     ↓
-    Found? ──Yes→ MODIFY existing test
-    ↓
-     No
-    ↓
-Is it a demo/showcase?
-    ↓
-    Yes→ Put in examples/ with clear name
+    Yes → Create in tests/unit/test_<module>.py
     ↓
     No
     ↓
-Create in tests/ with test_*.py naming
-```
-
-### Test File Organization
-
-**tests/ directory structure**:
-```
-tests/
-├── test_core/           # Core functionality tests
-│   ├── test_engine.py
-│   ├── test_react_agent.py
-│   └── test_context_monitor.py
-├── test_integration/    # Integration tests
-│   ├── test_mcp_integration.py
-│   └── test_cli.py
-└── test_utils/          # Test utilities
-    └── fixtures.py
-```
-
-**examples/ directory structure**:
-```
-examples/
-├── demo_task_chaining.py
-├── demo_session_resume.py
-└── demo_auto_reflection.py
+Is it integration (multiple components)?
+    ↓
+    Yes → Create in tests/integration/test_<feature>.py
+    ↓
+    No
+    ↓
+Is it a demo/showcase for users?
+    ↓
+    Yes → Create in examples/demo_<feature>.py
+    ↓
+    No
+    ↓
+Is it a one-time diagnostic script?
+    ↓
+    Yes → Create in scripts/ with clear name
+    ↓
+    No
+    ↓
+Use unified test suite (tests/)
 ```
 
 ### Naming Conventions
 
 **Test files** (in `tests/`):
-- Unit tests: `test_<module>.py` (e.g., `test_engine.py`)
-- Integration tests: `test_<feature>_integration.py`
+- Unit tests: `test_<module>.py` (e.g., `test_config.py`, `test_tools.py`)
+- Integration tests: `test_<feature>.py` (e.g., `test_agent.py`, `test_skills.py`)
 - Use descriptive names that indicate what's being tested
+- MUST start with `test_` for pytest discovery
+
+**Test classes and functions**:
+- Test classes: `Test<Feature>` (e.g., `TestConfig`, `TestAgent`)
+- Test functions: `test_<specific_behavior>()` (e.g., `test_load_config()`)
+- Use descriptive names that document what is being tested
 
 **Example files** (in `examples/`):
 - Demos: `demo_<feature>.py` (e.g., `demo_task_chaining.py`)
 - Showcase specific functionality
 - Include comments explaining usage
+- NOT run by test suite
+
+### Test Quality Requirements
+
+**Every test MUST**:
+1. Use pytest framework (not unittest, not standalone scripts)
+2. Follow naming convention (`test_*.py`)
+3. Be discoverable by `pytest` command
+4. Use shared fixtures from `conftest.py` when applicable
+5. Have descriptive docstrings
+6. Be runnable via `run_tests.py` or `pytest`
+7. Not have `if __name__ == "__main__"` blocks
+
+**Examples**:
+```python
+# CORRECT - pytest test
+import pytest
+from fastreact import Config
+
+class TestConfig:
+    """Test configuration loading"""
+
+    def test_load_default_config(self):
+        """Test loading default config"""
+        config = Config.load()
+        assert config is not None
+        assert config.llm.model
+
+# FORBIDDEN - standalone script
+def test_config():
+    config = Config.load()
+    assert config
+
+if __name__ == "__main__":
+    test_config()  # BAD - Not discoverable
+```
 
 ### Quick Verification
 
 ```bash
-# Verify code quality
-python scripts/quick_check.py
+# Verify all tests are discoverable
+pytest tests/ --collect-only
 
-# Expected output:
-# [SUCCESS] No issues found!
-# Code is clean and cross-platform compatible
+# Run all tests
+python3 run_tests.py all
+
+# Expected: All tests discovered and run
 ```
 
 ### Version Consistency
@@ -386,6 +517,8 @@ python test_version_consistency.py
 6. **Archive, don't delete** - Move old docs to `docs_archive/`
 7. **REUSE before CREATE** - Update existing docs/tests before creating new ones
 8. **Proper locations** - Docs in root, tests in `tests/`, examples in `examples/`
+9. **Use test suite** - All tests MUST be pytest-compatible, runnable via `run_tests.py`
+10. **No standalone test scripts** - Forbidden to create test files with `if __name__ == "__main__"`
 
 ---
 
