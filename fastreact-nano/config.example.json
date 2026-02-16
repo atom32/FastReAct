@@ -1,0 +1,91 @@
+{
+  "_comment": "FastReAct Nano v2.1 配置文件示例",
+  "_comment_2": "复制此文件为 config.json 或 ~/.fastreact/config.json",
+
+  "llm": {
+    "_comment": "方式1: 简化配置（推荐新手）",
+    "model": "gpt-4o-mini",
+    "api_base": null,
+    "api_key": "sk-your-openai-api-key-here",
+    "temperature": 0.7,
+    "max_tokens": 4096,
+
+    "_comment_alternative": "方式2: 使用 Anthropic Claude",
+    "_example_anthropic": {
+      "model": "claude-3-5-sonnet-20241022",
+      "api_base": "https://api.anthropic.com",
+      "api_key": "sk-ant-your-key-here"
+    },
+
+    "_comment_local": "方式3: 本地模型 (Ollama)",
+    "_example_ollama": {
+      "model": "ollama/llama3.2",
+      "api_base": "http://localhost:11434/v1",
+      "api_key": "dummy-key"
+    },
+
+    "_comment_v1_format": "方式4: v1多provider格式（兼容旧版）",
+    "_example_v1": {
+      "providers": {
+        "openai": {
+          "enabled": true,
+          "model": "gpt-4o-mini",
+          "base_url": "https://api.openai.com/v1",
+          "api_key_env": "OPENAI_API_KEY",
+          "temperature": 0.7,
+          "max_tokens": 4096
+        },
+        "anthropic": {
+          "enabled": false,
+          "model": "claude-3-5-sonnet-20241022",
+          "base_url": "https://api.anthropic.com",
+          "api_key_env": "ANTHROPIC_API_KEY"
+        },
+        "siliconflow": {
+          "enabled": false,
+          "model": "deepseek-ai/DeepSeek-V3",
+          "base_url": "https://api.siliconflow.cn/v1",
+          "api_key_env": "SILICONFLOW_API_KEY"
+        }
+      },
+      "default_provider": "openai"
+    }
+  },
+
+  "tools": {
+    "_comment": "文件操作限制",
+    "max_file_size": 1048576,
+    "protected_paths": [
+      "/etc/passwd",
+      "/etc/shadow",
+      "C:\\Windows\\System32\\*"
+    ],
+
+    "_comment": "命令执行配置",
+    "exec_timeout": 30,
+    "working_dir": null
+  },
+
+  "react": {
+    "_comment": "ReAct循环配置",
+    "max_iterations": 20,
+    "enable_steering": true,
+    "enable_followup": true,
+    "steering_file": ".steering.jsonl",
+
+    "_comment": "上下文监控（Token Guard）",
+    "max_context_tokens": 128000,
+    "context_warning_threshold": 0.8,
+    "max_tool_output_chars": 5000,
+
+    "_comment": "文件系统记忆（Ghost Map）",
+    "enable_filesystem_memory": true,
+    "max_tree_depth": 3,
+    "max_files_per_dir": 50,
+
+    "_comment": "安全策略（Guardrails）",
+    "enable_safety": true,
+    "strict_mode": false,
+    "auto_approve_safe": true
+  }
+}
