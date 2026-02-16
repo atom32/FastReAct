@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Web UI Service
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastreact-web
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./src:/app/src:ro
+      - ./workspace:/workspace
+      - ./.fastreact:/app/.fastreact:ro
+    environment:
+      - FASTRACT_MODEL=${FASTRACT_MODEL:-gpt-4o-mini}
+      - FASTRACT_API_KEY=${FASTRACT_API_KEY}
+      - FASTRACT_API_BASE=${FASTRACT_API_BASE}
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+    command: ["streamlit", "run", "/app/src/fastreact/adapters/web.py", "--server.port=8501"]
+    restart: unless-stopped
+
+  # Gateway Service
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastreact-gateway
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./workspace:/workspace
+      - ./.fastreact:/app/.fastreact:ro
+    environment:
+      - FASTRACT_MODEL=${FASTRACT_MODEL:-gpt-4o-mini}
+      - FASTRACT_API_KEY=${FASTRACT_API_KEY}
+    command: ["python", "-m", "fastreact.adapters.gateway"]
+    restart: unless-stopped
+
+volumes:
+  workspace:

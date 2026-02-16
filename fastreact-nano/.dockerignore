@@ -1,0 +1,46 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (keep essential docs)
+*.md
+docs/
+docs_archive/
+examples/
+
+# Debug and test files
+debug_*.py
+demo*.py
+test_*.py
+tests/
+
+# Environment
+.env
+.env.*
+config.json
+
+# Workspace
+workspace/
+.fastreact/
+
+# Coverage
+.coverage
+htmlcov/

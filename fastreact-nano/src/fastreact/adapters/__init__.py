@@ -3,6 +3,10 @@ FastReAct Nano Adapters
 
 Peripheral systems for interacting with the Nano kernel:
 
+Web Adapter:
+    pip install fastreact-nano[web]
+    streamlit run src/fastreact/adapters/web.py
+
 CLI Adapter:
     pip install fastreact-nano[cli]
     fastreact "help me analyze code"

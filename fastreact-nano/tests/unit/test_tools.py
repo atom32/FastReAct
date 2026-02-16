@@ -8,8 +8,6 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-
 from fastreact.core.tools import Tool, ToolRegistry, ValidationError, EchoTool, AddTool
 from fastreact.tools import ReadFileTool, WriteFileTool, ExecTool, EditFileTool
 

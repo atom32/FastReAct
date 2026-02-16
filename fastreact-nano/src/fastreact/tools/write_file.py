@@ -6,7 +6,7 @@ Follows Pi's philosophy: Simple, focused tool.
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastreact.core.tools import Tool
 

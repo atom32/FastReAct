@@ -1,22 +1,16 @@
 """
 Unit tests for FastReAct Nano v2.0 streaming
+
+NOTE: streaming.py module has been deprecated in v2.0.
+Event streaming is now handled through AgentEvent system in core/events.py
+This test file is kept for reference but should not be run.
 """
 
 import pytest
-import sys
 import asyncio
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-
-from fastreact.core.streaming import (
-    StreamChunk,
-    StreamCallback,
-    PrintStreamCallback,
-    CollectStreamCallback,
-    stream_to_iterator,
-    stream_with_callback,
-)
+# Skip these tests as streaming module has been removed
+pytest.skip("streaming module deprecated in v2.0, use AgentEvent instead", allow_module_level=True)
 
 
 class TestStreamChunk:

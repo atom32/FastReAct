@@ -13,15 +13,16 @@ The Agent layer handles:
 """
 
 import asyncio
+import json
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, AsyncIterator
 
 from fastreact.core.config import Config
 from fastreact.core.tools import ToolRegistry, ValidationError
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.context import ContextMonitor, FilesystemMemory
-from fastreact.core.safety import SafetyPolicy, CLIConfirmationCallback
+from fastreact.core.safety import SafetyPolicy, SafetyLevel, CLIConfirmationCallback
 from fastreact.core.react import ReActCore
 from fastreact.core.events import EventType
 from fastreact.skills import SkillRegistry
@@ -92,10 +93,25 @@ class Agent:
 
         # Initialize skills
         self._skills = SkillRegistry()
-        if skills_dir:
+        # Always try to load skills from default location
+        try:
             from fastreact.skills import SkillLoader
-            loader = SkillLoader(skills_dir=skills_dir)
-            self._skills = SkillRegistry(loader=loader)
+            # Try default skills directory
+            default_skills_dir = Path.cwd() / "skills"
+            if default_skills_dir.exists():
+                loader = SkillLoader(skills_dir=default_skills_dir)
+                self._skills = SkillRegistry(loader=loader)
+            elif skills_dir:
+                # Use custom skills directory
+                loader = SkillLoader(skills_dir=skills_dir)
+                self._skills = SkillRegistry(loader=loader)
+        except Exception as e:
+            # Skills not available
+            pass
+
+        # Skills selection configuration
+        self._auto_select_skills = True  # Auto-select skills when not specified
+        self._max_auto_skills = 3  # Max skills to auto-select
 
         # Initialize context monitor (Body layer)
         self._context_monitor = ContextMonitor(
@@ -130,6 +146,165 @@ class Agent:
 
         # Session queues for steering/followup support
         self._session_queues: dict[str, MessageQueue] = {}
+
+    def _select_skills_auto(self, query: str, max_skills: int = 3) -> list[str]:
+        """
+        Automatically select relevant skills based on query
+
+        Args:
+            query: User's query
+            max_skills: Maximum number of skills to select
+
+        Returns:
+            List of selected skill names
+        """
+        import re
+        from fastreact.skills import Skill
+
+        # Get all available skills
+        all_skills = []
+        try:
+            for skill_name in self._skills.list_available():
+                skill = self._skills.get(skill_name)
+                if skill:
+                    all_skills.append(skill)
+        except Exception:
+            # If skills not available, return empty
+            return []
+
+        if not all_skills:
+            return []
+
+        # Extract keywords from query (simple tokenization)
+        query_lower = query.lower()
+        query_words = set(re.findall(r'\w+', query_lower))
+
+        # Score each skill
+        skill_scores = []
+
+        for skill in all_skills:
+            score = 0
+
+            # Match in name (high weight)
+            if skill.name.lower() in query_lower:
+                score += 10
+
+            # Match in description
+            desc_lower = skill.description.lower()
+            desc_words = set(re.findall(r'\w+', desc_lower))
+
+            # Keyword overlap
+            overlap = query_words & desc_words
+            score += len(overlap) * 2
+
+            # Tag matching
+            for tag in skill.metadata.tags:
+                if tag.lower() in query_lower:
+                    score += 5
+
+            skill_scores.append((skill.name, score))
+
+        # Sort by score and return top-k
+        skill_scores.sort(key=lambda x: x[1], reverse=True)
+        selected = [name for name, score in skill_scores[:max_skills] if score > 0]
+
+        return selected
+
+    def _build_system_prompt_with_skills(self, skills: Optional[list[str]]) -> str:
+        """
+        Build system prompt with skills injected
+
+        Args:
+            skills: List of skill names to inject
+
+        Returns:
+            System prompt string with skills
+        """
+        from fastreact.core.prompts import get_system_prompt
+
+        # Get base system prompt
+        base_prompt = get_system_prompt("core")
+
+        # If no skills specified, return base prompt
+        if not skills:
+            return base_prompt
+
+        # Load skill descriptions
+        skill_descriptions = []
+        for skill_name in skills:
+            skill = self._skills.get(skill_name)
+            if skill:
+                # Format skill info
+                skill_info = f"## {skill.name}\n{skill.description}"
+                if skill.metadata.tags:
+                    skill_info += f"\nTags: {', '.join(skill.metadata.tags)}"
+                skill_descriptions.append(skill_info)
+
+        # If no skills loaded, return base prompt
+        if not skill_descriptions:
+            return base_prompt
+
+        # Inject skills into system prompt
+        skills_section = "\n\n# Available Skills\nThese skills are available for this task:\n\n"
+        skills_section += "\n\n".join(skill_descriptions)
+        skills_section += "\n\nUse these skills when appropriate to complete the user's request."
+
+        return base_prompt + skills_section
+
+    def enable_auto_skill_selection(self, max_skills: int = 3):
+        """
+        Enable automatic skill selection
+
+        Args:
+            max_skills: Maximum number of skills to auto-select
+        """
+        self._auto_select_skills = True
+        self._max_auto_skills = max_skills
+
+    def disable_auto_skill_selection(self):
+        """Disable automatic skill selection"""
+        self._auto_select_skills = False
+
+    def _validate_history(self, history: Optional[list[dict]]) -> list[dict]:
+        """
+        Validate and clean conversation history
+
+        Args:
+            history: Raw history from user
+
+        Returns:
+            Validated and cleaned history
+        """
+        if not history:
+            return []
+
+        # Validate each message
+        clean_history = []
+        for msg in history:
+            if not isinstance(msg, dict):
+                continue
+
+            role = msg.get("role")
+            content = msg.get("content", "")
+
+            # Skip invalid messages
+            if role not in ("user", "assistant"):
+                continue
+
+            # Ensure content exists and is string
+            if not content or not isinstance(content, str):
+                continue
+
+            # Clean content
+            content = content.strip()
+
+            # Skip empty messages
+            if not content:
+                continue
+
+            clean_history.append({"role": role, "content": content})
+
+        return clean_history
 
     def _setup_tools(self):
         """Setup core tools with config"""
@@ -177,28 +352,59 @@ class Agent:
 
         Args:
             query: User query
-            skills: List of skills to use (None = auto-select)
+            skills: List of skill names to inject into system prompt
+                   Skills provide specialized knowledge and capabilities
+                   Example: ["git_workflow", "code_review"]
+                   Set to None for no specific skills
             session_id: Session identifier (auto-generated if None)
-            history: Optional conversation history (list of message dicts)
+                       Use same session_id across multiple calls for multi-turn conversation
+            history: Optional conversation history in OpenAI format
+                    [
+                        {"role": "user", "content": "..."},
+                        {"role": "assistant", "content": "..."},
+                    ]
+                    Note: Tool messages are managed internally, don't include them
 
         Yields:
-            AgentEvent objects (SESSION_START, THINK, TOOL_CALL, TOOL_RESULT, ERROR, SESSION_END)
+            AgentEvent objects (DOES NOT consume LLM context)
+
+            Events are yielded in real-time for UI visualization only.
+            They do NOT affect the LLM's context window.
+
+            Event types:
+                - SESSION_START: Conversation started
+                - THINK: LLM reasoning (may be empty if only tool call)
+                - TOOL_CALL: Tool being called (intent, not execution yet)
+                - TOOL_RESULT: Tool execution result
+                - SESSION_END: Conversation ended with final answer
+                - ERROR: Error occurred
 
         Example:
+            # Simple query
             agent = Agent()
-
             async for event in agent.run_event_stream("What is 2+2?"):
                 if event.type == EventType.THINK:
                     print(f"Thinking: {event.content}")
-                elif event.type == EventType.TOOL_CALL:
-                    print(f"Calling: {event.tool_name}")
+                elif event.type == EventType.SESSION_END:
+                    print(f"Answer: {event.content}")
 
-            # With history (multi-turn conversation)
+            # With skills
+            async for event in agent.run_event_stream(
+                "Review this code",
+                skills=["code_review", "python_best_practices"]
+            ):
+                ...
+
+            # Multi-turn conversation with history
             history = [
                 {"role": "user", "content": "What is 2+2?"},
                 {"role": "assistant", "content": "4"},
             ]
-            async for event in agent.run_event_stream("What about 3+3?", history=history):
+            async for event in agent.run_event_stream(
+                "What about 3+3?",
+                session_id="same-session",  # Maintain context
+                history=history
+            ):
                 ...
         """
         from fastreact.core.events import AgentEvent, EventType
@@ -213,24 +419,53 @@ class Agent:
             # Emit SESSION_START
             yield AgentEvent.session_start(query, session_id)
 
-            # Initialize messages with history
-            messages = list(history or [])
+            # Validate and clean history
+            messages = self._validate_history(history)
 
-            # Add current user message to history
+            # Add current user message
             messages.append(Message.user(query).to_llm_format())
+
+            # Build system prompt with skills
+            # Auto-select skills if not specified and enabled
+            if skills is None and self._auto_select_skills:
+                skills = self._select_skills_auto(query, self._max_auto_skills)
+
+            system_prompt = self._build_system_prompt_with_skills(skills)
+
+            # Interrupt flag
+            interrupted = False
 
             # === Outer loop: Process follow-up messages ===
             while True:
                 has_more_tool_calls = True
+                executed_tools_this_iteration = False  # Track tools in this iteration only
 
                 # === Inner loop: Process tools ===
                 while has_more_tool_calls:
                     # 1. Brain: Ask LLM for reasoning
                     pending_messages = self._session_queues.get(session_id, MessageQueue())
 
-                    # Process pending messages (steering/followup)
-                    if not pending_messages:
+                    # Process pending messages (steering/interrupt/followup)
+                    if pending_messages:
                         for msg in pending_messages.drain():
+                            # Check for interrupt signal
+                            if msg.content.startswith("[INTERRUPT]"):
+                                # Add to message history so LLM sees it
+                                messages.append(msg.to_llm_format())
+
+                                # Notify user about interrupt
+                                yield AgentEvent.think(
+                                    f"[USER INTERRUPT: {msg.content.replace('[INTERRUPT] ', '')}]",
+                                    session_id,
+                                    metadata={"source": "user"}
+                                )
+
+                                # Set flag to stop after current iteration
+                                interrupted = True
+                                has_more_tool_calls = False  # Stop tool loop
+                                break  # Exit message processing loop
+
+                            # Regular steering/followup messages
                             messages.append(msg.to_llm_format())
                             # Emit steering event for visibility
                             if msg.role in ("steering", "followup"):
@@ -242,57 +477,82 @@ class Agent:
 
                     # Call Brain (Core) for reasoning step
                     step_end = None
+                    tool_calls = []  # Collect tool calls from Core
+
                     async for event in self._core.run_step_stream(
                         messages=messages,
                         session_id=session_id,
+                        system_prompt=system_prompt,  # Pass skills-enhanced prompt
                     ):
                         # Forward THINK events
                         if event.type == EventType.THINK:
                             yield event
 
-                        # Forward TOOL_CALL events (intent only)
+                        # Collect TOOL_CALL events
                         elif event.type == EventType.TOOL_CALL:
                             yield event
+                            # Collect tool call for execution
+                            tool_calls.append({
+                                "id": event.metadata.get("call_id", ""),
+                                "name": event.tool_name,
+                                "arguments": event.tool_args,
+                            })
 
                         # Capture STEP_END to handle tool execution
                         elif event.type == EventType.STEP_END:
                             step_end = event
                             # CRITICAL: Add LLM response to message history
-                            # Without this, LLM will forget it answered and repeat
-                            if step_end.content:
-                                messages.append({
+                            # Must include tool_calls if present (OpenAI format requirement)
+                            if step_end.content and step_end.content.strip() or tool_calls:
+                                assistant_msg = {
                                     "role": "assistant",
-                                    "content": step_end.content,
-                                })
+                                }
+                                # Add content if present
+                                if step_end.content and step_end.content.strip():
+                                    assistant_msg["content"] = step_end.content
+                                else:
+                                    assistant_msg["content"] = ""  # Required by OpenAI
+
+                                # Add tool_calls if present (CRITICAL for function calling)
+                                if tool_calls:
+                                    assistant_msg["tool_calls"] = [
+                                        {
+                                            "id": tc.get("id", ""),
+                                            "type": "function",
+                                            "function": {
+                                                "name": tc.get("name", ""),
+                                                "arguments": json.dumps(tc.get("arguments", {})),
+                                            },
+                                        }
+                                        for tc in tool_calls
+                                    ]
+
+                                messages.append(assistant_msg)
                             break
 
                     # 2. Body: Execute tools (if any)
-                    if step_end and step_end.metadata.get("has_tool_calls"):
-                        # Get tool calls from the last LLM response
-                        # We need to extract them from messages
-                        last_msg = messages[-1] if messages else {}
-                        tool_calls = last_msg.get("tool_calls", [])
-
+                    if step_end and step_end.metadata.get("has_tool_calls") and tool_calls:
                         for tool_call in tool_calls:
-                            tool_name = tool_call.get("function", {}).get("name", "")
-                            tool_params = tool_call.get("function", {}).get("arguments", {})
+                            tool_name = tool_call.get("name", "")
+                            tool_params = tool_call.get("arguments", {})
+                            call_id = tool_call.get("id", "")
 
-                            # Emit TOOL_CALL event (if not already emitted by Core)
-                            yield AgentEvent.tool_call(tool_name, tool_params, session_id)
+                            # TOOL_CALL already emitted by Core, no need to re-emit
 
                             # Safety check
                             if self._safety_policy:
-                                decision = self._safety_policy.check_tool_call(
+                                decision = self._safety_policy.check(
                                     tool_name=tool_name,
-                                    tool_params=tool_params,
+                                    args=tool_params,
                                 )
-                                if decision.level == "dangerous" and not decision.allowed:
+                                # Block forbidden operations
+                                if decision.level == SafetyLevel.FORBIDDEN:
                                     result = f"[SAFETY_BLOCKED] {decision.reason}"
                                     yield AgentEvent.tool_result(tool_name, result, session_id)
                                     messages.append(Message.tool(
                                         name=tool_name,
                                         result=result,
-                                        call_id=tool_call.get("id", ""),
+                                        call_id=call_id,
                                     ).to_llm_format())
                                     continue
 
@@ -311,22 +571,60 @@ class Agent:
                             yield AgentEvent.tool_result(tool_name, result, session_id)
 
                             # Add tool result to history
+                            import sys
+                            print(f"[DEBUG] Tool result: tool_name={tool_name}, call_id='{call_id}'", file=sys.stderr)
                             messages.append(Message.tool(
                                 name=tool_name,
                                 result=result,
-                                call_id=tool_call.get("id", ""),
+                                call_id=call_id,
                             ).to_llm_format())
+                        # Tools executed, prepare for next LLM call
+                        executed_tools_this_iteration = True
+                        has_more_tool_calls = False
+                        import sys
+                        print(f"[DEBUG] Tools executed, will continue", file=sys.stderr)
                     else:
                         # No tool calls - exit inner loop
                         has_more_tool_calls = False
 
-                # Check for follow-up messages before looping
-                if self._session_queues.get(session_id, MessageQueue()):
-                    # Has follow-up messages, continue to next iteration
+                # After inner loop, check if we should continue
+                # Continue if:
+                # 1. We just executed tools in this iteration (need LLM to process results)
+                # 2. There are follow-up messages
+
+                # Check for follow-up messages
+                has_followup = bool(self._session_queues.get(session_id, MessageQueue()))
+
+                # If we executed tools in this iteration, continue to next iteration
+                if executed_tools_this_iteration and not has_followup:
+                    # Continue to process tool results
                     continue
 
-                # No more tool calls and no pending messages - EXIT!
+                # If there are follow-up messages, continue to process them
+                if has_followup:
+                    continue
+
+                # Otherwise, we're done
                 break
+
+            # Check if we were interrupted
+            if interrupted:
+                # Extract last assistant message if available
+                last_response = ""
+                for msg in reversed(messages):
+                    if msg.get("role") == "assistant":
+                        content = msg.get("content", "")
+                        if content and not content.startswith("["):
+                            last_response = content
+                            break
+
+                # Emit interrupted session end
+                interrupt_msg = "[INTERRUPTED] User stopped the execution"
+                if last_response:
+                    interrupt_msg = f"{last_response}\n\n[INTERRUPTED] User stopped the execution"
+
+                yield AgentEvent.session_end(session_id, interrupt_msg)
+                return
 
             # Extract final answer from last assistant message
             final_answer = ""

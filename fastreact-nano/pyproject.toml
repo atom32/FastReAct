@@ -57,6 +57,11 @@ gateway = [
     "aiofiles>=23.0.0",
 ]
 
+# Web adapter (Streamlit)
+web = [
+    "streamlit>=1.28.0",
+]
+
 # Development tools
 dev = [
     "pytest>=7.0.0",
@@ -68,7 +73,7 @@ dev = [
 
 # Everything
 all = [
-    "fastreact-nano[cli,gateway,dev]",
+    "fastreact-nano[cli,gateway,web,dev]",
 ]
 
 [project.urls]

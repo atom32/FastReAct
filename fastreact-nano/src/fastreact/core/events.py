@@ -108,14 +108,14 @@ class AgentEvent:
         )
 
     @staticmethod
-    def tool_call(tool_name: str, tool_args: Dict[str, Any], session_id: str) -> "AgentEvent":
+    def tool_call(tool_name: str, tool_args: Dict[str, Any], session_id: str, call_id: str = "") -> "AgentEvent":
         """Create tool call event"""
         return AgentEvent(
             type=EventType.TOOL_CALL,
             tool_name=tool_name,
             tool_args=tool_args,
             session_id=session_id,
-            metadata={"action": "calling"},
+            metadata={"action": "calling", "call_id": call_id},
         )
 
     @staticmethod

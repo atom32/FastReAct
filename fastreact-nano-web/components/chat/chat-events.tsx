@@ -1,0 +1,139 @@
+"use client"
+
+import { useState } from "react"
+import { Brain, Wrench, FileText, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react"
+import type { ChatEvent } from "@/lib/chat-types"
+
+function ThinkEvent({ event }: { event: ChatEvent }) {
+  return (
+    <div
+      className="animate-slide-up my-1.5 flex gap-2.5 rounded-lg px-3 py-2.5"
+      style={{
+        background: `linear-gradient(90deg, rgba(139, 92, 246, 0.08), rgba(6, 182, 212, 0.08))`,
+        borderLeft: "3px solid var(--fr-accent-primary)",
+      }}
+    >
+      <Brain className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--fr-accent-primary)" }} />
+      <p className="text-sm italic leading-relaxed" style={{ color: "var(--fr-accent-tertiary)" }}>
+        {event.content}
+        <span
+          className="ml-0.5 inline-block h-3.5 w-0.5 animate-typing-cursor align-middle"
+          style={{ background: "var(--fr-accent-primary)" }}
+        />
+      </p>
+    </div>
+  )
+}
+
+function ToolCallEvent({ event }: { event: ChatEvent }) {
+  return (
+    <div
+      className="animate-slide-up my-1.5 flex gap-2.5 rounded-lg px-3 py-2.5"
+      style={{
+        background: `linear-gradient(90deg, rgba(244, 114, 182, 0.1), rgba(251, 146, 60, 0.1))`,
+        borderLeft: "3px solid var(--fr-accent-tertiary)",
+      }}
+    >
+      <Wrench className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--fr-accent-tertiary)" }} />
+      <div className="min-w-0">
+        <span className="font-mono text-xs font-semibold" style={{ color: "var(--fr-accent-tertiary)" }}>
+          {event.toolName || "tool_call"}
+        </span>
+        <p className="mt-1 font-mono text-xs leading-relaxed" style={{ color: "var(--fr-text-secondary)" }}>
+          {event.content}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function ToolResultEvent({ event }: { event: ChatEvent }) {
+  const [expanded, setExpanded] = useState(false)
+  const isLong = event.content.length > 200
+
+  return (
+    <div
+      className="animate-slide-up my-1.5 flex gap-2.5 rounded-lg px-3 py-2.5"
+      style={{
+        background: `linear-gradient(90deg, rgba(16, 185, 129, 0.06), rgba(52, 211, 153, 0.06))`,
+        borderLeft: "3px solid var(--fr-success)",
+      }}
+    >
+      <FileText className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--fr-success)" }} />
+      <div className="min-w-0 flex-1">
+        <pre
+          className="whitespace-pre-wrap font-mono text-xs leading-relaxed"
+          style={{
+            color: "var(--fr-text-secondary)",
+            maxHeight: expanded ? "none" : "120px",
+            overflow: "hidden",
+          }}
+        >
+          {event.content}
+        </pre>
+        {isLong && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="mt-1.5 flex items-center gap-1 text-xs font-medium transition-colors"
+            style={{ color: "var(--fr-success)" }}
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="h-3 w-3" /> Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" /> Show more
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AskUserEvent({ event }: { event: ChatEvent }) {
+  return (
+    <div
+      className="animate-slide-up animate-pulse-glow my-2 flex gap-2.5 rounded-xl px-4 py-3"
+      style={{
+        background: `linear-gradient(90deg, rgba(251, 191, 36, 0.1), rgba(254, 215, 170, 0.1))`,
+        border: `2px solid var(--fr-warning)`,
+        boxShadow: `0 0 15px rgba(251, 191, 36, 0.15)`,
+      }}
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--fr-warning)" }} />
+      <p className="text-sm font-medium leading-relaxed" style={{ color: "var(--fr-warning)" }}>
+        {event.content}
+      </p>
+    </div>
+  )
+}
+
+function TextEvent({ event }: { event: ChatEvent }) {
+  return (
+    <div className="animate-slide-up my-1">
+      <p className="text-sm leading-relaxed" style={{ color: "var(--fr-text-primary)" }}>
+        {event.content}
+      </p>
+    </div>
+  )
+}
+
+export function ChatEventRenderer({ event }: { event: ChatEvent }) {
+  switch (event.type) {
+    case "think":
+      return <ThinkEvent event={event} />
+    case "tool_call":
+      return <ToolCallEvent event={event} />
+    case "tool_result":
+      return <ToolResultEvent event={event} />
+    case "ask_user":
+      return <AskUserEvent event={event} />
+    case "text":
+      return <TextEvent event={event} />
+    default:
+      return null
+  }
+}

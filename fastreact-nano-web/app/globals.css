@@ -1,0 +1,331 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* ===== FastReAct Theme System ===== */
+
+/* Theme CSS Variables */
+[data-theme="cyber-dark"] {
+  --fr-bg-primary: #0a0e27;
+  --fr-bg-secondary: #1a1f3a;
+  --fr-bg-tertiary: #16213e;
+  --fr-bg-glass: rgba(26, 31, 58, 0.7);
+  --fr-accent-primary: #8b5cf6;
+  --fr-accent-secondary: #06b6d4;
+  --fr-accent-tertiary: #f472b6;
+  --fr-success: #10b981;
+  --fr-warning: #f59e0b;
+  --fr-error: #ef4444;
+  --fr-text-primary: #e2e8f0;
+  --fr-text-secondary: #94a3b8;
+  --fr-text-muted: #64748b;
+  --fr-border-glow: rgba(139, 92, 246, 0.3);
+  --fr-gradient-start: #8b5cf6;
+  --fr-gradient-end: #06b6d4;
+}
+
+[data-theme="midnight"] {
+  --fr-bg-primary: #0f172a;
+  --fr-bg-secondary: #1e293b;
+  --fr-bg-tertiary: #334155;
+  --fr-bg-glass: rgba(30, 41, 59, 0.7);
+  --fr-accent-primary: #3b82f6;
+  --fr-accent-secondary: #60a5fa;
+  --fr-accent-tertiary: #93c5fd;
+  --fr-success: #10b981;
+  --fr-warning: #f59e0b;
+  --fr-error: #ef4444;
+  --fr-text-primary: #e2e8f0;
+  --fr-text-secondary: #94a3b8;
+  --fr-text-muted: #64748b;
+  --fr-border-glow: rgba(59, 130, 246, 0.3);
+  --fr-gradient-start: #3b82f6;
+  --fr-gradient-end: #60a5fa;
+}
+
+[data-theme="solar-light"] {
+  --fr-bg-primary: #fffbeb;
+  --fr-bg-secondary: #fef3c7;
+  --fr-bg-tertiary: #fde68a;
+  --fr-bg-glass: rgba(255, 251, 235, 0.8);
+  --fr-accent-primary: #d97706;
+  --fr-accent-secondary: #f59e0b;
+  --fr-accent-tertiary: #fbbf24;
+  --fr-success: #059669;
+  --fr-warning: #d97706;
+  --fr-error: #dc2626;
+  --fr-text-primary: #1f2937;
+  --fr-text-secondary: #4b5563;
+  --fr-text-muted: #6b7280;
+  --fr-border-glow: rgba(217, 119, 6, 0.25);
+  --fr-gradient-start: #f59e0b;
+  --fr-gradient-end: #d97706;
+}
+
+[data-theme="forest"] {
+  --fr-bg-primary: #052e16;
+  --fr-bg-secondary: #064e3b;
+  --fr-bg-tertiary: #065f46;
+  --fr-bg-glass: rgba(6, 78, 59, 0.7);
+  --fr-accent-primary: #10b981;
+  --fr-accent-secondary: #34d399;
+  --fr-accent-tertiary: #6ee7b7;
+  --fr-success: #10b981;
+  --fr-warning: #f59e0b;
+  --fr-error: #ef4444;
+  --fr-text-primary: #d1fae5;
+  --fr-text-secondary: #a7f3d0;
+  --fr-text-muted: #6ee7b7;
+  --fr-border-glow: rgba(16, 185, 129, 0.3);
+  --fr-gradient-start: #10b981;
+  --fr-gradient-end: #34d399;
+}
+
+[data-theme="sunset"] {
+  --fr-bg-primary: #2e1065;
+  --fr-bg-secondary: #4c1d95;
+  --fr-bg-tertiary: #5b21b6;
+  --fr-bg-glass: rgba(76, 29, 149, 0.7);
+  --fr-accent-primary: #fb923c;
+  --fr-accent-secondary: #f472b6;
+  --fr-accent-tertiary: #fbbf24;
+  --fr-success: #10b981;
+  --fr-warning: #f59e0b;
+  --fr-error: #ef4444;
+  --fr-text-primary: #fef3c7;
+  --fr-text-secondary: #fde68a;
+  --fr-text-muted: #d8b4fe;
+  --fr-border-glow: rgba(251, 146, 60, 0.3);
+  --fr-gradient-start: #fb923c;
+  --fr-gradient-end: #f472b6;
+}
+
+[data-theme="matrix"] {
+  --fr-bg-primary: #000000;
+  --fr-bg-secondary: #0a0f0a;
+  --fr-bg-tertiary: #111811;
+  --fr-bg-glass: rgba(10, 15, 10, 0.8);
+  --fr-accent-primary: #22c55e;
+  --fr-accent-secondary: #4ade80;
+  --fr-accent-tertiary: #86efac;
+  --fr-success: #22c55e;
+  --fr-warning: #f59e0b;
+  --fr-error: #ef4444;
+  --fr-text-primary: #22c55e;
+  --fr-text-secondary: #4ade80;
+  --fr-text-muted: #166534;
+  --fr-border-glow: rgba(34, 197, 94, 0.3);
+  --fr-gradient-start: #22c55e;
+  --fr-gradient-end: #4ade80;
+}
+
+/* ===== Global Animations ===== */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-slide-in {
+  from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes rotate-hue {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes mesh-move {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.7; }
+}
+
+@keyframes typing-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-modal-in {
+  animation: modal-slide-in 0.3s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-rotate-hue {
+  animation: rotate-hue 3s linear infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-dot-pulse {
+  animation: dot-pulse 1.5s ease-in-out infinite;
+}
+
+.animate-typing-cursor {
+  animation: typing-cursor 1s step-end infinite;
+}
+
+/* ===== Glassmorphism Utilities ===== */
+.glass-panel {
+  background: var(--fr-bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ===== Custom Scrollbar ===== */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--fr-accent-primary);
+  border-radius: 3px;
+  opacity: 0.5;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  opacity: 0.8;
+}
+
+/* ===== Background Mesh ===== */
+.background-mesh {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  animation: mesh-move 20s ease infinite;
+}
+
+[data-theme="cyber-dark"] .background-mesh {
+  background:
+    radial-gradient(at 40% 20%, rgba(139, 92, 246, 0.12) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.12) 0px, transparent 50%),
+    radial-gradient(at 0% 50%, rgba(244, 114, 182, 0.08) 0px, transparent 50%),
+    radial-gradient(at 80% 60%, rgba(251, 191, 36, 0.06) 0px, transparent 50%);
+}
+
+[data-theme="midnight"] .background-mesh {
+  background:
+    radial-gradient(at 30% 20%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+    radial-gradient(at 70% 80%, rgba(96, 165, 250, 0.1) 0px, transparent 50%);
+}
+
+[data-theme="solar-light"] .background-mesh {
+  background:
+    radial-gradient(at 30% 20%, rgba(251, 191, 36, 0.12) 0px, transparent 50%),
+    radial-gradient(at 80% 80%, rgba(245, 158, 11, 0.08) 0px, transparent 50%);
+}
+
+[data-theme="forest"] .background-mesh {
+  background:
+    radial-gradient(at 20% 30%, rgba(16, 185, 129, 0.12) 0px, transparent 50%),
+    radial-gradient(at 80% 70%, rgba(52, 211, 153, 0.08) 0px, transparent 50%);
+}
+
+[data-theme="sunset"] .background-mesh {
+  background:
+    radial-gradient(at 20% 20%, rgba(251, 146, 60, 0.15) 0px, transparent 50%),
+    radial-gradient(at 80% 80%, rgba(244, 114, 182, 0.12) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(251, 191, 36, 0.08) 0px, transparent 50%);
+}
+
+[data-theme="matrix"] .background-mesh {
+  background:
+    radial-gradient(at 50% 50%, rgba(34, 197, 94, 0.08) 0px, transparent 50%),
+    radial-gradient(at 20% 80%, rgba(74, 222, 128, 0.05) 0px, transparent 50%);
+}

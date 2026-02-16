@@ -163,10 +163,12 @@ class ReActCore:
 
             if has_tool_calls:
                 for tool_call in response.tool_calls:
+                    # Include call_id in metadata for proper OpenAI format
                     yield AgentEvent.tool_call(
                         tool_call.name,
                         tool_call.params,
                         session_id,
+                        call_id=tool_call.id,
                     )
 
             # Signal step completion

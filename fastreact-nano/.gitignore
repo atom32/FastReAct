@@ -43,3 +43,14 @@ htmlcov/
 env/
 venv/
 ENV/
+
+# FastReAct Nano specific
+.fastreact/
+session_data/
+memory.json
+*.log
+
+# Debug/quick test scripts in root
+debug_*.py
+quick_test.py
+!tests/

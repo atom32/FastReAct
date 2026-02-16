@@ -4,11 +4,8 @@ Unit tests for FastReAct Nano v2.0 configuration
 
 import os
 import pytest
-import sys
 import tempfile
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from fastreact.core.config import (
     Config,
