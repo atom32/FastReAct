@@ -4,6 +4,15 @@
 
 FastReAct Nano is a minimalist, production-ready AI agent framework with a clean Brain-Body split architecture.
 
+## Quick Links
+
+- [Deployment Guide](deploy/README.md) - 5+ deployment methods (Docker, Cloud, One-Click)
+- [Installation](#installation) - Get started in 1 minute
+- [Documentation](docs/) - Architecture, Events, Safety
+- [GitHub Issues](https://github.com/atom32/FastReAct/issues) - Report bugs or request features
+
+---
+
 ## Release Notes - v2.1.0
 
 ### Issues Fixed in This Release
@@ -81,6 +90,51 @@ FastReAct Nano is a minimalist, production-ready AI agent framework with a clean
 
 ### Installation
 
+#### Method 1: uv (Recommended - Fastest)
+
+```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install FastReAct Nano
+uv tool install fastreact-nano
+
+# Run
+fastreact-nano
+```
+
+#### Method 2: One-Click Installation Script
+
+```bash
+# Linux/macOS
+curl -sSL https://raw.githubusercontent.com/atom32/FastReAct/main/fastreact-nano/deploy/install.sh | bash
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/atom32/FastReAct/main/fastreact-nano/deploy/install.bat | iex
+```
+
+#### Method 3: Docker Compose (Production)
+
+```bash
+# Navigate to deployment directory
+cd fastreact-nano/deploy
+
+# Copy environment template
+cp .env.example .env
+
+# Edit .env and add your API keys
+nano .env
+
+# Start services
+docker-compose up -d
+
+# Access services
+# - Gateway: http://localhost:9000
+# - WebUI: http://localhost:8501
+```
+
+#### Method 4: Manual pip Installation
+
 ```bash
 # Install from source
 cd fastreact-nano
@@ -88,6 +142,9 @@ pip install -e .
 
 # Or install with CLI support
 pip install -e ".[cli]"
+
+# Or install with all features
+pip install -e ".[all]"
 ```
 
 ### Configuration

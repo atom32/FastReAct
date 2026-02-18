@@ -1,0 +1,26 @@
+# FastReAct Nano - Render Configuration
+# Deploy to Render.com
+
+services:
+  - type: web
+    name: fastreact-nano
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install "fastreact-nano[all]"
+    startCommand: fastreact-gateway
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: PORT
+        value: 8000
+      - key: FASTREACT_MODEL
+        sync: false
+      - key: FASTREACT_API_KEY
+        sync: false
+    healthCheckPath: /health
+
+databases:
+  - name: fastreact-db
+    plan: free
+    region: oregon

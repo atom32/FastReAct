@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "dockerContext": ".",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "healthcheckPath": "/health",
+    "replicas": 1,
+    "startCommand": "python -m fastreact.adapters.gateway --port $PORT"
+  }
+}

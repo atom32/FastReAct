@@ -1,0 +1,14 @@
+# FastReAct Nano - Replit Configuration
+# Run command for Replit
+
+[run]
+command = "python3 -m pip install -e \".[cli,gateway,web]\" && fastreact-nano"
+
+[unitTest]
+command = "pytest tests/ -v"
+
+[packager]
+language = "python3"
+
+[debugger]
+program = "fastreact-nano"
