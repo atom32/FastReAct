@@ -36,6 +36,132 @@ interface UseFastReActWSOptions {
   onError?: (error: string) => void
 }
 
+// Global WebSocket manager singleton
+class WebSocketManager {
+  private static instance: WebSocketManager | null = null
+  private ws: WebSocket | null = null
+  private subscribers: Set<(msg: WebSocketMessage) => void> = new Set()
+  private statusSubscribers: Set<(status: ConnectionStatus) => void> = new Set()
+  private reconnectTimeout: NodeJS.Timeout | undefined
+  private reconnectAttempts = 0
+  private maxReconnectAttempts = 5
+  private isConnecting = false
+
+  private constructor() {}
+
+  static getInstance(): WebSocketManager {
+    if (!WebSocketManager.instance) {
+      WebSocketManager.instance = new WebSocketManager()
+    }
+    return WebSocketManager.instance
+  }
+
+  subscribe(callback: (msg: WebSocketMessage) => void) {
+    this.subscribers.add(callback)
+    return () => this.subscribers.delete(callback)
+  }
+
+  subscribeStatus(callback: (status: ConnectionStatus) => void) {
+    this.statusSubscribers.add(callback)
+    // Return current status immediately
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      callback("connected")
+    } else if (this.isConnecting) {
+      callback("connecting")
+    } else {
+      callback("disconnected")
+    }
+    return () => this.statusSubscribers.delete(callback)
+  }
+
+  private notifyStatus(status: ConnectionStatus) {
+    this.statusSubscribers.forEach(cb => cb(status))
+  }
+
+  private notify(message: WebSocketMessage) {
+    this.subscribers.forEach(cb => cb(message))
+  }
+
+  connect() {
+    if (this.isConnecting || (this.ws?.readyState === WebSocket.OPEN)) {
+      return
+    }
+
+    this.isConnecting = true
+    this.notifyStatus("connecting")
+    log("Connecting to", GATEWAY_URL)
+
+    try {
+      this.ws = new WebSocket(GATEWAY_URL)
+
+      this.ws.onopen = () => {
+        log("Connection established")
+        this.isConnecting = false
+        this.reconnectAttempts = 0
+        this.notifyStatus("connected")
+      }
+
+      this.ws.onmessage = (event) => {
+        try {
+          const data: WebSocketMessage = JSON.parse(event.data)
+          log("Received:", data)
+          this.notify(data)
+        } catch (error) {
+          logError("Failed to parse message:", error)
+        }
+      }
+
+      this.ws.onclose = (event) => {
+        log("Connection closed:", event.code, event.reason)
+        this.isConnecting = false
+        this.notifyStatus("disconnected")
+        this.ws = null
+
+        // Reconnect logic
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
+          log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`)
+
+          this.reconnectTimeout = setTimeout(() => {
+            this.reconnectAttempts++
+            this.connect()
+          }, delay)
+        }
+      }
+
+      this.ws.onerror = (error) => {
+        logError("WebSocket error:", error)
+        this.notifyStatus("error")
+      }
+    } catch (error) {
+      logError("Failed to create WebSocket:", error)
+      this.isConnecting = false
+      this.notifyStatus("error")
+    }
+  }
+
+  send(message: any) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message))
+      log("Sent:", message)
+    } else {
+      logError("Cannot send message, WebSocket not connected")
+    }
+  }
+
+  disconnect() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout)
+    }
+    if (this.ws) {
+      this.ws.close()
+      this.ws = null
+    }
+    this.isConnecting = false
+    this.reconnectAttempts = 0
+  }
+}
+
 export function useFastReActWS({
   onEvent,
   onUserMessage,
@@ -43,18 +169,12 @@ export function useFastReActWS({
   onStatusChange,
   onError,
 }: UseFastReActWSOptions) {
-  const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
-  const errorShownRef = useRef(false)
-  const reconnectAttempts = useRef(0)
-  const maxReconnectAttempts = 5
-  const isConnectingRef = useRef(false)
+  const [status, setStatus] = useState<ConnectionStatus>("disconnected")
 
-  // Use refs to store callbacks and avoid recreating WebSocket
+  // Use refs to store callbacks and avoid recreating subscriptions
   const onEventRef = useRef(onEvent)
   const onUserMessageRef = useRef(onUserMessage)
   const onConfirmationRequiredRef = useRef(onConfirmationRequired)
-  const onStatusChangeRef = useRef(onStatusChange)
   const onErrorRef = useRef(onError)
 
   // Update refs when callbacks change
@@ -62,207 +182,63 @@ export function useFastReActWS({
     onEventRef.current = onEvent
     onUserMessageRef.current = onUserMessage
     onConfirmationRequiredRef.current = onConfirmationRequired
-    onStatusChangeRef.current = onStatusChange
     onErrorRef.current = onError
   })
 
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected")
-
-  // WebSocket connection - only run once on mount
+  // Connect to WebSocket manager
   useEffect(() => {
-    const mountId = Math.random().toString(36).substring(2, 8)
+    const manager = WebSocketManager.getInstance()
 
-    log(`Setting up connection (mount: ${mountId})`)
-
-    const connectInternal = () => {
-      log(`connectInternal called (mount: ${mountId})`)
-
-      // Prevent duplicate connection attempts
-      if (isConnectingRef.current) {
-        log("Already connecting, skipping duplicate attempt")
-        return
+    // Subscribe to messages
+    const unsubscribe = manager.subscribe((message: WebSocketMessage) => {
+      if (message.type === "event" && onEventRef.current) {
+        onEventRef.current({
+          type: message.event_type as any,
+          content: message.content || "",
+          toolName: message.tool_name,
+          toolArgs: message.tool_args,
+        })
+      } else if (message.type === "user_message" && onUserMessageRef.current) {
+        onUserMessageRef.current(message.content || "")
+      } else if (message.type === "confirmation_required" && onConfirmationRequiredRef.current) {
+        onConfirmationRequiredRef.current({
+          reason: message.reason || "",
+          tool_name: message.tool_name || "",
+          tool_args: message.tool_args || {},
+        })
+      } else if (message.type === "error" && onErrorRef.current) {
+        onErrorRef.current(message.content || "Unknown error")
       }
+    })
 
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        log("Already connected, skipping")
-        return
-      }
+    // Subscribe to status changes
+    const unsubscribeStatus = manager.subscribeStatus((newStatus) => {
+      setStatus(newStatus)
+      onStatusChange?.(newStatus)
+    })
 
-      log("Connecting to", GATEWAY_URL)
-      onStatusChangeRef.current?.("connecting")
-      setStatus("connecting")
-      isConnectingRef.current = true
+    // Connect if not already connected
+    manager.connect()
 
-      try {
-        const ws = new WebSocket(GATEWAY_URL)
-        const connectionSuccessfulRef = { current: false }
-        wsRef.current = ws
-
-        ws.onopen = () => {
-          log("onopen fired - connection established")
-          onStatusChangeRef.current?.("connected")
-          setStatus("connected")
-          reconnectAttempts.current = 0
-          errorShownRef.current = false
-          connectionSuccessfulRef.current = true
-          isConnectingRef.current = false
-          log("connectionSuccessfulRef set to true, isConnectingRef cleared")
-        }
-
-        ws.onmessage = (event) => {
-          try {
-            const data: WebSocketMessage = JSON.parse(event.data)
-            log("Received:", data)
-
-            if (data.type === "connected") {
-              log("Server confirmed connection:", data.session_id)
-              connectionSuccessfulRef.current = true
-            } else if (data.type === "user") {
-              onUserMessageRef.current?.(data.content || "")
-            } else if (data.type === "event") {
-              const chatEvent: ChatEvent = {
-                id: Math.random().toString(36).substring(2, 12),
-                type: (data.event_type || "text") as any,
-                content: data.content || "",
-                toolName: data.tool_name,
-                timestamp: Date.now(),
-              }
-              onEventRef.current?.(chatEvent)
-            } else if (data.type === "user_input_required") {
-              onConfirmationRequiredRef.current?.({
-                reason: data.reason || "",
-                tool_name: data.tool_name || "",
-                tool_args: data.tool_args || {},
-              })
-            } else if (data.type === "error") {
-              onErrorRef.current?.(data.content || "Unknown error")
-            }
-          } catch (err) {
-            logError("Failed to parse message:", err)
-          }
-        }
-
-        ws.onclose = (event) => {
-          log("onclose fired - code:", event.code, "reason:", event.reason)
-          log("connectionSuccessfulRef was:", connectionSuccessfulRef.current)
-          onStatusChangeRef.current?.("disconnected")
-          setStatus("disconnected")
-          wsRef.current = null
-          isConnectingRef.current = false
-
-          // Show error only if connection was never successful
-          if (!connectionSuccessfulRef.current && !errorShownRef.current) {
-            log("Connection failed - showing error to user")
-            errorShownRef.current = true
-            onErrorRef.current?.("Failed to connect to Gateway")
-          } else {
-            log("Connection was successful, no error shown")
-          }
-
-          // Attempt to reconnect
-          if (reconnectAttempts.current < maxReconnectAttempts) {
-            reconnectAttempts.current++
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000)
-            log(`Reconnecting in ${delay}ms`)
-
-            reconnectTimeoutRef.current = setTimeout(() => {
-              connectInternal()
-            }, delay)
-          } else {
-            logError("Max reconnection attempts reached")
-            if (!errorShownRef.current) {
-              errorShownRef.current = true
-              onErrorRef.current?.("Connection lost. Please refresh the page.")
-            }
-          }
-        }
-
-        ws.onerror = (error) => {
-          logError("Error event:", error)
-          // Don't show error - wait for onclose to determine if connection failed
-        }
-      } catch (err) {
-        logError("Connection failed:", err)
-        isConnectingRef.current = false
-        onStatusChangeRef.current?.("disconnected")
-        setStatus("disconnected")
-        onErrorRef.current?.("Failed to connect to Gateway")
-      }
-    }
-
-    // Initial connection
-    connectInternal()
-
-    // Cleanup
     return () => {
-      log(`Cleanup called for mount ${mountId}, readyState:`, wsRef.current?.readyState, "isConnecting:", isConnectingRef.current)
-
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-        log("Cleared reconnect timeout")
-      }
-
-      // Only close if connection is actually open
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        log("Closing active WebSocket connection in cleanup")
-        wsRef.current.close()
-        wsRef.current = null
-      } else if (wsRef.current) {
-        console.log("[WebSocket] WebSocket not OPEN, skipping close")
-        wsRef.current = null
-      }
-
-      isConnectingRef.current = false
-    }
-  }, []) // Empty deps - only run once on mount
-
-  const send = useCallback((content: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const message: WebSocketMessage = {
-        type: "query",
-        content: content,
-      }
-      wsRef.current.send(JSON.stringify(message))
-      console.log("[WebSocket] Sent:", message)
-    } else {
-      onErrorRef.current?.("Not connected to Gateway")
+      unsubscribe()
+      unsubscribeStatus()
     }
   }, [])
 
-  const sendUserResponse = useCallback((approved: boolean, reason?: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const response = approved ? "yes" : `${reason || "Denied"}`
-      const message: WebSocketMessage = {
-        type: "query",
-        content: response,
-      }
-      wsRef.current.send(JSON.stringify(message))
-      console.log("[WebSocket] Sent user response:", message)
-    }
+  const sendMessage = useCallback((content: string) => {
+    const manager = WebSocketManager.getInstance()
+    manager.send({ type: "query", content })
   }, [])
 
-  const connect = useCallback(() => {
-    console.log("[WebSocket] connect() called - connection is auto-managed")
-  }, [])
-
-  const disconnect = useCallback(() => {
-    console.log("[WebSocket] disconnect() called")
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-    }
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
-    setStatus("disconnected")
-    onStatusChangeRef.current?.("disconnected")
+  const stopAgent = useCallback(() => {
+    const manager = WebSocketManager.getInstance()
+    manager.send({ type: "query", content: "stop" })
   }, [])
 
   return {
     status,
-    send,
-    sendUserResponse,
-    connect,
-    disconnect,
+    sendMessage,
+    stopAgent,
   }
 }

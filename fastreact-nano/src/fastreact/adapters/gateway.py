@@ -45,6 +45,7 @@ class Session:
         self.agent = Agent()
         self.created_at = datetime.utcnow()
         self.last_activity = datetime.utcnow()
+        self._cancelled = False
 
     async def send(self, message: dict):
         """Send message to client"""
@@ -56,6 +57,14 @@ class Session:
     def update_activity(self):
         """Update last activity timestamp"""
         self.last_activity = datetime.utcnow()
+
+    def cancel(self):
+        """Cancel current agent run"""
+        self._cancelled = True
+
+    def reset_cancel(self):
+        """Reset cancel flag for new run"""
+        self._cancelled = False
 
 
 class SessionManager:
@@ -200,6 +209,26 @@ def create_gateway_app() -> FastAPI:
                 })
         return {"sessions": sessions, "count": len(sessions)}
 
+    @app.delete("/api/sessions/{session_id}")
+    async def terminate_session(session_id: str):
+        """Terminate a session by ID"""
+        session = _session_manager.get(session_id)
+        if session:
+            # Close WebSocket connection
+            try:
+                await session.websocket.close()
+            except Exception:
+                pass
+            # Remove from session manager
+            _session_manager.disconnect(session_id)
+            return {"message": f"Session {session_id} terminated"}
+        else:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=404,
+                content={"message": f"Session {session_id} not found"}
+            )
+
     @app.get("/api/config")
     async def get_config():
         """Get current configuration (hide sensitive fields)"""
@@ -269,15 +298,35 @@ def create_gateway_app() -> FastAPI:
                     # Update activity
                     session.update_activity()
 
+                    # Check for stop command
+                    if message.get("content", "").strip().lower() == "stop":
+                        session.cancel()
+                        await session.send({
+                            "type": "info",
+                            "content": "Agent stopped by user",
+                        })
+                        continue
+
+                    # Reset cancel flag for new run
+                    session.reset_cancel()
+
                     # Run agent with event streaming
                     try:
                         from fastreact.core.events import EventType
-                        
+
                         async for event in session.agent.run_event_stream(
                             message.get("content", ""),
                             skills=message.get("skills"),
                             session_id=session_id,
                         ):
+                            # Check if cancelled
+                            if session._cancelled:
+                                await session.send({
+                                    "type": "info",
+                                    "content": "Agent run cancelled",
+                                })
+                                break
+
                             # Send event immediately
                             await session.send({
                                 "type": "event",

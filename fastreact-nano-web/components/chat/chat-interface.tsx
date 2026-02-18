@@ -144,13 +144,20 @@ export function ChatInterface() {
     setMessagesRef.current((prev) => [...prev, errorMessage])
   }, [])
 
-  const { send, sendUserResponse, status } = useFastReActWS({
+  const { sendMessage, stopAgent, status } = useFastReActWS({
     onEvent: onEventCallback,
     onUserMessage: onUserMessageCallback,
     onConfirmationRequired: onConfirmationRequiredCallback,
     onStatusChange: onStatusChangeCallback,
     onError: onErrorCallback,
   })
+
+  const [isProcessing, setIsProcessing] = useState(false)
+
+  // Update processing state based on status label
+  useEffect(() => {
+    setIsProcessing(statusLabel !== "")
+  }, [statusLabel])
 
   const handleSend = useCallback(
     (content: string) => {
@@ -178,20 +185,23 @@ export function ChatInterface() {
       setMessages((prev) => [...prev, userMessage, assistantMessage])
 
       // Send to WebSocket
-      send(content)
+      sendMessage(content)
     },
-    [send]
+    [sendMessage]
   )
 
+  const handleStop = useCallback(() => {
+    stopAgent()
+    setStatusLabel("")
+  }, [stopAgent])
+
   const handleConfirmApprove = useCallback(() => {
-    sendUserResponse(true)
     setConfirmModal({ isOpen: false, title: "", description: "" })
-  }, [sendUserResponse])
+  }, [])
 
   const handleConfirmDeny = useCallback(() => {
-    sendUserResponse(false, "Operation denied by user")
     setConfirmModal({ isOpen: false, title: "", description: "" })
-  }, [sendUserResponse])
+  }, [])
 
   return (
     <div className="relative flex h-screen flex-col" style={{ zIndex: 1 }}>
@@ -222,7 +232,9 @@ export function ChatInterface() {
 
       <ChatInput
         onSend={handleSend}
+        onStop={handleStop}
         statusLabel={statusLabel}
+        isProcessing={isProcessing}
       />
 
       <ConfirmationModal

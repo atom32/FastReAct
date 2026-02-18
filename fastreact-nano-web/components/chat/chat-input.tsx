@@ -1,14 +1,17 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send } from "lucide-react"
+import { Send, Square } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 interface ChatInputProps {
   onSend: (message: string) => void
+  onStop?: () => void
   statusLabel?: string
+  isProcessing?: boolean
 }
 
-export function ChatInput({ onSend, statusLabel }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, statusLabel, isProcessing }: ChatInputProps) {
   const [value, setValue] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -85,20 +88,34 @@ export function ChatInput({ onSend, statusLabel }: ChatInputProps) {
           />
         </div>
 
-        <button
-          onClick={handleSubmit}
-          disabled={!value.trim()}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-40 disabled:hover:translate-y-0"
-          style={{
-            background: `linear-gradient(135deg, var(--fr-gradient-start), var(--fr-gradient-end))`,
-            boxShadow: value.trim()
-              ? `0 4px 15px var(--fr-border-glow)`
-              : "none",
-          }}
-          aria-label="Send message"
-        >
-          <Send className="h-5 w-5" />
-        </button>
+        {isProcessing && onStop ? (
+          <button
+            onClick={onStop}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0"
+            style={{
+              background: "#ef4444",
+              boxShadow: "0 4px 15px rgba(239, 68, 68, 0.4)",
+            }}
+            title="Stop Agent"
+          >
+            <Square className="h-5 w-5" />
+          </button>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={!value.trim()}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-40 disabled:hover:translate-y-0"
+            style={{
+              background: `linear-gradient(135deg, var(--fr-gradient-start), var(--fr-gradient-end))`,
+              boxShadow: value.trim()
+                ? `0 4px 15px var(--fr-border-glow)`
+                : "none",
+            }}
+            aria-label="Send message"
+          >
+            <Send className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       <p
