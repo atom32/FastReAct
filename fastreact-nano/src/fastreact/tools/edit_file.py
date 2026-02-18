@@ -71,6 +71,8 @@ class EditFileTool(Tool):
         path: str,
         old_text: str,
         new_text: str,
+        user_context: Optional["UserContext"] = None,
+        **kwargs
     ) -> str:
         """
         Edit file by replacing text
@@ -79,6 +81,8 @@ class EditFileTool(Tool):
             path: File path
             old_text: Text to replace
             new_text: Replacement text
+            user_context: User context (ignored, for multi-tenant compatibility)
+            **kwargs: Additional arguments (ignored)
 
         Returns:
             Success message with number of replacements

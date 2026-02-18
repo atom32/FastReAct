@@ -87,5 +87,74 @@
     "enable_safety": true,
     "strict_mode": false,
     "auto_approve_safe": true
+  },
+
+  "mcp": {
+    "_comment": "MCP (Model Context Protocol) 服务器配置",
+    "_comment_2": "MCP 服务器可以与 Skill 关联，实现渐进式工具发现",
+    "_comment_3": "https://modelcontextprotocol.io",
+    "_comment_isolation": "多租户隔离模式配置 (multi-tenant deployments)",
+
+    "servers": [
+      {
+        "_comment": "示例: 无状态工具 (全局共享模式)",
+        "_comment_2": "适用场景: web_search, file_operations 等无状态工具",
+        "name": "web_search",
+        "command": "python3",
+        "args": ["mcp_servers/web_search.py"],
+        "isolation": "shared",
+        "description": "Web search functionality"
+      },
+      {
+        "_comment": "示例: 有状态工具 (每用户隔离模式)",
+        "_comment_2": "适用场景: graphrag, database 等有状态工具",
+        "_comment_3": "每用户拥有独立的 MCP 服务器进程",
+        "name": "graphrag",
+        "command": "python3",
+        "args": ["mcp_servers/graphrag_server.py"],
+        "isolation": "per_user",
+        "per_user_args_template": ["--user-dir", "{user_workspace}"],
+        "description": "GraphRAG knowledge graph operations"
+      },
+      {
+        "_comment": "示例: 按需创建模式 (推荐)",
+        "_comment_2": "适用场景: 平衡性能和隔离需求",
+        "_comment_3": "活跃用户创建独立进程,空闲超时后自动回收",
+        "name": "database",
+        "command": "python3",
+        "args": ["mcp_servers/database_server.py"],
+        "isolation": "lazy_per_user",
+        "per_user_args_template": ["--user-dir", "{user_workspace}"],
+        "idle_timeout": 300,
+        "max_instances": 10,
+        "description": "User-specific database operations"
+      },
+      {
+        "_comment": "示例: GitHub MCP 服务器 (默认 shared 模式)",
+        "name": "github_mcp",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "_comment_associated_skill": "可选: 关联的 Skill 名称",
+        "associated_skill": null,
+        "_comment_description": "可选: 服务器描述，用于工具发现",
+        "description": "GitHub integration for repositories and PRs"
+      },
+      {
+        "_comment": "示例: 文件系统 MCP 服务器",
+        "name": "filesystem_mcp",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"],
+        "associated_skill": "file_management",
+        "description": "File system operations"
+      },
+      {
+        "_comment": "示例: PostgreSQL MCP 服务器",
+        "name": "postgres_mcp",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"],
+        "associated_skill": "database",
+        "description": "PostgreSQL database operations"
+      }
+    ]
   }
 }

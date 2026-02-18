@@ -1,0 +1,26 @@
+{
+  "analysis_date": "2026-02-18",
+  "projects": {
+    "fastreact_nano": {
+      "path": "/Users/xudawei/FastReAct/fastreact-nano",
+      "language": "Python",
+      "branch": "nano"
+    },
+    "openclaw": {
+      "path": "/Users/xudawei/openclaw",
+      "language": "TypeScript"
+    },
+    "nanobot": {
+      "path": "/Users/xudawei/nanobot",
+      "language": "Python"
+    }
+  },
+  "analysis_layers": [
+    "LLM Provider",
+    "Core Infrastructure",
+    "Agent Reasoning",
+    "Skills/MCP",
+    "Agent Execution",
+    "Adapters"
+  ]
+}

@@ -64,12 +64,14 @@ class ExecTool(Tool):
             "required": ["command"],
         }
 
-    async def execute(self, command: str) -> str:
+    async def execute(self, command: str, user_context: Optional["UserContext"] = None, **kwargs) -> str:
         """
         Execute shell command
 
         Args:
             command: Command to execute
+            user_context: User context (ignored, for multi-tenant compatibility)
+            **kwargs: Additional arguments (ignored)
 
         Returns:
             Command output

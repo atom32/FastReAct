@@ -15,7 +15,7 @@ __author__ = "FastReAct Team"
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.react import ReActCore
 from fastreact.core.tools import Tool, ToolRegistry
-from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig
+from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig, MCPConfig, FeishuConfig
 from fastreact.core.context import ContextMonitor, ContextStats, FilesystemMemory, FilesystemNode
 from fastreact.core.safety import (
     SafetyLevel,
@@ -56,6 +56,12 @@ from fastreact.skills import (
 # Agent
 from fastreact.agent import Agent, ask, ask_sync
 
+# Multi-tenant
+from fastreact.core.multitenant import MultiTenantManager, UserContext, SecurityError
+
+# MCP
+from fastreact.mcp.manager import MCPToolManager, MCPToolWrapper
+
 __all__ = [
     # Version
     "__version__",
@@ -72,6 +78,8 @@ __all__ = [
     "LLMConfig",
     "ToolConfig",
     "ReactConfig",
+    "MCPConfig",
+    "FeishuConfig",
     # Context (Cortex)
     "ContextMonitor",
     "ContextStats",
@@ -107,4 +115,10 @@ __all__ = [
     "Agent",
     "ask",
     "ask_sync",
+    # Multi-tenant
+    "MultiTenantManager",
+    "UserContext",
+    # MCP
+    "MCPToolManager",
+    "MCPToolWrapper",
 ]

@@ -104,6 +104,120 @@ class ReactConfig:
 
 
 @dataclass
+class MCPServerConfig:
+    """Configuration for a single MCP server"""
+
+    name: str
+    command: str
+    args: list[str] = field(default_factory=list)
+    env: Optional[dict[str, str]] = None
+
+    # Optional skill association
+    associated_skill: Optional[str] = None
+
+    # Description for tool discovery
+    description: Optional[str] = None
+
+    # Multi-tenant isolation settings
+    isolation: str = "shared"  # "shared" | "per_user" | "lazy_per_user"
+    per_user_args_template: Optional[list[str]] = None  # e.g., ["--user-dir", "{user_workspace}"]
+    idle_timeout: int = 300  # seconds, only for lazy_per_user mode
+    max_instances: int = 10  # max instances, only for lazy_per_user mode
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MCPServerConfig":
+        """Create from dictionary"""
+        return cls(
+            name=data.get("name", "unknown"),
+            command=data.get("command", ""),
+            args=data.get("args", []),
+            env=data.get("env"),
+            associated_skill=data.get("associated_skill"),
+            description=data.get("description"),
+            isolation=data.get("isolation", "shared"),
+            per_user_args_template=data.get("per_user_args_template"),
+            idle_timeout=data.get("idle_timeout", 300),
+            max_instances=data.get("max_instances", 10),
+        )
+
+
+@dataclass
+class MCPConfig:
+    """MCP (Model Context Protocol) server configuration"""
+
+    servers: list[MCPServerConfig] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MCPConfig":
+        """Create MCP config from dictionary"""
+        servers_data = data.get("servers", [])
+        servers = [MCPServerConfig.from_dict(s) for s in servers_data]
+        return cls(servers=servers)
+
+    @classmethod
+    def from_env(cls) -> "MCPConfig":
+        """Create MCP config from environment variables"""
+        import json
+
+        servers_json = os.getenv("FASTRACT_MCP_SERVERS", "[]")
+        try:
+            servers_data = json.loads(servers_json)
+            servers = [MCPServerConfig.from_dict(s) for s in servers_data]
+        except json.JSONDecodeError:
+            servers = []
+
+        return cls(servers=servers)
+
+
+@dataclass
+class FeishuConfig:
+    """Feishu (Lark) channel configuration"""
+
+    # Connection mode: "webhook" (HTTP) or "sdk" (WebSocket long connection)
+    connection_mode: str = "sdk"
+
+    # App credentials
+    app_id: str = ""
+    app_secret: str = ""
+
+    # Webhook security (only for webhook mode)
+    encrypt_key: str = ""
+    verification_token: str = ""
+
+    # Server configuration (only for webhook mode)
+    host: str = "0.0.0.0"
+    port: int = 8001
+    webhook_path: str = "/webhook/feishu"
+
+    # SDK configuration (only for SDK mode)
+    auto_reconnect: bool = True
+    log_level: str = "info"
+
+    # Multi-tenant settings
+    enable_multitenant: bool = True
+    base_workspace: Optional[Path] = None
+
+    @classmethod
+    def from_env(cls) -> "FeishuConfig":
+        """Create Feishu config from environment variables"""
+        workspace_str = os.getenv("FEISHU_WORKSPACE")
+        return cls(
+            connection_mode=os.getenv("FEISHU_CONNECTION_MODE", "sdk"),
+            app_id=os.getenv("FEISHU_APP_ID", ""),
+            app_secret=os.getenv("FEISHU_APP_SECRET", ""),
+            encrypt_key=os.getenv("FEISHU_ENCRYPT_KEY", ""),
+            verification_token=os.getenv("FEISHU_VERIFICATION_TOKEN", ""),
+            host=os.getenv("FEISHU_HOST", "0.0.0.0"),
+            port=int(os.getenv("FEISHU_PORT", "8001")),
+            webhook_path=os.getenv("FEISHU_WEBHOOK_PATH", "/webhook/feishu"),
+            auto_reconnect=os.getenv("FEISHU_AUTO_RECONNECT", "true").lower() == "true",
+            log_level=os.getenv("FEISHU_LOG_LEVEL", "info"),
+            enable_multitenant=os.getenv("FEISHU_MULTITENANT", "true").lower() == "true",
+            base_workspace=Path(workspace_str) if workspace_str else None,
+        )
+
+
+@dataclass
 class Config:
     """
     Main configuration for FastReAct Nano
@@ -130,11 +244,13 @@ class Config:
         FASTRACT_ENABLE_SAFETY: Enable safety guardrails (default: true)
         FASTRICT_MODE: Require confirmation for all modifications (default: false)
         FASTRACT_AUTO_APPROVE_SAFE: Auto-approve safe operations (default: true)
+        FASTRACT_MCP_SERVERS: JSON array of MCP server configs (default: [])
     """
 
     llm: LLMConfig = field(default_factory=LLMConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
     react: ReactConfig = field(default_factory=ReactConfig)
+    mcp: MCPConfig = field(default_factory=MCPConfig)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -143,6 +259,7 @@ class Config:
             llm=LLMConfig.from_env(),
             tools=ToolConfig.from_env(),
             react=ReactConfig.from_env(),
+            mcp=MCPConfig.from_env(),
         )
 
     @classmethod
@@ -260,10 +377,16 @@ class Config:
                     enable_followup=react_data.get("enable_followup", True),
                 )
 
+            # Extract MCP configuration
+            mcp_config = MCPConfig()
+            if "mcp" in data:
+                mcp_config = MCPConfig.from_dict(data["mcp"])
+
             return cls(
                 llm=llm_config,
                 tools=tools_config,
                 react=react_config,
+                mcp=mcp_config,
             )
 
         # Fallback to environment variables

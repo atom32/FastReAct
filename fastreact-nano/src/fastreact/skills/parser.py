@@ -20,6 +20,9 @@ class ParsedSkill:
     metadata: dict[str, Any] = field(default_factory=dict)
     referenced_files: list[str] = field(default_factory=list)
 
+    # Extracted tool references
+    tool_references: list[str] = field(default_factory=list)
+
     def get_section(self, section_name: str) -> Optional[str]:
         """Get a section by name"""
         return self.sections.get(section_name)
@@ -53,6 +56,9 @@ class SkillParser:
 
     # File reference pattern ([filename.md] or (see filename.md))
     FILE_REF_RE = re.compile(r"\[([^\]]+\.(?:md|txt|py|js))\]|\(see\s+([^\)]+\.(?:md|txt|py|js))\)")
+
+    # Tool reference pattern (tool_name or `tool_name`)
+    TOOL_REF_RE = re.compile(r"(?:^|\s)([a-zA-Z_][a-zA-Z0-9_]*_mcp_[a-zA-Z0-9_]+|[a-zA-Z_][a-zA-Z0-9_]*)(?=$|\s|[.,:])")
 
     def __init__(self):
         pass
@@ -88,12 +94,16 @@ class SkillParser:
         # Extract file references
         referenced_files = self._extract_file_references(content)
 
+        # Extract tool references
+        tool_references = self._extract_tool_references(frontmatter, content)
+
         return ParsedSkill(
             name=name,
             description=description.strip(),
             sections=sections,
             metadata=frontmatter,
             referenced_files=referenced_files,
+            tool_references=tool_references,
         )
 
     def parse_file(self, skill_file: Path) -> ParsedSkill:
@@ -122,7 +132,17 @@ class SkillParser:
 
         try:
             import yaml
-            return yaml.safe_load(match.group(1)) or {}
+            data = yaml.safe_load(match.group(1)) or {}
+
+            # Normalize MCP server dependencies
+            if "mcp_servers" not in data:
+                data["mcp_servers"] = []
+
+            # Normalize recommended tools
+            if "recommended_tools" not in data:
+                data["recommended_tools"] = []
+
+            return data
         except Exception:
             return {}
 
@@ -166,3 +186,20 @@ class SkillParser:
                 files.append(filename)
 
         return list(set(files))  # Deduplicate
+
+    def _extract_tool_references(self, frontmatter: dict[str, Any], content: str) -> list[str]:
+        """Extract tool references from frontmatter and content"""
+        tools = []
+
+        # Extract from frontmatter
+        if "recommended_tools" in frontmatter:
+            tools.extend(frontmatter["recommended_tools"])
+
+        # Extract from content (look for tool patterns)
+        # Look for mentions of specific tools in the content
+        for match in self.TOOL_REF_RE.finditer(content):
+            tool = match.group(1)
+            if tool and len(tool) > 3:  # Filter out short words
+                tools.append(tool)
+
+        return list(set(tools))  # Deduplicate

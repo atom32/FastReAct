@@ -269,6 +269,82 @@ def sample_config_dict():
 
 
 # ============================================================================
+# Mock Feishu Client Fixtures
+# ============================================================================
+
+@pytest.fixture
+def mock_feishu_client():
+    """
+    Mock Feishu client for testing
+
+    Provides a mock implementation that simulates Feishu events
+    without requiring real credentials or WebSocket connections.
+    """
+    from tests.helpers.mock_feishu_client import MockFeishuClient
+    return MockFeishuClient()
+
+
+@pytest.fixture
+def test_feishu_users():
+    """
+    Test Feishu user data
+
+    Returns dict of test users with user_id, chat_id, and name.
+    """
+    from tests.helpers.mock_feishu_client import TEST_FEISHU_USERS
+    return TEST_FEISHU_USERS
+
+
+@pytest.fixture
+def config_with_real_llm():
+    """
+    Config with real LLM API for integration testing
+
+    Uses environment variable FASTRACT_API_KEY for API key.
+    Mark tests using this with @pytest.mark.api
+    """
+    import os
+    from fastreact.core.config import Config
+
+    api_key = os.getenv("FASTRACT_API_KEY")
+
+    if not api_key:
+        pytest.skip("FASTRACT_API_KEY not set - skipping real API test")
+
+    config = Config()
+    config.llm.api_key = api_key
+    config.llm.model = os.getenv("FASTRACT_MODEL", "gpt-4o-mini")
+
+    return config
+
+
+@pytest.fixture
+def config_with_graphrag():
+    """
+    Config with GraphRAG MCP server
+
+    Pre-configured with GraphRAG server for testing.
+    """
+    import sys
+    from fastreact.core.config import Config
+
+    config = Config()
+
+    # Add GraphRAG MCP server
+    config.mcp.servers = [
+        {
+            "name": "graphrag",
+            "command": sys.executable,
+            "args": ["examples/graph_rag_server.py"],
+            "description": "GraphRAG knowledge graph tools",
+            "associated_skill": "graphrag_workflow",
+        }
+    ]
+
+    return config
+
+
+# ============================================================================
 # Helper Functions
 # ============================================================================
 

@@ -58,11 +58,16 @@ class Tool(ABC):
         }
 
     @abstractmethod
-    async def execute(self, **kwargs) -> str:
+    async def execute(
+        self,
+        user_context: Optional["UserContext"] = None,
+        **kwargs
+    ) -> str:
         """
         Execute the tool
 
         Args:
+            user_context: User context for multi-tenant isolation (optional)
             **kwargs: Tool parameters
 
         Returns:
@@ -159,6 +164,7 @@ class ToolRegistry:
         self,
         name: str,
         params: dict[str, Any],
+        user_context: Optional["UserContext"] = None,
     ) -> str:
         """
         Execute a tool
@@ -166,6 +172,7 @@ class ToolRegistry:
         Args:
             name: Tool name
             params: Tool parameters
+            user_context: User context for multi-tenant isolation (optional)
 
         Returns:
             Result string
@@ -182,9 +189,12 @@ class ToolRegistry:
         if errors:
             raise ValidationError(errors)
 
-        # Execute
+        # Execute with user context
         try:
-            return await tool.execute(**params)
+            return await tool.execute(
+                user_context=user_context,
+                **params
+            )
         except Exception as e:
             return f"[ERROR] {type(e).__name__}: {str(e)}"
 
@@ -216,7 +226,8 @@ class EchoTool(Tool):
             "required": ["text"],
         }
 
-    async def execute(self, text: str) -> str:
+    async def execute(self, text: str, user_context: Optional["UserContext"] = None) -> str:
+        _ = user_context  # Unused parameter for backward compatibility
         return f"[ECHO] {text}"
 
 
@@ -248,6 +259,7 @@ class AddTool(Tool):
             "required": ["a", "b"],
         }
 
-    async def execute(self, a: float, b: float) -> str:
+    async def execute(self, a: float, b: float, user_context: Optional["UserContext"] = None) -> str:
+        _ = user_context  # Unused parameter for backward compatibility
         result = a + b
         return f"[ADD] {a} + {b} = {result}"

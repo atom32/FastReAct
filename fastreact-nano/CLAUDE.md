@@ -297,11 +297,212 @@ When making changes to FastReAct:
 - Rule violation found in code review
 
 **Quarterly Review**:
-- [ ] Check line count (target: < 300 lines)
+- [ ] Check line count (target: < 400 lines)
 - [ ] Archive outdated sections to docs_archive/
 - [ ] Update Common Pitfalls with recent fixes
 - [ ] Verify all commands still work
 - [ ] Remove redundant content
+
+---
+
+## Deployment Rules & Standards
+
+### Docker Deployment
+
+**Multi-Stage Build Pattern**:
+- Use `base-builder` stage for compiling and installing dependencies
+- Use `production` stage for minimal runtime image
+- Use `development` stage for dev tools (vim, htop, jupyter)
+
+**Example**:
+```dockerfile
+# Stage 1: Builder
+FROM python:3.11-slim AS base-builder
+WORKDIR /build
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir -e ".[all]"
+
+# Stage 2: Production
+FROM python:3.11-slim AS production
+COPY --from=base-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+CMD ["python", "-m", "fastreact.adapters.gateway"]
+```
+
+**Security Requirements**:
+- [ ] Run as non-root user (create `fastreact` user)
+- [ ] Use minimal base image (`python:3.11-slim`)
+- [ ] Set resource limits (memory, CPU)
+- [ ] Enable health checks
+- [ ] Don't run as root in containers
+
+**Environment Variables**:
+- Always use `.env` file for configuration
+- Never commit `.env` to git (use `.env.example`)
+- Support build args for optional features (`FEISHU_ENABLED`, `MCP_ENABLED`)
+
+### Release Process
+
+**Automated Release Script** (`release.sh`):
+- Interactive mode: `./release.sh`
+- Version bump: `./release.sh patch|minor|major`
+- Build only: `./release.sh --build-only`
+
+**Release Checklist**:
+- [ ] All tests pass (`pytest tests/`)
+- [ ] Version numbers updated (pyproject.toml, __init__.py)
+- [ ] CHANGELOG.md updated
+- [ ] Git tag created (`git tag -a v2.0.0`)
+- [ ] Docker images built (3 variants: base, feishu, dev)
+- [ ] PyPI package published (`twine upload dist/*`)
+- [ ] GitHub release created
+
+**Version Management**:
+```bash
+# Single source of truth: src/fastreact/__init__.py
+__version__ = "2.0.0"
+
+# Update both files:
+# - src/fastreact/__init__.py
+# - pyproject.toml
+
+# DO NOT duplicate elsewhere!
+```
+
+### Production Configuration
+
+**Required Environment Variables**:
+```bash
+# LLM
+FASTRACT_MODEL=gpt-4o-mini
+FASTRACT_API_KEY=sk-xxx
+
+# Multi-Tenant (Feishu)
+FEISHU_MULTITENANT=true
+FEISHU_BASE_WORKSPACE=/workspace
+
+# Security
+FASTRACT_MAX_FILE_SIZE=1048576
+FASTRACT_EXEC_TIMEOUT=30
+```
+
+**Optional Features**:
+```bash
+# MCP Support
+MCP_ENABLED=true
+
+# Feishu Bot
+FEISHU_ENABLED=true
+FEISHU_APP_ID=xxx
+FEISHU_APP_SECRET=xxx
+
+# Monitoring
+PROMETHEUS_ENABLED=true
+GRAFANA_ENABLED=true
+```
+
+### Deployment Commands
+
+**Docker Compose**:
+```bash
+# Start all services
+docker-compose up -d
+
+# Start specific service
+docker-compose up -d gateway
+
+# Start with monitoring
+docker-compose --profile monitoring up -d
+
+# View logs
+docker-compose logs -f gateway
+
+# Stop all
+docker-compose down
+```
+
+**Kubernetes**:
+```bash
+# Apply deployment
+kubectl apply -f deployments/k8s/gateway-deployment.yaml
+
+# Check status
+kubectl get pods -n fastreact
+
+# View logs
+kubectl logs -f deployment/fastreact-gateway -n fastreact
+
+# Scale up
+kubectl scale deployment/fastreact-gateway --replicas=5 -n fastreact
+```
+
+### Security Best Practices
+
+**Secrets Management**:
+- Never commit secrets to git
+- Use environment variables or secret managers
+- Kubernetes: Use `kubectl create secret generic`
+- Docker: Use `docker secret create`
+
+**Container Security**:
+```dockerfile
+# Run as non-root
+USER fastreact
+
+# Drop capabilities
+--cap-drop=ALL
+
+# Read-only root (optional)
+--read-only
+--tmpfs /tmp
+```
+
+**Network Security**:
+- Use internal networks for service-to-service communication
+- Expose only necessary ports
+- Enable TLS/SSL for external connections
+- Implement rate limiting
+
+---
+
+## Installation & Packaging
+
+### pyproject.toml Structure
+
+**Core Dependencies** (minimal):
+```toml
+dependencies = [
+    "litellm>=1.0.0",
+    "openai>=1.0.0",
+    "httpx>=0.25.0",
+    "pyyaml>=6.0",
+]
+```
+
+**Optional Dependencies** (feature-based):
+```toml
+[project.optional-dependencies]
+cli = ["typer>=0.9.0", "rich>=13.0.0"]
+gateway = ["fastapi>=0.104.0", "websockets>=12.0"]
+feishu = ["lark-oapi>=1.5.0"]
+mcp = []  # Built-in, no extra deps
+dev = ["pytest>=7.0.0", "black>=23.0.0"]
+all = ["fastreact-nano[cli,gateway,feishu,mcp,dev]"]
+```
+
+**Installation Commands**:
+```bash
+# Core only
+pip install fastreact-nano
+
+# With features
+pip install "fastreact-nano[cli,gateway,mcp]"
+
+# Everything
+pip install "fastreact-nano[all]"
+
+# From local
+pip install -e ".[all]"
+```
 
 ---
 

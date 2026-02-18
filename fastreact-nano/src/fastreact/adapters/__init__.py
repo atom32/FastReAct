@@ -18,6 +18,14 @@ HTTP Adapter:
 Gateway Adapter:
     pip install fastreact-nano[gateway]
     python -m fastreact.adapters.gateway
+
+Feishu Adapter (Webhook):
+    pip install fastreact-nano[feishu]
+    python examples/feishu_webhook_bot.py
+
+Feishu Adapter (SDK - Recommended):
+    pip install fastreact-nano[feishu]
+    python examples/feishu_sdk_bot.py
 """
 
 __all__ = []

@@ -1,0 +1,42 @@
+{
+  "llm": {
+    "model": "gpt-4o-mini",
+    "api_base": null,
+    "api_key": null,
+    "temperature": 0.7,
+    "max_tokens": 4096
+  },
+  "tools": {
+    "max_file_size": 1048576,
+    "protected_paths": [
+      "/etc/passwd",
+      "/etc/shadow",
+      "C:\\Windows\\System32\\*"
+    ],
+    "exec_timeout": 30,
+    "working_dir": null
+  },
+  "react": {
+    "max_iterations": 20,
+    "enable_steering": true,
+    "enable_followup": true,
+    "enable_filesystem_memory": true,
+    "enable_safety": false,
+    "max_context_tokens": 128000,
+    "context_warning_threshold": 0.8,
+    "max_tool_output_chars": 10000
+  },
+  "mcp": {
+    "servers": [
+      {
+        "name": "graphrag",
+        "command": "python3",
+        "args": ["examples/graph_rag_server.py"],
+        "isolation": "lazy_per_user",
+        "idle_timeout": 300,
+        "max_instances": 10,
+        "description": "Knowledge graph search with GraphRAG"
+      }
+    ]
+  }
+}

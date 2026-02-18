@@ -25,8 +25,12 @@ from fastreact.core.context import ContextMonitor, FilesystemMemory
 from fastreact.core.safety import SafetyPolicy, SafetyLevel, CLIConfirmationCallback
 from fastreact.core.react import ReActCore
 from fastreact.core.events import EventType
+from fastreact.core.multitenant import MultiTenantManager, UserContext
 from fastreact.skills import SkillRegistry
 from fastreact.providers.litellm import LiteLLMProvider
+from fastreact.mcp.manager import MCPToolManager
+from fastreact.mcp.multitenant_manager import MultiTenantMCPManager
+from fastreact.mcp.discovery import MCPToolDiscovery
 
 from fastreact.tools import ReadFileTool, WriteFileTool, ExecTool, EditFileTool
 
@@ -67,6 +71,8 @@ class Agent:
         self,
         config: Optional[Config] = None,
         skills_dir: Optional[Path] = None,
+        multitenant: bool = False,
+        base_workspace: Optional[Path] = None,
     ):
         """
         Initialize Agent (The Body)
@@ -74,6 +80,8 @@ class Agent:
         Args:
             config: Agent configuration (default: from config file or environment)
             skills_dir: Directory containing skills (default: ./skills/)
+            multitenant: Enable multi-tenant mode (default: False)
+            base_workspace: Base directory for user workspaces (default: ./workspace)
         """
         # Load configuration
         self._config = config or Config.load()
@@ -89,9 +97,25 @@ class Agent:
 
         # Initialize tools
         self._tools = ToolRegistry()
+
+        # Initialize MCP tool manager
+        self._mcp_manager = None  # Single-tenant mode
+        self._multitenant_mcp_manager = None  # Multi-tenant mode
+
+        # Initialize MCP tool discovery service
+        self._mcp_discovery = MCPToolDiscovery()
+
+        # Setup tools (core + MCP)
         self._setup_tools()
 
-        # Initialize skills
+        # Initialize multi-tenant manager
+        self._multitenant_enabled = multitenant
+        self._multitenant = None
+        if multitenant:
+            workspace_path = base_workspace or Path.cwd() / "workspace"
+            self._multitenant = MultiTenantManager(workspace_path)
+
+        # Initialize skills (global skills, not user-specific)
         self._skills = SkillRegistry()
         # Always try to load skills from default location
         try:
@@ -147,30 +171,49 @@ class Agent:
         # Session queues for steering/followup support
         self._session_queues: dict[str, MessageQueue] = {}
 
-    def _select_skills_auto(self, query: str, max_skills: int = 3) -> list[str]:
+    def _select_skills_auto(
+        self,
+        query: str,
+        max_skills: int = 3,
+        user_context: Optional[UserContext] = None,
+    ) -> list[str]:
         """
         Automatically select relevant skills based on query
 
         Args:
             query: User's query
             max_skills: Maximum number of skills to select
+            user_context: Optional user context for user-specific skills
 
         Returns:
             List of selected skill names
         """
         import re
-        from fastreact.skills import Skill
+        from fastreact.skills import Skill, SkillLoader, SkillRegistry
 
-        # Get all available skills
+        # Get all available skills (global + user-specific)
         all_skills = []
+
+        # Global skills
         try:
             for skill_name in self._skills.list_available():
                 skill = self._skills.get(skill_name)
                 if skill:
                     all_skills.append(skill)
         except Exception:
-            # If skills not available, return empty
-            return []
+            pass
+
+        # User-specific skills (higher priority)
+        if user_context and user_context.skills_dir.exists():
+            try:
+                user_loader = SkillLoader(skills_dir=user_context.skills_dir)
+                user_skills = SkillRegistry(loader=user_loader)
+                for skill_name in user_skills.list_available():
+                    skill = user_skills.get(skill_name)
+                    if skill:
+                        all_skills.append(skill)
+            except Exception:
+                pass
 
         if not all_skills:
             return []
@@ -231,6 +274,8 @@ class Agent:
 
         # Load skill descriptions
         skill_descriptions = []
+        mcp_servers_for_skills = set()
+
         for skill_name in skills:
             skill = self._skills.get(skill_name)
             if skill:
@@ -238,7 +283,16 @@ class Agent:
                 skill_info = f"## {skill.name}\n{skill.description}"
                 if skill.metadata.tags:
                     skill_info += f"\nTags: {', '.join(skill.metadata.tags)}"
+
+                # Add recommended tools if any
+                if skill.metadata.recommended_tools:
+                    skill_info += f"\nRecommended Tools: {', '.join(['`' + t + '`' for t in skill.metadata.recommended_tools])}"
+
                 skill_descriptions.append(skill_info)
+
+                # Collect MCP servers required by this skill
+                if skill.metadata.mcp_servers:
+                    mcp_servers_for_skills.update(skill.metadata.mcp_servers)
 
         # If no skills loaded, return base prompt
         if not skill_descriptions:
@@ -248,6 +302,23 @@ class Agent:
         skills_section = "\n\n# Available Skills\nThese skills are available for this task:\n\n"
         skills_section += "\n\n".join(skill_descriptions)
         skills_section += "\n\nUse these skills when appropriate to complete the user's request."
+
+        # Add MCP tools section if skills reference MCP servers
+        if mcp_servers_for_skills and self._mcp_discovery:
+            mcp_section_parts = []
+            for skill_name in skills:
+                # Get MCP servers for this skill
+                skill = self._skills.get(skill_name)
+                if skill and skill.metadata.mcp_servers:
+                    tools_section = self._mcp_discovery.generate_skill_tools_section(
+                        skill_name=skill_name,
+                        mcp_servers=skill.metadata.mcp_servers,
+                    )
+                    if tools_section:
+                        mcp_section_parts.append(tools_section)
+
+            if mcp_section_parts:
+                skills_section += "\n\n" + "\n\n".join(mcp_section_parts)
 
         return base_prompt + skills_section
 
@@ -310,6 +381,7 @@ class Agent:
         """Setup core tools with config"""
         tool_config = self._config.tools
 
+        # Register core tools
         self._tools.register(ReadFileTool(max_size=tool_config.max_file_size))
         self._tools.register(WriteFileTool(
             max_size=tool_config.max_file_size,
@@ -320,6 +392,136 @@ class Agent:
             working_dir=tool_config.working_dir,
         ))
         self._tools.register(EditFileTool(max_size=tool_config.max_file_size))
+
+        # Note: MCP servers are loaded lazily in _load_mcp_servers()
+        # to avoid async operations in __init__
+
+    async def _load_mcp_servers(self, required_skills: Optional[list[str]] = None) -> None:
+        """
+        Load MCP servers from configuration
+
+        This is called during first agent run to avoid blocking __init__.
+
+        Args:
+            required_skills: Optional list of skill names. If provided, only loads
+                           MCP servers that are associated with these skills or
+                           have no skill association.
+        """
+        if self._mcp_manager is not None:
+            # Already loaded
+            return
+
+        # Create MCP manager based on multi-tenant mode
+        if self._multitenant_enabled:
+            self._mcp_manager = MultiTenantMCPManager(self._tools, self._multitenant)
+        else:
+            self._mcp_manager = MCPToolManager(self._tools)
+
+        # Load servers from config
+        mcp_servers = self._config.mcp.servers or []
+
+        # Build set of required MCP servers from skills
+        required_mcp_servers = set()
+        if required_skills:
+            for skill_name in required_skills:
+                skill = self._skills.get(skill_name)
+                if skill and skill.metadata.mcp_servers:
+                    required_mcp_servers.update(skill.metadata.mcp_servers)
+
+        for server_config in mcp_servers:
+            server_name = server_config.name if hasattr(server_config, 'name') else server_config.get("name", "unknown")
+
+            # Skip if skills specified and this server is not required
+            # unless it has no skill association (global servers)
+            if required_skills is not None:
+                associated_skill = server_config.associated_skill if hasattr(server_config, 'associated_skill') else server_config.get("associated_skill")
+                if associated_skill and associated_skill not in required_skills:
+                    # Server is associated with a skill that's not in our list
+                    if server_name not in required_mcp_servers:
+                        continue
+
+            try:
+                # Extract config based on type (dict or MCPServerConfig)
+                if hasattr(server_config, 'command'):
+                    # MCPServerConfig object
+                    command = server_config.command
+                    args = server_config.args
+                    description = server_config.description
+                    associated_skill = server_config.associated_skill
+                    isolation = server_config.isolation
+                else:
+                    # Dict format (backward compatibility)
+                    command = server_config.get("command", "")
+                    args = server_config.get("args", [])
+                    description = server_config.get("description")
+                    associated_skill = server_config.get("associated_skill")
+                    isolation = server_config.get("isolation", "shared")
+
+                # Index server description for discovery
+                if description:
+                    self._mcp_discovery.index_server(server_name, description)
+
+                # Add server and register tools based on manager type
+                if isinstance(self._mcp_manager, MultiTenantMCPManager):
+                    # Multi-tenant mode: Only preload shared servers
+                    if isolation == "shared":
+                        # Convert to MCPServerConfig if needed
+                        if not hasattr(server_config, 'isolation'):
+                            from fastreact.core.config import MCPServerConfig
+                            server_config = MCPServerConfig.from_dict(server_config)
+
+                        # Preload shared server for tool discovery
+                        await self._mcp_manager.preload_shared_servers([server_config])
+
+                        # Index tools for discovery
+                        mcp_tools = self._mcp_manager.list_mcp_tools()
+                        for tool_name in mcp_tools:
+                            if tool_name not in self._mcp_discovery.list_all_tools():
+                                # Get tool wrapper to extract info
+                                tool_wrapper = self._mcp_manager._tool_wrappers.get(tool_name)
+                                if tool_wrapper:
+                                    self._mcp_discovery.index_tool(
+                                        tool_name=tool_name,
+                                        server_name=server_name,
+                                        description=tool_wrapper.description,
+                                        parameters=tool_wrapper.parameters,
+                                        associated_skill=associated_skill,
+                                    )
+                    # per_user and lazy_per_user servers are not preloaded
+                    # They will be created on-demand during tool execution
+                else:
+                    # Single-tenant mode: Load all servers immediately
+                    await self._mcp_manager.add_server(
+                        name=server_name,
+                        server_command=command,
+                        server_args=args,
+                    )
+
+                    # Index tools for discovery
+                    mcp_tools = self._mcp_manager.list_mcp_tools()
+                    for tool_name in mcp_tools:
+                        if tool_name not in self._mcp_discovery.list_all_tools():
+                            # Get tool wrapper to extract info
+                            tool_wrapper = self._mcp_manager._tool_wrappers.get(tool_name)
+                            if tool_wrapper:
+                                self._mcp_discovery.index_tool(
+                                    tool_name=tool_name,
+                                    server_name=server_name,
+                                    description=tool_wrapper.description,
+                                    parameters=tool_wrapper.parameters,
+                                    associated_skill=associated_skill,
+                                )
+
+            except Exception as e:
+                # Log error but continue with other servers
+                import sys
+                print(f"[ERROR] Failed to load MCP server '{server_name}': {e}", file=sys.stderr)
+
+    async def close_mcp_servers(self) -> None:
+        """Close all MCP server connections"""
+        if self._mcp_manager:
+            await self._mcp_manager.close_all()
+            self._mcp_manager = None
 
     def inject_message(self, session_id: str, message: Message):
         """
@@ -343,6 +545,7 @@ class Agent:
         skills: Optional[list[str]] = None,
         session_id: Optional[str] = None,
         history: Optional[list[dict]] = None,
+        user_key: Optional[str] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """
         Run agent with event stream (Brain-Body Loop)
@@ -364,6 +567,9 @@ class Agent:
                         {"role": "assistant", "content": "..."},
                     ]
                     Note: Tool messages are managed internally, don't include them
+            user_key: User identifier for multi-tenant mode (format: "channel:user_id")
+                     Example: "feishu:ou_1234567890"
+                     If None and multi-tenant enabled, will extract from session_id
 
         Yields:
             AgentEvent objects (DOES NOT consume LLM context)
@@ -406,11 +612,48 @@ class Agent:
                 history=history
             ):
                 ...
+
+            # Multi-tenant mode
+            agent = Agent(multitenant=True)
+            async for event in agent.run_event_stream(
+                "Create file test.txt",
+                user_key="feishu:ou_xxx"  # User-specific workspace
+            ):
+                ...
         """
         from fastreact.core.events import AgentEvent, EventType
 
+        # Extract user_key from session_id if not provided
+        if user_key is None and self._multitenant_enabled and session_id:
+            # Try to extract from session_id (e.g., "feishu:ou_xxx:session-uuid")
+            if ":" in session_id:
+                parts = session_id.split(":")
+                if len(parts) >= 2:
+                    user_key = f"{parts[0]}:{parts[1]}"
+
+        # Get user context if multi-tenant (must be before skill selection)
+        user_context: Optional[UserContext] = None
+        if self._multitenant_enabled and user_key:
+            user_context = self._multitenant.get_user_context(user_key)
+
+        # Auto-select skills if not specified and enabled
+        if skills is None and self._auto_select_skills:
+            skills = self._select_skills_auto(
+                query,
+                self._max_auto_skills,
+                user_context=user_context,
+            )
+
+        # Load MCP servers on first run (lazy initialization)
+        # Pass selected skills to load only required MCP servers
+        await self._load_mcp_servers(required_skills=skills)
+
         # Generate session_id if not provided
         session_id = session_id or str(uuid.uuid4())
+
+        # Prepend user_key to session_id for multi-tenant
+        if user_context and ":" not in session_id:
+            session_id = f"{user_key}:{session_id}"
 
         # Create session queue for steering/followup
         self._session_queues[session_id] = MessageQueue()
@@ -425,11 +668,7 @@ class Agent:
             # Add current user message
             messages.append(Message.user(query).to_llm_format())
 
-            # Build system prompt with skills
-            # Auto-select skills if not specified and enabled
-            if skills is None and self._auto_select_skills:
-                skills = self._select_skills_auto(query, self._max_auto_skills)
-
+            # Build system prompt with skills (skills already selected above)
             system_prompt = self._build_system_prompt_with_skills(skills)
 
             # Interrupt flag
@@ -558,7 +797,11 @@ class Agent:
 
                             # Execute tool
                             try:
-                                result = await self._tools.execute(tool_name, tool_params)
+                                result = await self._tools.execute(
+                                    tool_name,
+                                    tool_params,
+                                    user_context=user_context
+                                )
 
                                 # Context truncate if needed
                                 if self._context_monitor:

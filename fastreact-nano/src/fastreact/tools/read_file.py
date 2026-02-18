@@ -74,6 +74,8 @@ class ReadFileTool(Tool):
         path: str,
         start_line: Optional[int] = None,
         end_line: Optional[int] = None,
+        user_context: Optional["UserContext"] = None,
+        **kwargs
     ) -> str:
         """
         Read file contents
@@ -82,6 +84,8 @@ class ReadFileTool(Tool):
             path: File path
             start_line: Starting line (1-indexed)
             end_line: Ending line (exclusive if start_line provided)
+            user_context: User context (ignored, for multi-tenant compatibility)
+            **kwargs: Additional arguments (ignored)
 
         Returns:
             File contents

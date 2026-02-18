@@ -285,12 +285,91 @@ async def test_async_function():
     assert result is not None
 ```
 
+## End-to-End Tests (NEW)
+
+### Purpose
+
+Comprehensive testing of Feishu + GraphRAG + Multi-tenant integration.
+
+**Files**:
+- `integration/test_e2e_feishu_graphrag.py` - Main E2E scenarios
+- `integration/test_concurrent_users.py` - Concurrent access tests
+- `helpers/test_helpers.py` - Event collection utilities
+- `helpers/mock_feishu_client.py` - Mock Feishu client
+
+### Test Scenarios
+
+**Scenario 1: Single-Round Knowledge Query**
+- Validates MCP-SKILL integration
+- Agent selects graphrag_workflow skill
+- Calls appropriate GraphRAG tools
+- Returns knowledge graph information
+
+**Scenario 2: Multi-Turn Conversation**
+- Validates context preservation
+- Each round maintains previous context
+- Conversation history persists
+
+**Scenario 3: Concurrent Users**
+- Validates multi-tenant isolation
+- Each user has independent workspace
+- Query results don't mix
+
+**Scenario 4: Complex Workflows**
+- Validates skill guidance
+- Multiple tools in sequence
+- Results synthesized from multiple sources
+
+**Scenario 5: Error Handling**
+- Validates graceful degradation
+- Meaningful error messages
+- Alternative solutions attempted
+
+### Running E2E Tests
+
+```bash
+# Set API key
+export FASTRACT_API_KEY="sk-xxx"
+
+# Run all E2E tests
+pytest tests/integration/test_e2e_feishu_graphrag.py -v -m api
+
+# Run specific scenario
+pytest tests/integration/test_e2e_feishu_graphrag.py::TestE2ESingleRound -v -m api
+
+# Run concurrent user tests
+pytest tests/integration/test_concurrent_users.py -v
+```
+
+### Test Helpers
+
+```python
+from tests.helpers.test_helpers import (
+    collect_events,
+    extract_tool_calls,
+    assert_session_completed,
+)
+
+# Collect events
+events = await collect_events(agent.run_event_stream("query"))
+
+# Assert completion
+assert_session_completed(events)
+
+# Check tool usage
+assert_tool_called(events, "graphrag_search_graph")
+```
+
+See `integration/test_e2e_feishu_graphrag.py` for examples.
+
 ## Migration Plan
 
 ### Legacy Scripts → pytest
 
 Current status:
 - [x] `test_auto_skills_pytest.py` - Converted to pytest
+- [x] `test_e2e_feishu_graphrag.py` - NEW E2E test suite
+- [x] `test_concurrent_users.py` - NEW concurrent tests
 - [ ] `test_skills_integration.py` - To convert
 - [ ] `test_agent_loop.py` - To convert
 - [ ] Other integration tests - Keep as standalone scripts for manual testing

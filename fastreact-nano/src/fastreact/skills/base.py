@@ -18,6 +18,12 @@ class SkillMetadata:
     tags: list[str] = field(default_factory=list)
     dependencies: list[str] = field(default_factory=list)
 
+    # MCP server dependencies
+    mcp_servers: list[str] = field(default_factory=list)
+
+    # Tool recommendations
+    recommended_tools: list[str] = field(default_factory=list)
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SkillMetadata":
         """Create from dictionary"""
@@ -28,6 +34,8 @@ class SkillMetadata:
             author=data.get("author"),
             tags=data.get("tags", []),
             dependencies=data.get("dependencies", []),
+            mcp_servers=data.get("mcp_servers", []),
+            recommended_tools=data.get("recommended_tools", []),
         )
 
 

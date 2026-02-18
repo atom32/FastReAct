@@ -66,13 +66,15 @@ class WriteFileTool(Tool):
             "required": ["path", "content"],
         }
 
-    async def execute(self, path: str, content: str) -> str:
+    async def execute(self, path: str, content: str, user_context: Optional["UserContext"] = None, **kwargs) -> str:
         """
         Write content to file
 
         Args:
             path: File path
             content: Content to write
+            user_context: User context (ignored, for multi-tenant compatibility)
+            **kwargs: Additional arguments (ignored)
 
         Returns:
             Success message
