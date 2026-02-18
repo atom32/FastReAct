@@ -13,7 +13,9 @@ from typing import Dict, Optional
 
 try:
     from fastapi import WebSocket, WebSocketDisconnect, FastAPI
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.staticfiles import StaticFiles
     import uvicorn
 
     FASTAPI_AVAILABLE = True
@@ -115,6 +117,15 @@ def create_gateway_app() -> FastAPI:
         version="2.0.0",
     )
 
+    # CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://localhost:9000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     @app.get("/")
     async def root():
         """Gateway homepage"""
@@ -170,6 +181,73 @@ def create_gateway_app() -> FastAPI:
             "sessions": _session_manager.list_all(),
         }
 
+    @app.get("/api/sessions")
+    async def list_sessions_api():
+        """List all active sessions (REST API)"""
+        sessions = []
+        for session_id in _session_manager.list_all():
+            session = _session_manager.get(session_id)
+            if session:
+                sessions.append({
+                    "session_id": session.session_id,
+                    "created_at": session.created_at.isoformat(),
+                    "last_active": session.last_activity.isoformat(),
+                    "status": "active",
+                })
+        return {"sessions": sessions, "count": len(sessions)}
+
+    @app.get("/api/config")
+    async def get_config():
+        """Get current configuration (hide sensitive fields)"""
+        # Return default config structure
+        return {
+            "llm": {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_key": "***",  # Hidden for security
+                "base_url": "https://api.openai.com/v1",
+                "temperature": 0.7,
+                "max_tokens": 4096,
+            },
+            "mcp_servers": {},
+            "tools": [],
+            "system_prompt": "",
+            "max_iterations": 10,
+        }
+
+    @app.get("/api/tools")
+    async def list_tools():
+        """List all available tools"""
+        # Create a temporary agent to list skills
+        agent = Agent()
+        skills = agent.list_skills()
+        return {"tools": skills}
+
+    @app.get("/api/mcp/servers")
+    async def list_mcp_servers():
+        """List all MCP servers"""
+        return {"servers": []}
+
+    @app.get("/api/metrics")
+    async def get_metrics():
+        """Get system metrics"""
+        return {
+            "active_sessions": _session_manager.count,
+            "total_events": 0,
+            "uptime": 0,
+            "memory_usage": 0,
+            "cpu_usage": 0,
+        }
+
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint"""
+        return {
+            "status": "healthy",
+            "version": "2.0.0",
+            "active_sessions": _session_manager.count,
+        }
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         """WebSocket endpoint for real-time communication"""
@@ -187,24 +265,25 @@ def create_gateway_app() -> FastAPI:
                     # Update activity
                     session.update_activity()
 
-                    # Send user message
-                    await session.send({
-                        "type": "user",
-                        "content": message.get("content", ""),
-                    })
-
-                    # Run agent
+                    # Run agent with event streaming
                     try:
-                        response = await session.agent.run(
+                        from fastreact.core.events import EventType
+                        
+                        async for event in session.agent.run_event_stream(
                             message.get("content", ""),
                             skills=message.get("skills"),
-                        )
-
-                        # Send agent response
-                        await session.send({
-                            "type": "agent",
-                            "content": response,
-                        })
+                            session_id=session_id,
+                        ):
+                            # Send event immediately
+                            await session.send({
+                                "type": "event",
+                                "event_type": event.type.value,
+                                "content": event.content,
+                                "tool_name": event.tool_name,
+                                "tool_args": event.tool_args,
+                                "session_id": event.session_id,
+                                "metadata": event.metadata,
+                            })
 
                     except Exception as e:
                         await session.send({

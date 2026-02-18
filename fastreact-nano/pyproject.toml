@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastreact-nano"
-version = "2.0.0"
-description = "Lightweight ReAct agent with event-driven architecture"
+version = "2.3.0"
+description = "Modern AI Agent SDK with Vue 3 Frontend - The Visual Update"
 readme = "README_NANO.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}

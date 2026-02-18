@@ -1,0 +1,777 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-02-18",
+  "categories": [
+    {
+      "id": "filesystem",
+      "name": "Filesystem",
+      "description": "Tools for file and directory operations",
+      "icon": "Folder"
+    },
+    {
+      "id": "database",
+      "name": "Database",
+      "description": "Database connectors and query tools",
+      "icon": "DataBase"
+    },
+    {
+      "id": "communication",
+      "name": "Communication",
+      "description": "Email, Slack, Discord integrations",
+      "icon": "ChatDotRound"
+    },
+    {
+      "id": "development",
+      "name": "Development",
+      "description": "Git, GitHub, code execution tools",
+      "icon": "Code"
+    },
+    {
+      "id": "productivity",
+      "name": "Productivity",
+      "description": "Task management, calendar, notes",
+      "icon": "Calendar"
+    },
+    {
+      "id": "ai-ml",
+      "name": "AI & ML",
+      "description": "Machine learning and AI integrations",
+      "icon": "MagicStick"
+    },
+    {
+      "id": "web",
+      "name": "Web",
+      "description": "Web scraping, HTTP clients, APIs",
+      "icon": "Link"
+    },
+    {
+      "id": "cloud",
+      "name": "Cloud",
+      "description": "AWS, GCP, Azure integrations",
+      "icon": "Cloud"
+    }
+  ],
+  "tools": [
+    {
+      "id": "filesystem",
+      "name": "Filesystem Server",
+      "description": "Provides secure access to the filesystem for reading, writing, and managing files and directories. Perfect for document processing and file organization tasks.",
+      "long_description": "The filesystem MCP server allows safe file operations within specified directories. Features include file reading/writing, directory traversal, file search, and permission controls. Ideal for agents that need to work with local documents, codebases, or structured data.",
+      "category": "filesystem",
+      "author": "ModelContextProtocol",
+      "version": "1.0.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "icon": "Folder",
+      "tags": ["files", "documents", "io", "storage"],
+      "stats": {
+        "downloads": 15234,
+        "rating": 4.8,
+        "reviews": 89,
+        "installs": 5421
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"],
+        "env": {},
+        "config_required": true,
+        "config_schema": {
+          "allowed_directory": {
+            "type": "string",
+            "description": "Directory path to allow access to",
+            "required": true,
+            "example": "/Users/username/Documents"
+          }
+        }
+      },
+      "features": [
+        "Read files with streaming support",
+        "Write and create files",
+        "List directory contents",
+        "Search files by name/pattern",
+        "Get file metadata",
+        "Directory traversal with security controls"
+      ],
+      "tools_provided": [
+        {
+          "name": "read_file",
+          "description": "Read the complete contents of a file"
+        },
+        {
+          "name": "write_file",
+          "description": "Write content to a file"
+        },
+        {
+          "name": "list_directory",
+          "description": "List contents of a directory"
+        },
+        {
+          "name": "search_files",
+          "description": "Search for files matching a pattern"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "Read/write permissions for specified directory"
+      ],
+      "screenshots": [],
+      "changelog": [
+        {
+          "version": "1.0.0",
+          "date": "2024-01-15",
+          "changes": ["Initial release", "Basic file operations", "Security controls"]
+        }
+      ]
+    },
+    {
+      "id": "git",
+      "name": "Git Server",
+      "description": "Git repository operations including commit, branch, diff, and status. Essential for code management and version control tasks.",
+      "long_description": "Comprehensive Git integration MCP server. Enables agents to perform common Git operations like checking status, committing changes, creating branches, viewing diffs, and managing repositories. Perfect for code review, automated commits, and repository management workflows.",
+      "category": "development",
+      "author": "ModelContextProtocol",
+      "version": "1.2.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+      "icon": "Code",
+      "tags": ["git", "version-control", "code", "repository"],
+      "stats": {
+        "downloads": 12453,
+        "rating": 4.9,
+        "reviews": 67,
+        "installs": 3892
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-git"],
+        "env": {},
+        "config_required": false,
+        "config_schema": {}
+      },
+      "features": [
+        "Check git status",
+        "View commit history",
+        "Create and checkout branches",
+        "Stage and commit changes",
+        "View diffs",
+        "Merge branches"
+      ],
+      "tools_provided": [
+        {
+          "name": "git_status",
+          "description": "Show the working tree status"
+        },
+        {
+          "name": "git_commit",
+          "description": "Record changes to the repository"
+        },
+        {
+          "name": "git_branch",
+          "description": "List, create, or delete branches"
+        },
+        {
+          "name": "git_diff",
+          "description": "Show changes between commits"
+        }
+      ],
+      "requirements": [
+        "Git installed",
+        "Node.js 18+",
+        "Repository with .git directory"
+      ],
+      "screenshots": [],
+      "changelog": [
+        {
+          "version": "1.2.0",
+          "date": "2024-02-01",
+          "changes": ["Added merge support", "Improved diff output", "Better error handling"]
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL Server",
+      "description": "Connect to PostgreSQL databases, execute queries, and manage database operations securely.",
+      "long_description": "Full-featured PostgreSQL MCP server with support for complex queries, transactions, and schema introspection. Provides read/write database access with connection pooling and query result formatting. Ideal for data analysis, reporting, and database management tasks.",
+      "category": "database",
+      "author": "ModelContextProtocol",
+      "version": "0.5.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+      "icon": "DataBase",
+      "tags": ["database", "sql", "postgresql", "data"],
+      "stats": {
+        "downloads": 8734,
+        "rating": 4.6,
+        "reviews": 42,
+        "installs": 2341
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-postgres"],
+        "env": {
+          "POSTGRES_CONNECTION_STRING": "postgresql://user:password@localhost:5432/dbname"
+        },
+        "config_required": true,
+        "config_schema": {
+          "connection_string": {
+            "type": "string",
+            "description": "PostgreSQL connection string",
+            "required": true,
+            "example": "postgresql://user:password@localhost:5432/dbname"
+          }
+        }
+      },
+      "features": [
+        "Execute SQL queries",
+        "List tables and schemas",
+        "Get table structure",
+        "Transaction support",
+        "Query result formatting",
+        "Connection pooling"
+      ],
+      "tools_provided": [
+        {
+          "name": "query",
+          "description": "Execute a SQL query"
+        },
+        {
+          "name": "list_tables",
+          "description": "List all tables in the database"
+        },
+        {
+          "name": "describe_table",
+          "description": "Get table schema and structure"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "PostgreSQL database server",
+        "Valid connection string"
+      ],
+      "screenshots": [],
+      "changelog": [
+        {
+          "version": "0.5.0",
+          "date": "2024-01-20",
+          "changes": ["Initial release", "Basic query support", "Schema introspection"]
+        }
+      ]
+    },
+    {
+      "id": "slack",
+      "name": "Slack Integration",
+      "description": "Send messages, create channels, and interact with Slack workspaces. Perfect for team communication automation.",
+      "long_description": "Comprehensive Slack MCP server for workspace automation. Send messages, create channels, manage users, retrieve conversation history, and interact with Slack's Web API. Ideal for notification systems, team workflows, and automated status updates.",
+      "category": "communication",
+      "author": "ModelContextProtocol",
+      "version": "1.0.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/slack",
+      "icon": "ChatDotRound",
+      "tags": ["slack", "communication", "messaging", "team"],
+      "stats": {
+        "downloads": 9876,
+        "rating": 4.7,
+        "reviews": 56,
+        "installs": 3124
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-slack"],
+        "env": {
+          "SLACK_BOT_TOKEN": "xoxb-your-token-here"
+        },
+        "config_required": true,
+        "config_schema": {
+          "bot_token": {
+            "type": "string",
+            "description": "Slack bot token (starts with xoxb-)",
+            "required": true,
+            "example": "xoxb-1234567890-ABCDEF123456"
+          }
+        }
+      },
+      "features": [
+        "Send messages to channels",
+        "Create and archive channels",
+        "List channels and users",
+        "Get conversation history",
+        "Upload files",
+        "Add reactions"
+      ],
+      "tools_provided": [
+        {
+          "name": "send_message",
+          "description": "Send a message to a channel"
+        },
+        {
+          "name": "list_channels",
+          "description": "List all channels in the workspace"
+        },
+        {
+          "name": "create_channel",
+          "description": "Create a new channel"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "Slack workspace with bot app",
+        "Bot token with required scopes"
+      ],
+      "screenshots": [],
+      "changelog": []
+    },
+    {
+      "id": "github",
+      "name": "GitHub Server",
+      "description": "Interact with GitHub repositories, issues, pull requests, and actions. Complete GitHub automation.",
+      "long_description": "Full GitHub integration MCP server. Create and manage issues, pull requests, repositories, and workflows. Access repository content, manage branches, trigger GitHub Actions, and interact with the GitHub GraphQL API. Perfect for DevOps automation and project management.",
+      "category": "development",
+      "author": "ModelContextProtocol",
+      "version": "1.1.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
+      "icon": "Link",
+      "tags": ["github", "git", "devops", "issues", "pr"],
+      "stats": {
+        "downloads": 11234,
+        "rating": 4.8,
+        "reviews": 73,
+        "installs": 4521
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-github"],
+        "env": {
+          "GITHUB_TOKEN": "ghp_your_token_here"
+        },
+        "config_required": true,
+        "config_schema": {
+          "github_token": {
+            "type": "string",
+            "description": "GitHub personal access token",
+            "required": true,
+            "example": "ghp_1234567890ABCDEF"
+          }
+        }
+      },
+      "features": [
+        "Create and manage issues",
+        "Create and manage pull requests",
+        "List repositories",
+        "Get file contents",
+        "Trigger GitHub Actions",
+        "Add comments and reviews"
+      ],
+      "tools_provided": [
+        {
+          "name": "create_issue",
+          "description": "Create a new issue"
+        },
+        {
+          "name": "list_repositories",
+          "description": "List repositories for a user or org"
+        },
+        {
+          "name": "get_file",
+          "description": "Get file contents from a repository"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "GitHub account",
+        "Personal access token with required scopes"
+      ],
+      "screenshots": [],
+      "changelog": [
+        {
+          "version": "1.1.0",
+          "date": "2024-02-10",
+          "changes": ["Added Actions support", "Improved error handling", "GraphQL queries"]
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "name": "Memory Server",
+      "description": "Persistent key-value memory storage for maintaining conversation context and agent state across sessions.",
+      "long_description": "Durable memory storage MCP server with key-value semantics. Agents can store, retrieve, and search memory entries. Supports namespacing, TTL, and vector similarity search. Perfect for maintaining long-term context and learning from past interactions.",
+      "category": "productivity",
+      "author": "ModelContextProtocol",
+      "version": "1.3.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "icon": "Notebook",
+      "tags": ["memory", "storage", "context", "state"],
+      "stats": {
+        "downloads": 7654,
+        "rating": 4.5,
+        "reviews": 38,
+        "installs": 2109
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-memory"],
+        "env": {},
+        "config_required": false,
+        "config_schema": {}
+      },
+      "features": [
+        "Store key-value pairs",
+        "Retrieve values by key",
+        "Search memory by content",
+        "Namespace support",
+        "TTL (time-to-live) for entries",
+        "Vector similarity search"
+      ],
+      "tools_provided": [
+        {
+          "name": "store",
+          "description": "Store a value in memory"
+        },
+        {
+          "name": "get",
+          "description": "Retrieve a value from memory"
+        },
+        {
+          "name": "search",
+          "description": "Search memory by content"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "Storage backend (file/database)"
+      ],
+      "screenshots": [],
+      "changelog": [
+        {
+          "version": "1.3.0",
+          "date": "2024-02-15",
+          "changes": ["Added vector search", "Improved performance", "Better TTL handling"]
+        }
+      ]
+    },
+    {
+      "id": "web-search",
+      "name": "Web Search",
+      "description": "Search the web using popular search engines. Retrieve up-to-date information from the internet.",
+      "long_description": "Web search MCP server with support for multiple search providers. Search Google, Bing, or DuckDuckGo and get structured results. Includes web scraping capabilities for content extraction. Perfect for research, fact-checking, and information gathering.",
+      "category": "web",
+      "author": "ModelContextProtocol",
+      "version": "0.8.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/web-search",
+      "icon": "Search",
+      "tags": ["search", "web", "internet", "research"],
+      "stats": {
+        "downloads": 14567,
+        "rating": 4.9,
+        "reviews": 124,
+        "installs": 6234
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-web-search"],
+        "env": {
+          "TAVILY_API_KEY": "your_tavily_key_here"
+        },
+        "config_required": true,
+        "config_schema": {
+          "api_key": {
+            "type": "string",
+            "description": "Tavily API key for web search",
+            "required": true,
+            "example": "tvly-xxxxxxxxxxxxx"
+          }
+        }
+      },
+      "features": [
+        "Web search via multiple providers",
+        "Search result summarization",
+        "Web page content extraction",
+        "News search",
+        "Image search",
+        "Search history"
+      ],
+      "tools_provided": [
+        {
+          "name": "search",
+          "description": "Search the web"
+        },
+        {
+          "name": "fetch_page",
+          "description": "Fetch and extract page content"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "Tavily API key or other search provider"
+      ],
+      "screenshots": [],
+      "changelog": [
+        {
+          "version": "0.8.0",
+          "date": "2024-01-25",
+          "changes": ["Added Tavily support", "Improved extraction", "Faster results"]
+        }
+      ]
+    },
+    {
+      "id": "aws-s3",
+      "name": "AWS S3 Storage",
+      "description": "Manage AWS S3 buckets and objects. Upload, download, and organize files in cloud storage.",
+      "long_description": "Complete AWS S3 integration MCP server. Manage buckets, objects, permissions, and lifecycle policies. Upload/download files, list contents, set metadata, and configure S3 event notifications. Ideal for cloud storage workflows and data management.",
+      "category": "cloud",
+      "author": "ModelContextProtocol",
+      "version": "0.4.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/aws-s3",
+      "icon": "Cloud",
+      "tags": ["aws", "s3", "storage", "cloud"],
+      "stats": {
+        "downloads": 5432,
+        "rating": 4.4,
+        "reviews": 28,
+        "installs": 1456
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-aws-s3"],
+        "env": {
+          "AWS_ACCESS_KEY_ID": "your_access_key",
+          "AWS_SECRET_ACCESS_KEY": "your_secret_key",
+          "AWS_REGION": "us-east-1"
+        },
+        "config_required": true,
+        "config_schema": {
+          "aws_access_key_id": {
+            "type": "string",
+            "description": "AWS access key ID",
+            "required": true
+          },
+          "aws_secret_access_key": {
+            "type": "string",
+            "description": "AWS secret access key",
+            "required": true
+          },
+          "aws_region": {
+            "type": "string",
+            "description": "AWS region",
+            "required": true,
+            "example": "us-east-1"
+          }
+        }
+      },
+      "features": [
+        "List buckets and objects",
+        "Upload and download files",
+        "Manage object metadata",
+        "Set bucket policies",
+        "Presigned URLs",
+        "Bucket lifecycle configuration"
+      ],
+      "tools_provided": [
+        {
+          "name": "list_buckets",
+          "description": "List all S3 buckets"
+        },
+        {
+          "name": "upload_file",
+          "description": "Upload a file to S3"
+        },
+        {
+          "name": "download_file",
+          "description": "Download a file from S3"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "AWS account",
+        "S3 credentials with necessary permissions"
+      ],
+      "screenshots": [],
+      "changelog": []
+    },
+    {
+      "id": "sqlite",
+      "name": "SQLite Database",
+      "description": "Embedded SQL database for local data storage and queries. No server required.",
+      "long_description": "Lightweight SQLite MCP server for local database operations. Create databases, execute queries, manage schema, and perform transactions. Perfect for applications that need persistent local storage without database server overhead.",
+      "category": "database",
+      "author": "ModelContextProtocol",
+      "version": "0.3.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+      "icon": "Notebook",
+      "tags": ["sqlite", "database", "sql", "local"],
+      "stats": {
+        "downloads": 6890,
+        "rating": 4.6,
+        "reviews": 44,
+        "installs": 2876
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-sqlite", "--db-path", "./database.db"],
+        "env": {},
+        "config_required": true,
+        "config_schema": {
+          "db_path": {
+            "type": "string",
+            "description": "Path to SQLite database file",
+            "required": true,
+            "example": "./database.db"
+          }
+        }
+      },
+      "features": [
+        "Create and manage databases",
+        "Execute SQL queries",
+        "Transaction support",
+        "Schema introspection",
+        "Parameterized queries",
+        "Backup and restore"
+      ],
+      "tools_provided": [
+        {
+          "name": "query",
+          "description": "Execute a SQL query"
+        },
+        {
+          "name": "create_table",
+          "description": "Create a new table"
+        },
+        {
+          "name": "list_tables",
+          "description": "List all tables"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "Write permissions for database file"
+      ],
+      "screenshots": [],
+      "changelog": []
+    },
+    {
+      "id": "fetch",
+      "name": "Web Fetch",
+      "description": "Fetch and extract content from web pages. Support for HTML parsing and text extraction.",
+      "long_description": "Simple web fetch MCP server for retrieving web page content. Fetch URLs, parse HTML, extract text, and get metadata. Handles redirects, headers, and cookies. Perfect for web scraping, content aggregation, and monitoring tasks.",
+      "category": "web",
+      "author": "ModelContextProtocol",
+      "version": "1.0.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+      "icon": "Link",
+      "tags": ["fetch", "http", "web", "scraping"],
+      "stats": {
+        "downloads": 13245,
+        "rating": 4.7,
+        "reviews": 91,
+        "installs": 5678
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-fetch"],
+        "env": {},
+        "config_required": false,
+        "config_schema": {}
+      },
+      "features": [
+        "Fetch web pages",
+        "Extract text content",
+        "Get page metadata",
+        "Parse HTML",
+        "Handle redirects",
+        "Custom headers"
+      ],
+      "tools_provided": [
+        {
+          "name": "fetch",
+          "description": "Fetch a URL and extract content"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "Internet access"
+      ],
+      "screenshots": [],
+      "changelog": []
+    },
+    {
+      "id": "exa",
+      "name": "Exa AI Search",
+      "description": "AI-powered search engine with semantic understanding. Better results for complex queries.",
+      "long_description": "Exa is an AI-powered search API that understands intent. Get semantically relevant results instead of keyword matches. Perfect for research, discovery, and finding related content. Includes web, paper, and link search capabilities.",
+      "category": "ai-ml",
+      "author": "Exa AI",
+      "version": "0.2.0",
+      "license": "MIT",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/exa",
+      "icon": "MagicStick",
+      "tags": ["search", "ai", "semantic", "research"],
+      "stats": {
+        "downloads": 4523,
+        "rating": 4.5,
+        "reviews": 23,
+        "installs": 1234
+      },
+      "installation": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-exa"],
+        "env": {
+          "EXA_API_KEY": "your_exa_key_here"
+        },
+        "config_required": true,
+        "config_schema": {
+          "exa_api_key": {
+            "type": "string",
+            "description": "Exa API key",
+            "required": true,
+            "example": "exa_xxxxxxxxxxxxx"
+          }
+        }
+      },
+      "features": [
+        "Semantic search",
+        "Web search",
+        "Paper search",
+        "Link search",
+        "Similar pages",
+        "Auto-highlighting"
+      ],
+      "tools_provided": [
+        {
+          "name": "search",
+          "description": "Perform semantic search"
+        },
+        {
+          "name": "find_similar",
+          "description": "Find similar pages"
+        }
+      ],
+      "requirements": [
+        "Node.js 18+",
+        "Exa API key"
+      ],
+      "screenshots": [],
+      "changelog": []
+    }
+  ],
+  "featured_tools": ["filesystem", "git", "github", "web-search", "slack"],
+  "popular_tools": ["filesystem", "git", "web-search", "github", "memory", "fetch"],
+  "new_tools": ["exa", "aws-s3"]
+}

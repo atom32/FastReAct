@@ -1,14 +1,17 @@
 """
-FastReAct Nano v2.0 - Event-Driven AI Agent SDK
+FastReAct Nano v2.3 - The Visual Update
 
-极简ReAct Agent核心:
-- 事件驱动架构: AgentEvent统一协议
-- Cortex组件: Token Guard, Ghost Map, Safety
-- 极简工具: 4个核心工具 (Pi哲学)
-- Skills系统: Markdown渐进式披露
+Modern AI Agent SDK with Vue 3 Frontend
+- Vue 3 SPA: Chat interface and Admin panel
+- MCP Marketplace: 12 tools across 8 categories
+- Real-time Dashboard: System metrics and monitoring
+- Configuration Editor: Visual LLM, MCP, and Agent settings
+- Session Manager: Complete session lifecycle management
+- Dark Mode: Full theme support
+- WebSocket streaming: Real-time AgentEvent protocol
 """
 
-__version__ = "2.1.0"
+__version__ = "2.3.0"
 __author__ = "FastReAct Team"
 
 # Core v2.0 - Event-Driven Architecture
