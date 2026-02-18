@@ -120,7 +120,11 @@ def create_gateway_app() -> FastAPI:
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://localhost:9000"],
+        allow_origins=[
+            "http://localhost:3000",  # Next.js frontend
+            "http://localhost:5173",  # Vue 3 frontend (dev)
+            "http://localhost:9000",  # Gateway self
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
