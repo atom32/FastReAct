@@ -304,6 +304,8 @@ def create_gateway_app() -> FastAPI:
         except WebSocketDisconnect:
             _session_manager.disconnect(session_id)
 
+    return app
+
 
 def run_gateway(
     host: str = "0.0.0.0",
