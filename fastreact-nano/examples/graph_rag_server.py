@@ -129,6 +129,32 @@ class GraphRAGMCPServer(SimpleMCPServer):
                 },
                 "vector": [0.11, 0.21, 0.31, 0.41, 0.51, 0.61, 0.71, 0.81]
             },
+            "entity_9": {
+                "id": "entity_9",
+                "name": "User A Secret Project",
+                "type": "project",
+                "description": "A confidential research initiative focused on advanced AI capabilities and neural interface development.",
+                "properties": {
+                    "year_started": "2023",
+                    "status": "active",
+                    "domain": ["AI Research", "Neural Interfaces", "Advanced Computing"],
+                    "classification": "confidential"
+                },
+                "vector": [0.09, 0.19, 0.29, 0.39, 0.49, 0.59, 0.69, 0.79]
+            },
+            "entity_10": {
+                "id": "entity_10",
+                "name": "My Secret Project",
+                "type": "project",
+                "description": "confidential",
+                "properties": {
+                    "year_started": "2024",
+                    "status": "active",
+                    "domain": ["Advanced Research"],
+                    "classification": "confidential"
+                },
+                "vector": [0.08, 0.18, 0.28, 0.38, 0.48, 0.58, 0.68, 0.78]
+            }
         }
 
         # Mock relationships between entities
@@ -217,6 +243,55 @@ class GraphRAGMCPServer(SimpleMCPServer):
                 "weight": 0.93,
                 "description": "Deep Learning enables Large Language Models"
             },
+            {
+                "source": "entity_9",
+                "target": "entity_1",
+                "type": "applies",
+                "weight": 0.92,
+                "description": "User A Secret Project applies Artificial Intelligence techniques"
+            },
+            {
+                "source": "entity_9",
+                "target": "entity_3",
+                "type": "leverages",
+                "weight": 0.88,
+                "description": "User A Secret Project leverages Deep Learning capabilities"
+            },
+            {
+                "source": "entity_9",
+                "target": "entity_6",
+                "type": "utilizes",
+                "weight": 0.85,
+                "description": "User A Secret Project utilizes Neural Networks architectures"
+            },
+            {
+                "source": "entity_9",
+                "target": "entity_8",
+                "type": "integrates",
+                "weight": 0.90,
+                "description": "User A Secret Project integrates Large Language Models"
+            },
+            {
+                "source": "entity_10",
+                "target": "entity_1",
+                "type": "applies",
+                "weight": 0.91,
+                "description": "My Secret Project applies Artificial Intelligence techniques"
+            },
+            {
+                "source": "entity_10",
+                "target": "entity_3",
+                "type": "leverages",
+                "weight": 0.87,
+                "description": "My Secret Project leverages Deep Learning capabilities"
+            },
+            {
+                "source": "entity_10",
+                "target": "entity_9",
+                "type": "collaborates_with",
+                "weight": 0.89,
+                "description": "My Secret Project collaborates with User A Secret Project"
+            },
         ]
 
     def _register_tools(self):
@@ -301,6 +376,34 @@ class GraphRAGMCPServer(SimpleMCPServer):
             }
         )
 
+        # Tool 5: Create entity
+        self.register_tool(
+            name="create_entity",
+            description="Create a new entity in the knowledge graph",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Entity name"
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Entity type (e.g., project, concept, person)"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Entity description"
+                    },
+                    "properties": {
+                        "type": "object",
+                        "description": "Additional entity properties (optional)"
+                    }
+                },
+                "required": ["name", "type", "description"]
+            }
+        )
+
     async def handle_tool_call(self, name: str, arguments: Dict[str, Any]) -> str:
         """Handle tool calls"""
 
@@ -323,6 +426,14 @@ class GraphRAGMCPServer(SimpleMCPServer):
             return await self._vector_search(
                 arguments["query_text"],
                 arguments.get("top_k", 5)
+            )
+
+        elif name == "create_entity":
+            return await self._create_entity(
+                arguments["name"],
+                arguments["type"],
+                arguments["description"],
+                arguments.get("properties", {})
             )
 
         else:
@@ -423,6 +534,49 @@ class GraphRAGMCPServer(SimpleMCPServer):
             "relationships": relationships,
             "total_count": len(relationships)
         }, ensure_ascii=False, indent=2)
+
+    async def _create_entity(self, name: str, type: str, description: str, properties: Dict[str, Any]) -> str:
+        """Create a new entity in the knowledge graph"""
+        try:
+            # Generate new entity ID
+            entity_id = f"entity_{len(self._entities) + 1}"
+            
+            # Create vector embedding (mock)
+            vector = [
+                random.random() * 0.1 + 0.1,
+                random.random() * 0.1 + 0.2,
+                random.random() * 0.1 + 0.3,
+                random.random() * 0.1 + 0.4,
+                random.random() * 0.1 + 0.5,
+                random.random() * 0.1 + 0.6,
+                random.random() * 0.1 + 0.7,
+                random.random() * 0.1 + 0.8
+            ]
+
+            # Create entity
+            entity = {
+                "id": entity_id,
+                "name": name,
+                "type": type,
+                "description": description,
+                "properties": properties,
+                "vector": vector
+            }
+
+            # Add to entities
+            self._entities[entity_id] = entity
+
+            return json.dumps({
+                "success": True,
+                "message": f"Entity '{name}' created successfully",
+                "entity_id": entity_id,
+                "entity": entity
+            }, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            return json.dumps({
+                "error": f"Failed to create entity: {str(e)}"
+            }, ensure_ascii=False, indent=2)
 
     async def _vector_search(self, query_text: str, top_k: int) -> str:
         """Vector similarity search (mock implementation)"""

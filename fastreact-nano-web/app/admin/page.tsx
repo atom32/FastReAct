@@ -1,0 +1,38 @@
+"use client"
+
+import { useState } from "react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dashboard } from "@/components/admin/dashboard"
+import { ConfigEditor } from "@/components/admin/config-editor"
+import { SessionManager } from "@/components/admin/session-manager"
+
+export default function AdminPage() {
+  const [activeTab, setActiveTab] = useState("dashboard")
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 lg:w-[600px]">
+            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+            <TabsTrigger value="sessions">Sessions</TabsTrigger>
+            <TabsTrigger value="config">Configuration</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="dashboard" className="space-y-6">
+            <Dashboard />
+          </TabsContent>
+
+          <TabsContent value="sessions" className="space-y-6">
+            <SessionManager />
+          </TabsContent>
+
+          <TabsContent value="config" className="space-y-6">
+            <ConfigEditor />
+          </TabsContent>
+        </Tabs>
+      </main>
+    </div>
+  )
+}
