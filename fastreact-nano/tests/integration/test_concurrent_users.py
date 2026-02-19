@@ -71,7 +71,7 @@ class TestConcurrentUserAccess:
             {
                 "name": "graphrag",
                 "command": PYTHON_CMD,
-                "args": ["examples/graph_rag_server.py"],
+                "args": ["mcp_servers/builtin/graph_rag_server.py"],
                 "associated_skill": "graphrag_workflow",
             }
         ]

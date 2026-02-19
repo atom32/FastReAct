@@ -1,17 +1,17 @@
 """
-FastReAct Nano v2.3 - The Visual Update
+FastReAct Nano v2.4.1 - Ironclad + Professional
 
-Modern AI Agent SDK with Vue 3 Frontend
-- Vue 3 SPA: Chat interface and Admin panel
-- MCP Marketplace: 12 tools across 8 categories
-- Real-time Dashboard: System metrics and monitoring
-- Configuration Editor: Visual LLM, MCP, and Agent settings
-- Session Manager: Complete session lifecycle management
-- Dark Mode: Full theme support
-- WebSocket streaming: Real-time AgentEvent protocol
+Modern AI Agent SDK with Next.js 14 Frontend
+- Next.js 14 App: Chat interface, Admin panel, MCP Marketplace
+- Ironclad Backend: Infinite loop protection, JSON repair, auto-reconnect
+- MCP Zombie Resurrection: Automatic server crash recovery
+- Multi-turn Memory: Conversation history with auto-pruning (50 turns)
+- Professional UI: Unified themes, glassmorphism, gradient accents
+- WebSocket Streaming: Real-time AgentEvent protocol
+- 6 Themes: Cyber Dark, Midnight, Solar Light, Forest, Sunset, Matrix
 """
 
-__version__ = "2.3.0"
+__version__ = "2.4.1"
 __author__ = "FastReAct Team"
 
 # Core v2.0 - Event-Driven Architecture

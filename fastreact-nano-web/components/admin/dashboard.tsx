@@ -11,6 +11,7 @@ interface Metrics {
   uptime: number
   memoryUsage: number
   cpuUsage: number
+  version?: string
 }
 
 export function Dashboard() {
@@ -20,16 +21,26 @@ export function Dashboard() {
     uptime: 0,
     memoryUsage: 0,
     cpuUsage: 0,
+    version: "2.4.2",
   })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        const response = await fetch("http://localhost:9000/api/metrics")
-        if (response.ok) {
-          const data = await response.json()
-          setMetrics(data)
+        const [metricsRes, statusRes] = await Promise.all([
+          fetch("http://localhost:9000/api/metrics"),
+          fetch("http://localhost:9000/api/status")
+        ])
+
+        if (metricsRes.ok) {
+          const data = await metricsRes.json()
+          setMetrics(prev => ({ ...prev, ...data }))
+        }
+
+        if (statusRes.ok) {
+          const status = await statusRes.json()
+          setMetrics(prev => ({ ...prev, version: status.version }))
         }
       } catch (error) {
         console.error("Failed to fetch metrics:", error)
@@ -39,7 +50,7 @@ export function Dashboard() {
     }
 
     fetchMetrics()
-    const interval = setInterval(fetchMetrics, 30000) // Refresh every 30s
+    const interval = setInterval(fetchMetrics, 5000) // Refresh every 5s
 
     return () => clearInterval(interval)
   }, [])
@@ -126,7 +137,7 @@ export function Dashboard() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">API Version</span>
-            <span className="text-sm text-muted-foreground">2.0.0</span>
+            <span className="text-sm text-muted-foreground">{metrics.version || "Unknown"}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Environment</span>

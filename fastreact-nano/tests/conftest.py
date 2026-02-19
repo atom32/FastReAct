@@ -335,7 +335,7 @@ def config_with_graphrag():
         {
             "name": "graphrag",
             "command": sys.executable,
-            "args": ["examples/graph_rag_server.py"],
+            "args": ["mcp_servers/builtin/graph_rag_server.py"],
             "description": "GraphRAG knowledge graph tools",
             "associated_skill": "graphrag_workflow",
         }

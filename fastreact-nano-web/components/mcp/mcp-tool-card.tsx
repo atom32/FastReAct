@@ -13,7 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Star, Download, ExternalLink, Settings, Check } from "lucide-react"
+import { Star, Download, ExternalLink, Settings, Check, Shield } from "lucide-react"
 
 interface MCPTool {
   id: string
@@ -30,6 +30,8 @@ interface MCPTool {
     args: string[]
   }
   requirements: string[]
+  isolation?: string
+  associatedSkill?: string | null
 }
 
 interface MCPToolCardProps {
@@ -137,9 +139,23 @@ export function MCPToolCard({ tool }: MCPToolCardProps) {
         </div>
 
         {/* Meta */}
-        <div className="text-xs text-muted-foreground">
-          v{tool.version} • by {tool.author}
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>v{tool.version} • by {tool.author}</span>
+          {tool.isolation && (
+            <Badge variant="outline" className="text-xs">
+              <Shield className="h-3 w-3 mr-1" />
+              {tool.isolation}
+            </Badge>
+          )}
         </div>
+
+        {/* Associated Skill */}
+        {tool.associatedSkill && (
+          <div className="text-xs">
+            <span className="text-muted-foreground">SKILL: </span>
+            <span className="font-mono bg-muted px-1 rounded">{tool.associatedSkill}</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

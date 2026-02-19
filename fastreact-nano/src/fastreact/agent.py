@@ -117,18 +117,24 @@ class Agent:
 
         # Initialize skills (global skills, not user-specific)
         self._skills = SkillRegistry()
-        # Always try to load skills from default location
+        # Always try to load skills from configured locations
         try:
             from fastreact.skills import SkillLoader
-            # Try default skills directory
-            default_skills_dir = Path.cwd() / "skills"
-            if default_skills_dir.exists():
-                loader = SkillLoader(skills_dir=default_skills_dir)
+            # Use global skills directory from config
+            global_skills_dir = self._config.paths.global_skills_dir
+            if global_skills_dir.exists():
+                loader = SkillLoader(skills_dir=global_skills_dir)
                 self._skills = SkillRegistry(loader=loader)
             elif skills_dir:
-                # Use custom skills directory
+                # Fallback to custom skills directory parameter
                 loader = SkillLoader(skills_dir=skills_dir)
                 self._skills = SkillRegistry(loader=loader)
+            else:
+                # Final fallback to legacy location
+                legacy_skills_dir = Path.cwd() / "skills"
+                if legacy_skills_dir.exists():
+                    loader = SkillLoader(skills_dir=legacy_skills_dir)
+                    self._skills = SkillRegistry(loader=loader)
         except Exception as e:
             # Skills not available
             pass
@@ -255,72 +261,129 @@ class Agent:
 
     def _build_system_prompt_with_skills(self, skills: Optional[list[str]]) -> str:
         """
-        Build system prompt with skills injected
+        Build system prompt with skills and tools injected
 
         Args:
             skills: List of skill names to inject
 
         Returns:
-            System prompt string with skills
+            System prompt string with skills and tools
         """
         from fastreact.core.prompts import get_system_prompt
 
         # Get base system prompt
         base_prompt = get_system_prompt("core")
 
-        # If no skills specified, return base prompt
-        if not skills:
-            return base_prompt
+        # === Add Available Tools Section ===
+        tools_section = "\n\n# Available Tools\nYou have access to the following tools:\n\n"
 
-        # Load skill descriptions
-        skill_descriptions = []
-        mcp_servers_for_skills = set()
+        # Get all tool names and separate by type (builtin vs MCP)
+        builtin_tools = []
+        mcp_tools = []
 
-        for skill_name in skills:
-            skill = self._skills.get(skill_name)
-            if skill:
-                # Format skill info
-                skill_info = f"## {skill.name}\n{skill.description}"
-                if skill.metadata.tags:
-                    skill_info += f"\nTags: {', '.join(skill.metadata.tags)}"
+        for tool_name in self._tools.list_all():
+            tool = self._tools.get(tool_name)
+            if tool:
+                # Check if this is an MCP tool by instance type
+                from fastreact.mcp.manager import MCPToolWrapper
+                if isinstance(tool, MCPToolWrapper):
+                    mcp_tools.append(tool_name)
+                else:
+                    builtin_tools.append(tool_name)
 
-                # Add recommended tools if any
-                if skill.metadata.recommended_tools:
-                    skill_info += f"\nRecommended Tools: {', '.join(['`' + t + '`' for t in skill.metadata.recommended_tools])}"
+        # Add built-in tools
+        if builtin_tools:
+            tools_section += "## Built-in Tools\n"
+            for tool_name in builtin_tools:
+                # Get description from schema
+                for schema in self._tools.schemas():
+                    if schema["function"]["name"] == tool_name:
+                        desc = schema["function"].get("description", "No description")
+                        tools_section += f"- `{tool_name}`: {desc}\n"
+                        break
+                else:
+                    # Schema not found, add without description
+                    tools_section += f"- `{tool_name}`: Tool\n"
 
-                skill_descriptions.append(skill_info)
+        # Add MCP tools
+        if mcp_tools:
+            tools_section += "\n## MCP Tools (Model Context Protocol)\n"
+            for tool_name in mcp_tools:
+                # Get description from schema
+                for schema in self._tools.schemas():
+                    if schema["function"]["name"] == tool_name:
+                        desc = schema["function"].get("description", "No description")
+                        tools_section += f"- `{tool_name}`: {desc}\n"
+                        break
 
-                # Collect MCP servers required by this skill
-                if skill.metadata.mcp_servers:
-                    mcp_servers_for_skills.update(skill.metadata.mcp_servers)
+        tools_section += "\nUse these tools to complete the user's request."
 
-        # If no skills loaded, return base prompt
-        if not skill_descriptions:
-            return base_prompt
+        # === Add Available Skills Section (always show available skills) ===
+        skills_list_section = "\n\n# Available Skills\nThese skills are available:\n\n"
 
-        # Inject skills into system prompt
-        skills_section = "\n\n# Available Skills\nThese skills are available for this task:\n\n"
-        skills_section += "\n\n".join(skill_descriptions)
-        skills_section += "\n\nUse these skills when appropriate to complete the user's request."
-
-        # Add MCP tools section if skills reference MCP servers
-        if mcp_servers_for_skills and self._mcp_discovery:
-            mcp_section_parts = []
-            for skill_name in skills:
-                # Get MCP servers for this skill
+        # Get all available skills
+        all_skill_names = self._skills.list_available()
+        if all_skill_names:
+            for skill_name in all_skill_names:
                 skill = self._skills.get(skill_name)
-                if skill and skill.metadata.mcp_servers:
-                    tools_section = self._mcp_discovery.generate_skill_tools_section(
-                        skill_name=skill_name,
-                        mcp_servers=skill.metadata.mcp_servers,
-                    )
-                    if tools_section:
-                        mcp_section_parts.append(tools_section)
+                if skill:
+                    skills_list_section += f"## {skill.name}\n"
+                    skills_list_section += f"{skill.description}\n"
+                    if skill.metadata.tags:
+                        skills_list_section += f"Tags: {', '.join(skill.metadata.tags)}\n"
+                    skills_list_section += "\n"
+        else:
+            skills_list_section += "No skills currently available.\n\n"
 
-            if mcp_section_parts:
-                skills_section += "\n\n" + "\n\n".join(mcp_section_parts)
+        # === Add Skills Section (if specific skills selected) ===
+        skills_section = ""
+        if skills:
+            # Load skill descriptions
+            skill_descriptions = []
+            mcp_servers_for_skills = set()
 
-        return base_prompt + skills_section
+            for skill_name in skills:
+                skill = self._skills.get(skill_name)
+                if skill:
+                    # Format skill info
+                    skill_info = f"## {skill.name}\n{skill.description}"
+                    if skill.metadata.tags:
+                        skill_info += f"\nTags: {', '.join(skill.metadata.tags)}"
+
+                    # Add recommended tools if any
+                    if skill.metadata.recommended_tools:
+                        skill_info += f"\nRecommended Tools: {', '.join(['`' + t + '`' for t in skill.metadata.recommended_tools])}"
+
+                    skill_descriptions.append(skill_info)
+
+                    # Collect MCP servers required by this skill
+                    if skill.metadata.mcp_servers:
+                        mcp_servers_for_skills.update(skill.metadata.mcp_servers)
+
+            # Inject skills into system prompt
+            if skill_descriptions:
+                skills_section = "\n\n# Available Skills\nThese skills are available for this task:\n\n"
+                skills_section += "\n\n".join(skill_descriptions)
+                skills_section += "\n\nUse these skills when appropriate to complete the user's request."
+
+                # Add MCP tools section if skills reference MCP servers
+                if mcp_servers_for_skills and self._mcp_discovery:
+                    mcp_section_parts = []
+                    for skill_name in skills:
+                        # Get MCP servers for this skill
+                        skill = self._skills.get(skill_name)
+                        if skill and skill.metadata.mcp_servers:
+                            tools_section = self._mcp_discovery.generate_skill_tools_section(
+                                skill_name=skill_name,
+                                mcp_servers=skill.metadata.mcp_servers,
+                            )
+                            if tools_section:
+                                mcp_section_parts.append(tools_section)
+
+                    if mcp_section_parts:
+                        skills_section += "\n\n" + "\n\n".join(mcp_section_parts)
+
+        return base_prompt + tools_section + skills_list_section + skills_section
 
     def enable_auto_skill_selection(self, max_skills: int = 3):
         """
@@ -659,8 +722,8 @@ class Agent:
         self._session_queues[session_id] = MessageQueue()
 
         try:
-            # Emit SESSION_START
-            yield AgentEvent.session_start(query, session_id)
+            # Emit SESSION_START with skills information
+            yield AgentEvent.session_start(query, session_id, skills=skills)
 
             # Validate and clean history
             messages = self._validate_history(history)
@@ -674,8 +737,23 @@ class Agent:
             # Interrupt flag
             interrupted = False
 
+            # Iteration counter with hard limit to prevent infinite loops
+            iteration_count = 0
+            max_iterations = self._config.react.max_iterations if self._config else 25
+
             # === Outer loop: Process follow-up messages ===
             while True:
+                # HARD LIMIT: Prevent infinite loops
+                iteration_count += 1
+                if iteration_count > max_iterations:
+                    # Circuit breaker: immediately terminate with clear error message
+                    yield AgentEvent.session_end(
+                        session_id,
+                        f"[STOPPED] Task stopped due to maximum iteration limit ({max_iterations}). "
+                        f"This usually means the agent is stuck in a loop or the task is too complex. "
+                        f"Please try breaking down the task into smaller steps."
+                    )
+                    return
                 has_more_tool_calls = True
                 executed_tools_this_iteration = False  # Track tools in this iteration only
 
@@ -723,14 +801,11 @@ class Agent:
                         session_id=session_id,
                         system_prompt=system_prompt,  # Pass skills-enhanced prompt
                     ):
-                        # Forward THINK events
-                        if event.type == EventType.THINK:
-                            yield event
+                        # Forward all events directly
+                        yield event
 
-                        # Collect TOOL_CALL events
-                        elif event.type == EventType.TOOL_CALL:
-                            yield event
-                            # Collect tool call for execution
+                        # Collect TOOL_CALL events for execution
+                        if event.type == EventType.TOOL_CALL:
                             tool_calls.append({
                                 "id": event.metadata.get("call_id", ""),
                                 "name": event.tool_name,

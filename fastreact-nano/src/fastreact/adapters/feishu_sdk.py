@@ -83,7 +83,8 @@ class FeishuSDKAdapter:
         # Multi-tenant manager
         self._multitenant: Optional[MultiTenantManager] = None
         if config.enable_multitenant:
-            workspace = config.base_workspace or Path.cwd() / "workspace"
+            # Use Feishu-specific workspace from config or paths config
+            workspace = config.base_workspace or agent._config.paths.feishu_workspace_base
             self._multitenant = MultiTenantManager(workspace)
 
         # Build event handler with builder pattern

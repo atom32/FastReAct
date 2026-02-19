@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import type { ChatEvent, ConnectionStatus } from "@/lib/chat-types"
 
-const GATEWAY_URL = "ws://localhost:9000/ws"
+// 自动检测：如果是局域网访问，使用本机 IP；否则用 localhost
+const GATEWAY_URL = typeof window !== 'undefined'
+  ? `ws://${window.location.hostname}:9000/ws`
+  : "ws://localhost:9000/ws"
+
 const isDev = process.env.NODE_ENV === 'development'
 
 // Development-only logging utility
@@ -193,10 +197,13 @@ export function useFastReActWS({
     const unsubscribe = manager.subscribe((message: WebSocketMessage) => {
       if (message.type === "event" && onEventRef.current) {
         onEventRef.current({
+          id: Math.random().toString(36).substring(2, 12),
           type: message.event_type as any,
           content: message.content || "",
           toolName: message.tool_name,
           toolArgs: message.tool_args,
+          metadata: message.metadata,
+          timestamp: Date.now(),
         })
       } else if (message.type === "user_message" && onUserMessageRef.current) {
         onUserMessageRef.current(message.content || "")
@@ -233,7 +240,11 @@ export function useFastReActWS({
 
   const stopAgent = useCallback(() => {
     const manager = WebSocketManager.getInstance()
-    manager.send({ type: "query", content: "stop" })
+    manager.send({
+      type: "control",
+      action: "interrupt",
+      reason: "User cancelled"
+    })
   }, [])
 
   return {

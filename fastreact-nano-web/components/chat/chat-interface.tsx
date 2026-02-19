@@ -56,7 +56,21 @@ export function ChatInterface() {
   // Stable callback refs to prevent infinite reconnects
   const onEventCallback = useCallback((event: ChatEvent) => {
     // Update status label based on event type
-    if (event.type === "think") setStatusLabelRef.current("Thinking...")
+    if (event.type === "session_start") {
+      // Extract SKILLs from metadata and store in message
+      const skills = event.metadata?.skills || []
+      if (currentAssistantIdRef.current && skills.length > 0) {
+        setMessagesRef.current((prev) =>
+          prev.map((m) =>
+            m.id === currentAssistantIdRef.current
+              ? { ...m, skills }
+              : m
+          )
+        )
+      }
+      setStatusLabelRef.current("")  // Don't show status for session_start
+    }
+    else if (event.type === "think") setStatusLabelRef.current("Thinking...")
     else if (event.type === "tool_call") setStatusLabelRef.current("Running tool...")
     else if (event.type === "tool_result") setStatusLabelRef.current("Processing result...")
     else if (event.type === "ask_user") setStatusLabelRef.current("Awaiting your response...")
@@ -74,8 +88,8 @@ export function ChatInterface() {
       })
     }
 
-    // Add event to the current assistant message (but not session_end)
-    if (currentAssistantIdRef.current && event.type !== "session_end") {
+    // Add event to the current assistant message (but not session_end and session_start)
+    if (currentAssistantIdRef.current && event.type !== "session_end" && event.type !== "session_start") {
       setMessagesRef.current((prev) =>
         prev.map((m) =>
           m.id === currentAssistantIdRef.current
@@ -86,6 +100,7 @@ export function ChatInterface() {
                   type: event.type,
                   content: event.content,
                   toolName: event.toolName,
+                  metadata: event.metadata,
                   timestamp: event.timestamp || Date.now(),
                 }],
               }
@@ -204,10 +219,22 @@ export function ChatInterface() {
   }, [])
 
   return (
-    <div className="relative flex h-screen flex-col" style={{ zIndex: 1 }}>
+    <div
+      className="relative flex flex-col"
+      style={{
+        zIndex: 1,
+        background: "var(--fr-bg-primary)",
+        minHeight: "100vh",
+      }}
+    >
+      {/* Background Mesh */}
+      <div className="background-mesh" />
+
+      {/* Chat Header (compact - no logo since it's in the navigation bar) */}
       <ChatHeader
-        status={status}
+        status={connectionStatus}
         onToggleThemePalette={() => setIsPaletteOpen((v) => !v)}
+        compact={true}
       />
 
       <ThemePalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} />

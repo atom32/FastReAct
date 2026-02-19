@@ -6,9 +6,10 @@ import type { ConnectionStatus } from "@/lib/chat-types"
 interface ChatHeaderProps {
   status: ConnectionStatus
   onToggleThemePalette: () => void
+  compact?: boolean  // If true, hide logo (used when integrated with global navigation)
 }
 
-export function ChatHeader({ status, onToggleThemePalette }: ChatHeaderProps) {
+export function ChatHeader({ status, onToggleThemePalette, compact = false }: ChatHeaderProps) {
   const statusConfig = {
     connected: {
       color: "var(--fr-success)",
@@ -28,41 +29,46 @@ export function ChatHeader({ status, onToggleThemePalette }: ChatHeaderProps) {
 
   return (
     <header
-      className="glass-panel sticky top-0 z-40 flex items-center justify-between px-4 py-3 sm:px-6"
+      className="glass-panel flex items-center justify-between px-4 py-3 sm:px-6"
       style={{
         borderBottom: `1px solid var(--fr-border-glow)`,
       }}
     >
-      {/* Logo */}
-      <div className="flex items-center gap-3">
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-xl"
-          style={{
-            background: `linear-gradient(135deg, var(--fr-gradient-start), var(--fr-gradient-end))`,
-            boxShadow: `0 0 20px var(--fr-border-glow)`,
-          }}
-        >
-          <Rocket className="h-5 w-5 text-white" />
-        </div>
-        <div className="flex flex-col">
-          <span
-            className="font-display text-sm font-bold tracking-wider sm:text-base"
+      {/* Left side - Logo (only show if not compact) */}
+      {!compact && (
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-xl"
             style={{
               background: `linear-gradient(135deg, var(--fr-gradient-start), var(--fr-gradient-end))`,
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
+              boxShadow: `0 0 20px var(--fr-border-glow)`,
             }}
           >
-            FastReAct
-          </span>
-          <span
-            className="text-[10px] font-medium tracking-widest uppercase"
-            style={{ color: "var(--fr-text-muted)" }}
-          >
-            Nano
-          </span>
+            <Rocket className="h-5 w-5 text-white" />
+          </div>
+          <div className="flex flex-col">
+            <span
+              className="font-display text-sm font-bold tracking-wider sm:text-base"
+              style={{
+                background: `linear-gradient(135deg, var(--fr-gradient-start), var(--fr-gradient-end))`,
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              FastReAct
+            </span>
+            <span
+              className="text-[10px] font-medium tracking-widest uppercase"
+              style={{ color: "var(--fr-text-muted)" }}
+            >
+              Nano
+            </span>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Spacer */}
+      {compact && <div className="flex-1" />}
 
       {/* Right controls */}
       <div className="flex items-center gap-3">

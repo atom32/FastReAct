@@ -155,8 +155,20 @@ class ReActCore:
                 return
 
             # Emit thinking content
-            if response.content:
-                yield AgentEvent.think(response.content, session_id)
+            # Note: When LLM decides to call tools, response.content may be empty
+            # In that case, emit a brief thinking message
+            think_content = response.content
+            if not think_content and has_tool_calls:
+                # LLM is calling tools directly without text reasoning
+                # Generate a brief description of what it's doing
+                tool_names = [tc.name for tc in response.tool_calls]
+                if len(tool_names) == 1:
+                    think_content = f"Using {tool_names[0]} tool"
+                else:
+                    think_content = f"Using {', '.join(tool_names)} tools"
+
+            if think_content:
+                yield AgentEvent.think(think_content, session_id)
 
             # Emit tool call intents (NOT executing here)
             has_tool_calls = len(response.tool_calls) > 0

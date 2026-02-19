@@ -63,6 +63,24 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
             boxShadow: `0 4px 20px rgba(0,0,0,0.2), inset 0 0 0 1px var(--fr-border-glow)`,
           }}
         >
+          {/* SKILL Badges */}
+          {message.skills && message.skills.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {message.skills.map((skill) => (
+                <span
+                  key={skill}
+                  className="rounded-full px-2 py-0.5 text-xs font-medium"
+                  style={{
+                    background: "var(--fr-accent-primary)",
+                    color: "white",
+                  }}
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Text content */}
           {message.content && (
             <p className="text-sm leading-relaxed" style={{ color: "var(--fr-text-primary)" }}>

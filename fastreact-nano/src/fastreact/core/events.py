@@ -80,12 +80,17 @@ class AgentEvent:
     # === Factory Methods ===
 
     @staticmethod
-    def session_start(query: str, session_id: str) -> "AgentEvent":
+    def session_start(query: str, session_id: str, skills: Optional[list[str]] = None) -> "AgentEvent":
         """Create session start event"""
+        metadata = {}
+        if skills:
+            metadata["skills"] = skills
+
         return AgentEvent(
             type=EventType.SESSION_START,
             content=query,
             session_id=session_id,
+            metadata=metadata,
         )
 
     @staticmethod

@@ -40,7 +40,7 @@ async def main():
             {
                 "name": "graphrag",
                 "command": "python",
-                "args": ["examples/graph_rag_server.py"],
+                "args": ["mcp_servers/builtin/graph_rag_server.py"],
             }
         ]
 

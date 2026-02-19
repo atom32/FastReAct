@@ -86,6 +86,8 @@ class SkillLoader:
             author=parsed.metadata.get("author"),
             tags=parsed.metadata.get("tags", []),
             dependencies=parsed.metadata.get("dependencies", []),
+            mcp_servers=parsed.metadata.get("mcp_servers", []),
+            recommended_tools=parsed.metadata.get("recommended_tools", []),
         )
 
         return Skill(metadata=metadata, skill_dir=skill_dir)

@@ -33,7 +33,9 @@ export function ChatInput({ onSend, onStop, statusLabel, isProcessing }: ChatInp
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Ctrl+Enter or Cmd+Enter to send (standard behavior)
+    // Enter alone creates a new line
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault()
       handleSubmit()
     }
@@ -69,7 +71,7 @@ export function ChatInput({ onSend, onStop, statusLabel, isProcessing }: ChatInp
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Send a message..."
+            placeholder="Send a message... (Ctrl+Enter to send)"
             rows={1}
             className="block w-full resize-none rounded-xl px-4 py-3.5 text-sm outline-none transition-all duration-300 placeholder:opacity-50"
             style={{

@@ -317,13 +317,77 @@ class LiteLLMProvider:
         )
 
     def _parse_function_args(self, arguments: str) -> dict[str, Any]:
-        """Parse JSON function arguments"""
-        import json
+        """
+        Parse JSON function arguments with robust error recovery
 
+        Attempts to fix common JSON formatting errors before falling back.
+        This handles LLM "hallucinations" where JSON is slightly malformed.
+
+        Args:
+            arguments: JSON string to parse
+
+        Returns:
+            Parsed dictionary, or empty dict if all parsing attempts fail
+        """
+        import json
+        import re
+        import sys
+
+        # Attempt 1: Normal parsing
         try:
             return json.loads(arguments)
+        except json.JSONDecodeError as e:
+            print(f"[WARNING] JSON parsing failed, attempting repair...", file=sys.stderr)
+            print(f"[DEBUG] JSON error: {e}", file=sys.stderr)
+            print(f"[DEBUG] Raw input (first 200 chars): {arguments[:200]}", file=sys.stderr)
+
+        # Attempt 2: Fix missing quotes around keys (common LLM error)
+        try:
+            # Fix: {key: "value"} → {"key": "value"}
+            fixed = re.sub(r'(\w+):', r'"\1":', arguments)
+            result = json.loads(fixed)
+            print(f"[OK] JSON repaired: added quotes to keys", file=sys.stderr)
+            return result
         except json.JSONDecodeError:
-            return {}
+            pass
+
+        # Attempt 3: Fix trailing commas (another common error)
+        try:
+            # Fix: {"key": "value",} → {"key": "value"}
+            fixed = re.sub(r',\s*}', '}', arguments)
+            fixed = re.sub(r',\s*]', ']', fixed)
+            result = json.loads(fixed)
+            print(f"[OK] JSON repaired: removed trailing commas", file=sys.stderr)
+            return result
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt 4: Fix single quotes instead of double quotes
+        try:
+            # Fix: {'key': 'value'} → {"key": "value"}
+            fixed = arguments.replace("'", '"')
+            result = json.loads(fixed)
+            print(f"[OK] JSON repaired: single quotes to double quotes", file=sys.stderr)
+            return result
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt 5: Combination of fixes (try them all together)
+        try:
+            fixed = arguments.replace("'", '"')  # Single to double quotes
+            fixed = re.sub(r'(\w+):', r'"\1":', fixed)  # Add quotes to keys
+            fixed = re.sub(r',\s*}', '}', fixed)  # Remove trailing commas
+            fixed = re.sub(r',\s*]', ']', fixed)
+            result = json.loads(fixed)
+            print(f"[OK] JSON repaired: combination of fixes", file=sys.stderr)
+            return result
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] All JSON repair attempts failed", file=sys.stderr)
+            print(f"[ERROR] Final error: {e}", file=sys.stderr)
+
+        # Final fallback: Return empty dict to prevent tool execution crash
+        print(f"[WARNING] Returning empty dict for malformed JSON", file=sys.stderr)
+        return {}
 
     async def chat_stream(
         self,

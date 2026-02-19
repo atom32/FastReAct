@@ -30,6 +30,7 @@ wheels/
 *.swp
 *.swo
 *~
+.DS_Store
 
 # Testing
 .pytest_cache/
@@ -51,6 +52,25 @@ memory.json
 *.log
 config.json
 
+# Workspace data (user workspaces)
+workspaces/*/
+!workspaces/.gitkeep
+!workspaces/default/.gitkeep
+
+# User-defined skills (should be in user workspaces, not project)
+skills/custom/*/
+!skills/custom/.gitkeep
+
+# MCP server user configurations (modified by users)
+mcp_servers/config/user_*.json
+
+# Build artifacts (redundant with above, but explicit)
+htmlcov/
+*.log
+
+# Test coverage
+coverage.xml
+
 # Debug/quick test scripts in root
 debug_*.py
 demo*.py
@@ -58,4 +78,18 @@ test_event_stream.py
 test_gateway*.py
 test_web*.py
 quick_test.py
+hello_*.py
+hello_*.sh
+loop*.py
+loop*.sh
+repeat*.py
+repeat*.sh
 !tests/
+
+# Test-generated files
+test*.txt
+user_secret*.txt
+*_secret.txt
+*_secret_data.txt
+*_secret_storage.txt
+*_secret_store.txt

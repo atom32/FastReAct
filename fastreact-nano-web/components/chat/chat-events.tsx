@@ -1,10 +1,15 @@
 "use client"
 
 import { useState } from "react"
-import { Brain, Wrench, FileText, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react"
+import { Brain, Wrench, FileText, AlertTriangle, ChevronDown, ChevronUp, Zap } from "lucide-react"
 import type { ChatEvent } from "@/lib/chat-types"
 
 function ThinkEvent({ event }: { event: ChatEvent }) {
+  // Don't show empty think events
+  if (!event.content || event.content.trim() === "" || event.content === "\n\n") {
+    return null
+  }
+
   return (
     <div
       className="animate-slide-up my-1.5 flex gap-2.5 rounded-lg px-3 py-2.5"
@@ -26,6 +31,9 @@ function ThinkEvent({ event }: { event: ChatEvent }) {
 }
 
 function ToolCallEvent({ event }: { event: ChatEvent }) {
+  const toolName = event.toolName || "tool_call"
+  const isMCP = toolName.includes("_") && !toolName.startsWith("read_") && !toolName.startsWith("write_") && !toolName.startsWith("edit_") && toolName !== "exec"
+
   return (
     <div
       className="animate-slide-up my-1.5 flex gap-2.5 rounded-lg px-3 py-2.5"
@@ -35,13 +43,28 @@ function ToolCallEvent({ event }: { event: ChatEvent }) {
       }}
     >
       <Wrench className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--fr-accent-tertiary)" }} />
-      <div className="min-w-0">
-        <span className="font-mono text-xs font-semibold" style={{ color: "var(--fr-accent-tertiary)" }}>
-          {event.toolName || "tool_call"}
-        </span>
-        <p className="mt-1 font-mono text-xs leading-relaxed" style={{ color: "var(--fr-text-secondary)" }}>
-          {event.content}
-        </p>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs font-semibold" style={{ color: "var(--fr-accent-tertiary)" }}>
+            {toolName}
+          </span>
+          {isMCP && (
+            <span
+              className="rounded-full px-2 py-0.5 text-xs font-medium"
+              style={{
+                background: "rgba(139, 92, 246, 0.15)",
+                color: "var(--fr-accent-primary)",
+              }}
+            >
+              MCP
+            </span>
+          )}
+        </div>
+        {event.content && event.content.trim() && (
+          <p className="mt-1 font-mono text-xs leading-relaxed" style={{ color: "var(--fr-text-secondary)" }}>
+            {event.content}
+          </p>
+        )}
       </div>
     </div>
   )
