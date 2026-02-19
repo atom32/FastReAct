@@ -35,7 +35,15 @@ export function Dashboard() {
 
         if (metricsRes.ok) {
           const data = await metricsRes.json()
-          setMetrics(prev => ({ ...prev, ...data }))
+          // Convert snake_case to camelCase
+          setMetrics(prev => ({
+            ...prev,
+            activeSessions: data.active_sessions,
+            totalEvents: data.total_events,
+            uptime: data.uptime,
+            memoryUsage: data.memory_usage,
+            cpuUsage: data.cpu_usage,
+          }))
         }
 
         if (statusRes.ok) {
