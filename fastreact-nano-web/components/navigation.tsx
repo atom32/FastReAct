@@ -3,22 +3,27 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Settings, ShoppingBag } from "lucide-react"
+import { Settings, ShoppingBag, Rocket, Palette } from "lucide-react"
+import { useState, useEffect } from "react"
+import type { ConnectionStatus } from "@/lib/chat-types"
 
-export function Navigation() {
+interface NavigationProps {
+  chatStatus?: ConnectionStatus
+  onToggleThemePalette?: () => void
+}
+
+export function Navigation({ chatStatus, onToggleThemePalette }: NavigationProps) {
   const pathname = usePathname()
   const isChatPage = pathname === "/"
 
   return (
     <nav
-      className="border-b backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50"
+      className="border-b backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 glass-panel flex items-center justify-between px-4 py-3 sm:px-6"
       style={{
-        background: "var(--fr-bg-glass)",
         borderColor: "var(--fr-border-glow)",
       }}
     >
-      <div className="container mx-auto px-4">
-        <div className="flex h-16 items-center justify-between">
+      <div className="container mx-auto flex w-full items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-2">
             <Link href="/" className="flex items-center space-x-2">
@@ -54,8 +59,39 @@ export function Navigation() {
           {/* Right side */}
           <div className="flex items-center gap-1">
             {isChatPage ? (
-              // Chat page: Show links to Admin and Marketplace
+              // Chat page: Show connection status, theme button, and links
               <>
+                {/* Connection Status */}
+                {chatStatus && (
+                  <div
+                    className="hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium sm:flex"
+                    style={{
+                      color: getStatusColor(chatStatus),
+                      backgroundColor: `${getStatusColor(chatStatus)}15`,
+                    }}
+                  >
+                    <span
+                      className="block h-2 w-2 rounded-full animate-dot-pulse"
+                      style={{ backgroundColor: getStatusColor(chatStatus) }}
+                    />
+                    {getStatusLabel(chatStatus)}
+                  </div>
+                )}
+
+                {/* Theme Palette Button */}
+                {onToggleThemePalette && (
+                  <button
+                    onClick={onToggleThemePalette}
+                    className="relative flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-105 active:scale-95"
+                    style={{
+                      background: "linear-gradient(135deg, var(--fr-gradient-start), var(--fr-gradient-end))",
+                      boxShadow: "0 4px 12px rgba(139, 92, 246, 0.3)",
+                    }}
+                  >
+                    <Palette className="h-4 w-4 text-white" />
+                  </button>
+                )}
+
                 <Link
                   href="/admin"
                   className={cn(
@@ -145,7 +181,37 @@ export function Navigation() {
             )}
           </div>
         </div>
-      </div>
     </nav>
   )
+}
+
+// Helper functions for connection status
+function getStatusColor(status: ConnectionStatus): string {
+  switch (status) {
+    case "connected":
+      return "rgb(34, 197, 94)" // green-500
+    case "connecting":
+      return "rgb(234, 179, 8)" // yellow-500
+    case "disconnected":
+      return "rgb(239, 68, 68)" // red-500
+    case "error":
+      return "rgb(239, 68, 68)" // red-500
+    default:
+      return "rgb(107, 114, 128)" // gray-500
+  }
+}
+
+function getStatusLabel(status: ConnectionStatus): string {
+  switch (status) {
+    case "connected":
+      return "Connected"
+    case "connecting":
+      return "Connecting..."
+    case "disconnected":
+      return "Disconnected"
+    case "error":
+      return "Connection Error"
+    default:
+      return "Unknown"
+  }
 }

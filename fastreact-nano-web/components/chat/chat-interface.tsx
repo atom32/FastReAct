@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react"
 import type { ChatMessage, ConnectionStatus, ChatEvent } from "@/lib/chat-types"
-import { ChatHeader } from "./chat-header"
+import { Navigation } from "@/components/navigation"
 import { ChatMessageBubble } from "./chat-message"
 import { ChatInput } from "./chat-input"
 import { ThemePalette } from "./theme-palette"
@@ -230,11 +230,10 @@ export function ChatInterface() {
       {/* Background Mesh */}
       <div className="background-mesh" />
 
-      {/* Chat Header (compact - no logo since it's in the navigation bar) */}
-      <ChatHeader
-        status={connectionStatus}
+      {/* Navigation Bar with chat controls */}
+      <Navigation
+        chatStatus={connectionStatus}
         onToggleThemePalette={() => setIsPaletteOpen((v) => !v)}
-        compact={true}
       />
 
       <ThemePalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} />
