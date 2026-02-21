@@ -71,6 +71,9 @@ class Session:
         # Interrupt flag (replaces _cancelled)
         self._interrupted = False
 
+        # Agent running state (for interrupt handling)
+        self._is_running = False
+
         # Background task for processing queue
         self._processing_task: Optional[asyncio.Task] = None
 
@@ -80,6 +83,11 @@ class Session:
             config=config,
             multitenant=False,  # Single-tenant mode (cannot distinguish users)
         )
+
+        # Initialize session queue for this session in agent
+        from fastreact.core.messages import MessageQueue
+        if session_id not in self.agent._session_queues:
+            self.agent._session_queues[session_id] = MessageQueue()
 
     async def send(self, message: dict):
         """Send message to client"""
@@ -168,7 +176,33 @@ class Session:
             skills = message.get("skills")
 
             self.update_activity()
+
+            # Check if agent is already running
+            if self._is_running:
+                # Agent is running, send interrupt signal via session_queues
+                from fastreact.core.messages import Message
+                import sys
+
+                print(f"[INFO] New query received while agent running, sending interrupt", file=sys.stderr)
+
+                # Push interrupt message to agent's session queue
+                self.agent._session_queues[self.session_id].push(
+                    Message.steering(
+                        f"[INTERRUPT] 用户有新请求: {query}",
+                        metadata={"source": "gateway", "new_query": query}
+                    )
+                )
+
+                # Send notification to user
+                await self.send({
+                    "type": "info",
+                    "content": f"[中断] 正在处理新请求: {query[:50]}{'...' if len(query) > 50 else ''}",
+                })
+                return
+
+            # Agent is idle, start new execution
             self.reset_interrupt()
+            self._is_running = True
 
             # Run agent with event streaming (with history!)
             try:
@@ -184,7 +218,7 @@ class Session:
                     session_id=self.session_id,
                     history=self._history,  # ✅ Pass conversation history
                 ):
-                    # Check if interrupted
+                    # Check if interrupted (via session_queues)
                     if self._interrupted:
                         await self.send({
                             "type": "info",
@@ -221,6 +255,9 @@ class Session:
                     "type": "error",
                     "content": str(e),
                 })
+            finally:
+                # Always reset running state when done
+                self._is_running = False
 
 
 class SessionManager:
