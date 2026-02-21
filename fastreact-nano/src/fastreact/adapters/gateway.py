@@ -74,6 +74,9 @@ class Session:
         # Agent running state (for interrupt handling)
         self._is_running = False
 
+        # Pending query for restart after interrupt
+        self._pending_query: Optional[str] = None
+
         # Background task for processing queue
         self._processing_task: Optional[asyncio.Task] = None
 
@@ -156,7 +159,10 @@ class Session:
         """Background task to process message queue"""
         while True:
             message = await self._message_queue.get()
-            await self._handle_message(message)
+
+            # Create task for concurrent processing (don't await)
+            # This allows new messages to be checked even while agent is running
+            asyncio.create_task(self._handle_message(message))
 
     async def _handle_message(self, message: dict):
         """Handle individual message from queue"""
@@ -179,11 +185,14 @@ class Session:
 
             # Check if agent is already running
             if self._is_running:
-                # Agent is running, send interrupt signal via session_queues
+                # Agent is running, interrupt and save new query
                 from fastreact.core.messages import Message
                 import sys
 
                 print(f"[INFO] New query received while agent running, sending interrupt", file=sys.stderr)
+
+                # Save pending query for restart
+                self._pending_query = query
 
                 # Push interrupt message to agent's session queue
                 self.agent._session_queues[self.session_id].push(
@@ -192,6 +201,9 @@ class Session:
                         metadata={"source": "gateway", "new_query": query}
                     )
                 )
+
+                # Set interrupt flag (will break the event loop)
+                self._interrupted = True
 
                 # Send notification to user
                 await self.send({
@@ -218,7 +230,7 @@ class Session:
                     session_id=self.session_id,
                     history=self._history,  # ✅ Pass conversation history
                 ):
-                    # Check if interrupted (via session_queues)
+                    # Check if interrupted (via session_queues or interrupt flag)
                     if self._interrupted:
                         await self.send({
                             "type": "info",
@@ -258,6 +270,19 @@ class Session:
             finally:
                 # Always reset running state when done
                 self._is_running = False
+
+                # Check if there's a pending query to process after interrupt
+                if self._pending_query:
+                    pending = self._pending_query
+                    self._pending_query = None  # Clear before processing
+
+                    # Re-process this message with the pending query
+                    import sys
+                    print(f"[INFO] Processing pending query after interrupt: {pending[:30]}...", file=sys.stderr)
+
+                    # Create a new message dict and re-call _handle_message
+                    # Note: use the skills from the NEW query, not the old one
+                    await self._handle_message({"type": "query", "content": pending})
 
 
 class SessionManager:
