@@ -514,6 +514,31 @@ def _parse_function_args(self, arguments: str) -> dict:
     return repair_json(arguments)
 ```
 
+### Development Rule: Keep Project Clean
+**Problem**: Generating test files and documentation scattered across project directories
+**Rule**: Keep project folders clean and organized
+**Check**: Before creating any file in project root or subdirectories
+```bash
+# WRONG - Don't create test files in project directories
+/tmp/test_feature.py  # ❌ If testing, use /tmp/ or tests/
+./my_test_script.py   # ❌ Use tests/ directory
+./TEMP_REPORT.md      # ❌ Use docs/ or docs_archive/
+
+# CORRECT - Use appropriate locations
+tests/manual/test_feature.py           # Manual test scripts
+tests/integration/test_feature.py      # Integration tests
+/tmp/quick_test.py                     # Temporary throwaway tests
+docs/FEATURE_REPORT.md                 # Feature documentation
+docs_archive/TEMP_REPORT.md            # Archive temporary reports
+```
+
+**Guidelines**:
+- **Test files**: Use `tests/` directory structure
+- **Quick tests**: Use `/tmp/` for throwaway scripts
+- **Documentation**: Use `docs/` for active docs, `docs_archive/` for history
+- **Build artifacts**: Add to `.gitignore` (build/, dist/, *.egg-info/)
+- **Never**: Create random .py, .md, .json files in project root
+
 ---
 
 ## Quick Reference
