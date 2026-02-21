@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Navigation } from "@/components/navigation"
 import { Dashboard } from "@/components/admin/dashboard"
 import { ConfigEditor } from "@/components/admin/config-editor"
 import { SessionManager } from "@/components/admin/session-manager"
@@ -11,6 +12,9 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--fr-bg-primary)" }}>
+      {/* Navigation */}
+      <Navigation />
+
       {/* Background Mesh */}
       <div className="background-mesh" />
 

@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import { Inter, Fira_Code, Orbitron } from "next/font/google"
 import "./globals.css"
-import { Navigation } from "@/components/navigation"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -37,7 +36,6 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${firaCode.variable} ${orbitron.variable}`}>
       <body className="font-sans antialiased">
-        <Navigation />
         {children}
       </body>
     </html>
