@@ -767,20 +767,29 @@ class Agent:
                         for msg in pending_messages.drain():
                             # Check for interrupt signal
                             if msg.content.startswith("[INTERRUPT]"):
-                                # Add to message history so LLM sees it
-                                messages.append(msg.to_llm_format())
+                                # Extract new query from metadata
+                                new_query = msg.metadata.get("new_query", "")
+                                if new_query:
+                                    # Replace the original user query with the new one
+                                    # Find and replace the first user message
+                                    for i, m in enumerate(messages):
+                                        if m.get("role") == "user":
+                                            messages[i] = {
+                                                "role": "user",
+                                                "content": new_query
+                                            }
+                                            break
 
-                                # Notify user about interrupt
-                                yield AgentEvent.think(
-                                    f"[USER INTERRUPT: {msg.content.replace('[INTERRUPT] ', '')}]",
-                                    session_id,
-                                    metadata={"source": "user"}
-                                )
+                                    # Notify user about the query switch
+                                    yield AgentEvent.think(
+                                        f"[查询切换] {new_query}",
+                                        session_id,
+                                        metadata={"source": "user", "query_switch": True}
+                                    )
 
-                                # Set flag to stop after current iteration
-                                interrupted = True
-                                has_more_tool_calls = False  # Stop tool loop
-                                break  # Exit message processing loop
+                                    # Continue processing with new query (don't set interrupted flag)
+                                    # This preserves context from previous tool calls
+                                    break
 
                             # Regular steering/followup messages
                             messages.append(msg.to_llm_format())
