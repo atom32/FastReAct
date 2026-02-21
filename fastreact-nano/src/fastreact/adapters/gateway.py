@@ -160,8 +160,8 @@ class Session:
         while True:
             message = await self._message_queue.get()
 
-            # Create task for concurrent processing (don't await)
-            # This allows new messages to be checked even while agent is running
+            # Create task for concurrent processing
+            # This allows checking for new messages even while agent is running
             asyncio.create_task(self._handle_message(message))
 
     async def _handle_message(self, message: dict):
@@ -191,7 +191,7 @@ class Session:
 
                 print(f"[INFO] New query received while agent running, sending interrupt", file=sys.stderr)
 
-                # Save pending query for restart
+                # Save pending query (overwrite any previous pending query)
                 self._pending_query = query
 
                 # Push interrupt message to agent's session queue
@@ -201,9 +201,6 @@ class Session:
                         metadata={"source": "gateway", "new_query": query}
                     )
                 )
-
-                # Set interrupt flag (will break the event loop)
-                self._interrupted = True
 
                 # Send notification to user
                 await self.send({
@@ -230,15 +227,6 @@ class Session:
                     session_id=self.session_id,
                     history=self._history,  # ✅ Pass conversation history
                 ):
-                    # Check if interrupted (via session_queues or interrupt flag)
-                    if self._interrupted:
-                        await self.send({
-                            "type": "info",
-                            "content": "Agent run interrupted",
-                        })
-                        interrupted = True
-                        break
-
                     # Increment event counter
                     global _total_events_counter
                     _total_events_counter += 1
@@ -257,6 +245,10 @@ class Session:
                     # Track final response
                     if event.type == EventType.SESSION_END:
                         final_response = event.content
+                        # Check if this session was interrupted
+                        if "[INTERRUPTED]" in event.content or "User stopped" in event.content:
+                            interrupted = True
+                            break
 
                 # Update history if not interrupted
                 if not interrupted and final_response:
