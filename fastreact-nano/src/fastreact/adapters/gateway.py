@@ -160,9 +160,14 @@ class Session:
         while True:
             message = await self._message_queue.get()
 
-            # Create task for concurrent processing
-            # This allows checking for new messages even while agent is running
-            asyncio.create_task(self._handle_message(message))
+            # Check if this is a new query and agent is already running
+            if message.get("type") == "query" and self._is_running:
+                # Process this immediately to save as pending and send interrupt
+                # Don't await, so we don't block the queue
+                asyncio.create_task(self._handle_message(message))
+            else:
+                # Normal processing (agent is idle or not a query)
+                await self._handle_message(message)
 
     async def _handle_message(self, message: dict):
         """Handle individual message from queue"""
