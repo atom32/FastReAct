@@ -65,6 +65,11 @@ feishu = [
     "lark-oapi>=1.5.0",
 ]
 
+# Telegram adapter
+telegram = [
+    "python-telegram-bot[job-queue]>=21.0",
+]
+
 # MCP (Model Context Protocol) support
 mcp = [
     # No additional dependencies needed for MCP client

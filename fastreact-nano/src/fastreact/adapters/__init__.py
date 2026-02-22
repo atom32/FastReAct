@@ -15,6 +15,11 @@ Gateway Adapter:
     pip install fastreact-nano[gateway]
     python -m fastreact.adapters.gateway
 
+Telegram Adapter:
+    pip install fastreact-nano[telegram]
+    export TELEGRAM_BOT_TOKEN="your_token_from_botfather"
+    python -m fastreact.adapters.telegram
+
 Feishu Adapter (SDK - Recommended):
     pip install fastreact-nano[feishu]
     python examples/feishu_sdk_bot.py
@@ -24,4 +29,10 @@ REPL Adapter (Development):
     python -m fastreact.adapters.repl
 """
 
-__all__ = []
+from fastreact.adapters.base import BaseAdapter
+from fastreact.adapters.telegram import TelegramAdapter
+
+__all__ = [
+    "BaseAdapter",
+    "TelegramAdapter",
+]
