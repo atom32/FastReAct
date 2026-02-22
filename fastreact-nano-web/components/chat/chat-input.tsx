@@ -93,14 +93,15 @@ export function ChatInput({ onSend, onStop, statusLabel, isProcessing }: ChatInp
         {isProcessing && onStop ? (
           <button
             onClick={onStop}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0"
+            className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0"
             style={{
               background: "#ef4444",
               boxShadow: "0 4px 15px rgba(239, 68, 68, 0.4)",
             }}
             title="Stop Agent"
           >
-            <Square className="h-5 w-5" />
+            <Square className="h-4 w-4" />
+            <span>Stop</span>
           </button>
         ) : (
           <button

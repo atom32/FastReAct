@@ -24,6 +24,7 @@ export function ChatInterface() {
     title: string
     description: string
   }>({ isOpen: false, title: "", description: "" })
+  const [userInterventionCount, setUserInterventionCount] = useState(0)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const currentAssistantIdRef = useRef<string | null>(null)
@@ -55,6 +56,11 @@ export function ChatInterface() {
 
   // Stable callback refs to prevent infinite reconnects
   const onEventCallback = useCallback((event: ChatEvent) => {
+    // Track user interventions
+    if (event.metadata?.user_intervention) {
+      setUserInterventionCount((prev) => prev + 1)
+    }
+
     // Update status label based on event type
     if (event.type === "session_start") {
       // Extract SKILLs from metadata and store in message
@@ -234,6 +240,7 @@ export function ChatInterface() {
       <Navigation
         chatStatus={connectionStatus}
         onToggleThemePalette={() => setIsPaletteOpen((v) => !v)}
+        userInterventionCount={userInterventionCount}
       />
 
       <ThemePalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} />

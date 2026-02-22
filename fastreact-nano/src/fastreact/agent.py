@@ -383,7 +383,14 @@ class Agent:
                     if mcp_section_parts:
                         skills_section += "\n\n" + "\n\n".join(mcp_section_parts)
 
-        return base_prompt + tools_section + skills_list_section + skills_section
+        final_prompt = base_prompt + tools_section + skills_list_section + skills_section
+
+        # === DEBUG: Log system prompt ===
+        import sys
+        print(f"[DEBUG] System prompt length: {len(final_prompt)}", file=sys.stderr)
+        print(f"[DEBUG] Skills section preview:\n{skills_list_section[:500]}", file=sys.stderr)
+
+        return final_prompt
 
     def enable_auto_skill_selection(self, max_skills: int = 3):
         """
@@ -458,6 +465,110 @@ class Agent:
 
         # Note: MCP servers are loaded lazily in _load_mcp_servers()
         # to avoid async operations in __init__
+
+    def _compress_context(
+        self,
+        messages: list[dict],
+        max_tokens: int = 12000,
+        preserve_system: bool = True,
+        preserve_initial_query: bool = True,
+        recent_count: int = 15
+    ) -> list[dict]:
+        """
+        Multi-level context compression strategy
+
+        Level 1: Estimate tokens and check if compression needed
+        Level 2: Sliding window (preserve System + initial query + recent N messages)
+        Level 3: Character-level truncation (last resort)
+
+        Args:
+            messages: Message list to compress
+            max_tokens: Maximum token limit (default 12000 for GPT-4o with 4K buffer)
+            preserve_system: Whether to preserve system prompt
+            preserve_initial_query: Whether to preserve the initial user query
+            recent_count: Number of recent messages to preserve
+
+        Returns:
+            Compressed message list
+        """
+        if not messages:
+            return messages
+
+        # Level 1: Estimate tokens
+        total_tokens = 0
+        for msg in messages:
+            content = msg.get("content", "")
+            # Simple estimation: 1 token ~ 4 characters
+            total_tokens += len(content) // 4
+
+        # If under limit, no compression needed
+        if total_tokens <= max_tokens:
+            return messages
+
+        # Level 2: Sliding window compression
+        compressed = []
+
+        # Preserve system prompt if requested
+        system_msg = None
+        if preserve_system:
+            for msg in messages:
+                if msg.get("role") == "system":
+                    system_msg = msg
+                    break
+
+        # Find and preserve initial user query
+        initial_query = None
+        initial_query_index = -1
+        if preserve_initial_query:
+            for i, msg in enumerate(messages):
+                if msg.get("role") == "user":
+                    initial_query = msg
+                    initial_query_index = i
+                    break
+
+        # Build sliding window
+        if system_msg:
+            compressed.append(system_msg)
+
+        if initial_query:
+            compressed.append(initial_query)
+
+        # Add recent messages (excluding system and initial query)
+        recent_messages = []
+        for msg in messages:
+            # Skip system and initial query (already added)
+            if msg.get("role") == "system":
+                continue
+            if preserve_initial_query and msg == initial_query:
+                continue
+
+            recent_messages.append(msg)
+
+        # Keep only the most recent messages
+        if len(recent_messages) > recent_count:
+            recent_messages = recent_messages[-recent_count:]
+
+        compressed.extend(recent_messages)
+
+        # Level 3: Character-level truncation (if still over limit)
+        # Estimate compressed tokens
+        compressed_tokens = 0
+        for msg in compressed:
+            content = msg.get("content", "")
+            compressed_tokens += len(content) // 4
+
+        if compressed_tokens > max_tokens:
+            # Truncate tool outputs to fit
+            for msg in compressed:
+                if msg.get("role") == "tool":
+                    content = msg.get("content", "")
+                    # Truncate to 80% of original
+                    if len(content) > 2000:
+                        head = content[:1600]
+                        tail = content[-400:] if len(content) > 2000 else ""
+                        msg["content"] = f"{head}\n... [Context truncated] ...\n{tail}"
+
+        return compressed
 
     async def _load_mcp_servers(self, required_skills: Optional[list[str]] = None) -> None:
         """
@@ -765,7 +876,25 @@ class Agent:
                     # Process pending messages (steering/interrupt/followup)
                     if pending_messages:
                         for msg in pending_messages.drain():
-                            # Check for interrupt signal
+                            # Check for user intervention from Gateway
+                            if msg.metadata.get("source") == "gateway":
+                                # User intervention: append as new user message
+                                # This preserves all previous tool results so LLM can understand "what you just did"
+                                messages.append({
+                                    "role": "user",
+                                    "content": f"[USER INTERVENTION]: {msg.content}"
+                                })
+
+                                # Send notification
+                                yield AgentEvent.think(
+                                    f"[USER INTERVENTION] {msg.content}",
+                                    session_id,
+                                    metadata={"source": "user", "user_intervention": True}
+                                )
+                                # Continue execution, don't set interrupted flag
+                                break
+
+                            # Legacy interrupt signal handling (for backward compatibility)
                             if msg.content.startswith("[INTERRUPT]"):
                                 # Extract new query from metadata
                                 new_query = msg.metadata.get("new_query", "")
@@ -801,12 +930,21 @@ class Agent:
                                     metadata={"source": msg.metadata.get("source", "unknown")},
                                 )
 
+                    # Compress context before LLM call (each iteration)
+                    compressed_messages = self._compress_context(
+                        messages,
+                        max_tokens=12000,  # Leave 4K buffer for GPT-4o (16K total)
+                        preserve_system=True,
+                        preserve_initial_query=True,
+                        recent_count=15  # Keep last 15 messages
+                    )
+
                     # Call Brain (Core) for reasoning step
                     step_end = None
                     tool_calls = []  # Collect tool calls from Core
 
                     async for event in self._core.run_step_stream(
-                        messages=messages,
+                        messages=compressed_messages,  # Use compressed messages
                         session_id=session_id,
                         system_prompt=system_prompt,  # Pass skills-enhanced prompt
                     ):
@@ -899,7 +1037,7 @@ class Agent:
 
                             # Add tool result to history
                             import sys
-                            print(f"[DEBUG] Tool result: tool_name={tool_name}, call_id='{call_id}'", file=sys.stderr)
+                            print(f"[DEBUG] Tool result: tool_name={tool_name}, call_id='{call_id}', result_length={len(result)}", file=sys.stderr)
                             messages.append(Message.tool(
                                 name=tool_name,
                                 result=result,
@@ -909,7 +1047,7 @@ class Agent:
                         executed_tools_this_iteration = True
                         has_more_tool_calls = False
                         import sys
-                        print(f"[DEBUG] Tools executed, will continue", file=sys.stderr)
+                        print(f"[DEBUG] Tools executed in this iteration, will continue to next iteration", file=sys.stderr)
                     else:
                         # No tool calls - exit inner loop
                         has_more_tool_calls = False
@@ -918,21 +1056,46 @@ class Agent:
                 # Continue if:
                 # 1. We just executed tools in this iteration (need LLM to process results)
                 # 2. There are follow-up messages
+                # 3. LLM hasn't generated a final answer yet
 
-                # Check for follow-up messages
+                # Check for follow-up messages (user intervention, etc.)
                 has_followup = bool(self._session_queues.get(session_id, MessageQueue()))
 
                 # If we executed tools in this iteration, continue to next iteration
+                # (LLM needs to process tool results and generate next action)
                 if executed_tools_this_iteration and not has_followup:
-                    # Continue to process tool results
                     continue
 
                 # If there are follow-up messages, continue to process them
                 if has_followup:
                     continue
 
-                # Otherwise, we're done
-                break
+                # CRITICAL FIX: Check if LLM has generated a final answer
+                # If the last assistant message is a text response (not tool calls),
+                # we can consider the task complete
+                has_final_answer = False
+                for msg in reversed(messages):
+                    if msg.get("role") == "assistant":
+                        content = msg.get("content", "")
+                        # Check if this is a meaningful text response (not just thinking)
+                        if content and not content.startswith("[") and len(content.strip()) > 0:
+                            has_final_answer = True
+                            break
+
+                # Only break if we have a final answer OR we've hit max iterations
+                if has_final_answer:
+                    import sys
+                    print(f"[DEBUG] Agent loop completed: has_final_answer=True, executed_tools={executed_tools_this_iteration}, has_followup={has_followup}", file=sys.stderr)
+                    break
+                elif not executed_tools_this_iteration and not has_followup:
+                    # LLM didn't call tools AND didn't generate text response
+                    # This might be an error or empty response - log warning
+                    import sys
+                    print(f"[WARNING] Agent loop ended without final answer or tool calls (executed_tools={executed_tools_this_iteration}, has_followup={has_followup})", file=sys.stderr)
+                    break
+                # Otherwise, continue the loop
+                import sys
+                print(f"[DEBUG] Agent loop continuing (executed_tools={executed_tools_this_iteration}, has_followup={has_followup}, has_final_answer={has_final_answer})", file=sys.stderr)
 
             # Check if we were interrupted
             if interrupted:

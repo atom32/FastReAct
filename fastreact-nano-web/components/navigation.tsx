@@ -10,9 +10,10 @@ import type { ConnectionStatus } from "@/lib/chat-types"
 interface NavigationProps {
   chatStatus?: ConnectionStatus
   onToggleThemePalette?: () => void
+  userInterventionCount?: number
 }
 
-export function Navigation({ chatStatus, onToggleThemePalette }: NavigationProps) {
+export function Navigation({ chatStatus, onToggleThemePalette, userInterventionCount = 0 }: NavigationProps) {
   const pathname = usePathname()
   const isChatPage = pathname === "/"
 
@@ -59,7 +60,7 @@ export function Navigation({ chatStatus, onToggleThemePalette }: NavigationProps
           {/* Right side */}
           <div className="flex items-center gap-1">
             {isChatPage ? (
-              // Chat page: Show connection status, theme button, and links
+              // Chat page: Show connection status, intervention count, theme button, and links
               <>
                 {/* Connection Status */}
                 {chatStatus && (
@@ -75,6 +76,20 @@ export function Navigation({ chatStatus, onToggleThemePalette }: NavigationProps
                       style={{ backgroundColor: getStatusColor(chatStatus) }}
                     />
                     {getStatusLabel(chatStatus)}
+                  </div>
+                )}
+
+                {/* User Intervention Count */}
+                {userInterventionCount > 0 && (
+                  <div
+                    className="hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium sm:flex"
+                    style={{
+                      color: "var(--fr-accent-primary)",
+                      backgroundColor: "rgba(139, 92, 246, 0.15)",
+                      border: "1px solid var(--fr-border-glow)",
+                    }}
+                  >
+                    {userInterventionCount} {userInterventionCount === 1 ? "intervention" : "interventions"}
                   </div>
                 )}
 

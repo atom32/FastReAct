@@ -1,8 +1,39 @@
 "use client"
 
 import { useState } from "react"
-import { Brain, Wrench, FileText, AlertTriangle, ChevronDown, ChevronUp, Zap } from "lucide-react"
+import { Brain, Wrench, FileText, AlertTriangle, ChevronDown, ChevronUp, Zap, User } from "lucide-react"
 import type { ChatEvent } from "@/lib/chat-types"
+
+function InterventionEvent({ event }: { event: ChatEvent }) {
+  return (
+    <div
+      className="animate-slide-up my-2 flex gap-2.5 rounded-xl px-4 py-3"
+      style={{
+        background: `linear-gradient(90deg, rgba(139, 92, 246, 0.15), rgba(168, 85, 247, 0.15))`,
+        border: `2px solid var(--fr-accent-primary)`,
+        boxShadow: `0 0 15px rgba(139, 92, 246, 0.2)`,
+      }}
+    >
+      <User className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--fr-accent-primary)" }} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span
+            className="rounded-full px-2 py-0.5 text-xs font-bold"
+            style={{
+              background: "var(--fr-accent-primary)",
+              color: "white",
+            }}
+          >
+            USER INTERVENTION
+          </span>
+        </div>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--fr-text-primary)" }}>
+          {event.content}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 function ThinkEvent({ event }: { event: ChatEvent }) {
   // Don't show empty think events
@@ -145,6 +176,11 @@ function TextEvent({ event }: { event: ChatEvent }) {
 }
 
 export function ChatEventRenderer({ event }: { event: ChatEvent }) {
+  // Check for user intervention metadata (think events with user_intervention flag)
+  if (event.type === "think" && event.metadata?.user_intervention) {
+    return <InterventionEvent event={event} />
+  }
+
   switch (event.type) {
     case "think":
       return <ThinkEvent event={event} />

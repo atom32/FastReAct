@@ -74,6 +74,10 @@ class Session:
         # Agent running state (for interrupt handling)
         self._is_running = False
 
+        # Follow-up query detection (30 second window)
+        self._last_response_time: Optional[datetime] = None
+        self._followup_window_seconds = 30
+
         # Background task for processing queue
         self._processing_task: Optional[asyncio.Task] = None
 
@@ -180,33 +184,48 @@ class Session:
 
             self.update_activity()
 
+            # Check if this is a follow-up query (within 30 seconds of last response)
+            is_followup = False
+            if self._last_response_time:
+                time_since_response = (datetime.utcnow() - self._last_response_time).total_seconds()
+                if time_since_response < self._followup_window_seconds:
+                    is_followup = True
+                    import sys
+                    print(f"[INFO] Follow-up query detected (within {time_since_response:.1f}s of last response)", file=sys.stderr)
+
             # Check if agent is already running
             if self._is_running:
-                # Agent is running, send interrupt signal
+                # Agent is running, send user intervention signal
                 from fastreact.core.messages import Message
                 import sys
 
-                print(f"[INFO] New query received while agent running, sending interrupt", file=sys.stderr)
+                print(f"[INFO] New query received while agent running, sending user intervention", file=sys.stderr)
 
-                # Push interrupt message to agent's session queue
-                # Agent will replace the current query and continue execution
+                # Push intervention message to agent's session queue
+                # Agent will append this as a new user message, preserving all previous tool results
                 self.agent._session_queues[self.session_id].push(
                     Message.steering(
-                        f"[INTERRUPT] 用户有新请求: {query}",
-                        metadata={"source": "gateway", "new_query": query}
+                        query,  # Send the actual user query
+                        metadata={"source": "gateway", "user_intervention": True}
                     )
                 )
 
                 # Send notification to user
                 await self.send({
                     "type": "info",
-                    "content": f"[查询切换] {query[:50]}{'...' if len(query) > 50 else ''}",
+                    "content": f"[USER INTERVENTION] {query[:50]}{'...' if len(query) > 50 else ''}",
                 })
                 return
 
             # Agent is idle, start new execution
             self.reset_interrupt()
             self._is_running = True
+
+            # If this is a follow-up query, preserve context from history
+            # This helps Agent understand "what we were discussing"
+            if is_followup and len(self._history) > 0:
+                import sys
+                print(f"[INFO] Follow-up query will use conversation history (last {len(self._history)} messages)", file=sys.stderr)
 
             # Run agent with event streaming (with history!)
             try:
@@ -248,6 +267,8 @@ class Session:
                 # Update history if not interrupted
                 if not interrupted and final_response:
                     self._update_history(query, final_response)
+                    # Track last response time for follow-up detection
+                    self._last_response_time = datetime.utcnow()
 
             except Exception as e:
                 await self.send({
