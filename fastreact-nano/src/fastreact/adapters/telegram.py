@@ -267,7 +267,7 @@ class TelegramAdapter(BaseAdapter):
 
         user = update.effective_user
         await update.message.reply_text(
-            f"👋 Hi {user.first_name}! I'm FastReAct Nano.\n\n"
+            f"[Hi] Hello {user.first_name}! I'm FastReAct Nano.\n\n"
             "I'm an AI assistant powered by ReAct architecture.\n\n"
             "Commands:\n"
             "/new - Start a new conversation\n"
@@ -281,8 +281,12 @@ class TelegramAdapter(BaseAdapter):
 
         chat_id = str(update.effective_chat.id)
 
-        # Clear history
-        self._sessions[chat_id] = {"history": []}
+        # Clear session - will be recreated on next message
+        if chat_id in self._sessions:
+            agent_session = self._sessions[chat_id].get("agent_session")
+            if agent_session:
+                # Clear history in AgentSession
+                agent_session._history.clear()
 
         await update.message.reply_text(
             "[OK] New conversation started. Previous context cleared."
@@ -294,7 +298,7 @@ class TelegramAdapter(BaseAdapter):
             return
 
         await update.message.reply_text(
-            "🐈 FastReAct Nano Commands:\n\n"
+            "[FastReAct Nano] Commands:\n\n"
             "/start - Start the bot\n"
             "/new - Start a new conversation\n"
             "/help - Show this help message\n\n"
@@ -322,32 +326,23 @@ class TelegramAdapter(BaseAdapter):
             )
             self._sessions[chat_id] = {
                 "agent_session": agent_session,
-                "history": [],
             }
         else:
             agent_session = self._sessions[chat_id]["agent_session"]
 
         # Process query with AgentSession
         try:
-            import sys
-
             # Send "thinking" notification
             await update.message.chat.send_action("typing...")
 
             # Process query (AgentSession handles business logic)
-            final_response = None
-
+            # Callback will send final response to user
             async for event in agent_session.process_message(
                 {"type": "query", "content": content},
                 on_event=self._create_send_callback(update, chat_id),
             ):
                 # Events are sent via callback
-                if event.get("type") == "event" and event.get("event_type") == "session_end":
-                    final_response = event.get("content", "")
-
-            # Update local history
-            if final_response:
-                self._sessions[chat_id]["history"] = agent_session.get_history()
+                pass
 
         except Exception as e:
             import sys
@@ -371,9 +366,25 @@ class TelegramAdapter(BaseAdapter):
             msg_type = message.get("type")
 
             if msg_type == "event":
-                # Could send intermediate events here if desired
-                # For now, we only send final response
-                pass
+                # Handle event messages
+                event_type = message.get("event_type")
+
+                if event_type == "session_end":
+                    # Send final response
+                    content = message.get("content", "")
+                    if content:
+                        # Convert markdown to Telegram HTML and split if needed
+                        html_content = _markdown_to_telegram_html(content)
+                        chunks = _split_message(html_content, max_len=4000)
+
+                        for chunk in chunks:
+                            await update.message.reply_text(
+                                chunk,
+                                parse_mode="HTML"
+                            )
+                elif event_type == "error":
+                    # Send error event
+                    await update.message.reply_text(f"[ERROR] {message.get('content', '')}")
 
             elif msg_type == "info":
                 # Send info message
