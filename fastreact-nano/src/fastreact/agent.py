@@ -177,6 +177,9 @@ class Agent:
         # Session queues for steering/followup support
         self._session_queues: dict[str, MessageQueue] = {}
 
+        # Session management (NEW: AgentSession lifecycle)
+        self._sessions: dict[str, "AgentSession"] = {}
+
     def _select_skills_auto(
         self,
         query: str,
@@ -696,6 +699,86 @@ class Agent:
         if self._mcp_manager:
             await self._mcp_manager.close_all()
             self._mcp_manager = None
+
+    # === Session Management (NEW) ===
+
+    def create_session(
+        self,
+        session_id: str,
+        max_history: int = 50,
+        followup_window_seconds: int = 30,
+        max_queue_size: int = 5,
+    ) -> "AgentSession":
+        """
+        Create or get existing session
+
+        Args:
+            session_id: Unique session identifier
+            max_history: Maximum conversation turns to keep in memory
+            followup_window_seconds: Time window for follow-up detection (default: 30s)
+            max_queue_size: Maximum messages in queue (for flow control)
+
+        Returns:
+            AgentSession instance
+
+        Example:
+            agent = Agent()
+            session = agent.create_session("user-123")
+            # Use session for business logic
+            await session.process_message({"type": "query", "content": "Hello"}, on_event=...)
+        """
+        from fastreact.core.session import AgentSession
+
+        # Return existing session if already exists
+        if session_id in self._sessions:
+            return self._sessions[session_id]
+
+        # Create new session
+        session = AgentSession(
+            session_id=session_id,
+            agent=self,
+            max_history=max_history,
+            followup_window_seconds=followup_window_seconds,
+            max_queue_size=max_queue_size,
+        )
+
+        self._sessions[session_id] = session
+
+        # Also create MessageQueue for legacy compatibility
+        if session_id not in self._session_queues:
+            from fastreact.core.messages import MessageQueue
+            self._session_queues[session_id] = MessageQueue()
+
+        return session
+
+    def get_session(self, session_id: str) -> Optional["AgentSession"]:
+        """
+        Get existing session
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            AgentSession instance if exists, None otherwise
+        """
+        return self._sessions.get(session_id)
+
+    def close_session(self, session_id: str):
+        """
+        Close and cleanup session
+
+        Args:
+            session_id: Session identifier to close
+        """
+        # Remove AgentSession
+        if session_id in self._sessions:
+            del self._sessions[session_id]
+
+        # Remove MessageQueue (legacy compatibility)
+        if session_id in self._session_queues:
+            del self._session_queues[session_id]
+
+    # === End Session Management ===
 
     def inject_message(self, session_id: str, message: Message):
         """

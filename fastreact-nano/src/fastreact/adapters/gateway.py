@@ -42,7 +42,17 @@ from fastreact import Agent, Config
 
 
 class Session:
-    """Gateway session with message queue and graceful interrupt"""
+    """
+    Gateway Session - Transport Layer Only
+
+    Responsibilities:
+    - WebSocket connection management
+    - Event sending to client
+    - Delegating business logic to AgentSession
+
+    This class is now a THIN wrapper around AgentSession.
+    All business logic (history, follow-ups, state) is in AgentSession.
+    """
 
     def __init__(
         self,
@@ -53,32 +63,12 @@ class Session:
         base_workspace: Optional[Path] = None,
         max_history: int = 50,
     ):
-        from pathlib import Path as LibPath
-
         self.session_id = session_id
         self.websocket = websocket
         self.created_at = datetime.utcnow()
         self.last_activity = datetime.utcnow()
 
-        # Message queue for concurrent input handling
-        self._message_queue: asyncio.Queue = asyncio.Queue(maxsize=max_queue_size)
-        self.max_queue_size = max_queue_size
-
-        # Conversation history for multi-turn dialog
-        self._history: list[dict] = []
-        self._max_history = max_history
-
-        # Interrupt flag (replaces _cancelled)
-        self._interrupted = False
-
-        # Agent running state (for interrupt handling)
-        self._is_running = False
-
-        # Follow-up query detection (30 second window)
-        self._last_response_time: Optional[datetime] = None
-        self._followup_window_seconds = 30
-
-        # Background task for processing queue
+        # Background task reference
         self._processing_task: Optional[asyncio.Task] = None
 
         # NOTE: Gateway runs in single-tenant mode (no user authentication)
@@ -88,53 +78,38 @@ class Session:
             multitenant=False,  # Single-tenant mode (cannot distinguish users)
         )
 
-        # Initialize session queue for this session in agent
-        from fastreact.core.messages import MessageQueue
-        if session_id not in self.agent._session_queues:
-            self.agent._session_queues[session_id] = MessageQueue()
+        # Create AgentSession for business logic (NEW: all business logic here)
+        self.agent_session = self.agent.create_session(
+            session_id=session_id,
+            max_history=max_history,
+            followup_window_seconds=30,
+            max_queue_size=max_queue_size,
+        )
 
     async def send(self, message: dict):
-        """Send message to client"""
+        """
+        Send message to client (transport layer only)
+
+        Args:
+            message: Message dict to send as JSON
+        """
         try:
             await self.websocket.send_json(message)
         except Exception:
             pass
 
     def update_activity(self):
-        """Update last activity timestamp"""
+        """Update last activity timestamp (delegated to AgentSession)"""
         self.last_activity = datetime.utcnow()
+        self.agent_session.update_activity()
 
     def interrupt(self):
-        """Interrupt current agent run"""
-        self._interrupted = True
-
-    def reset_interrupt(self):
-        """Reset interrupt flag for new run"""
-        self._interrupted = False
-
-    def _update_history(self, user_query: str, assistant_response: str):
-        """
-        Update conversation history
-
-        Args:
-            user_query: User's input message
-            assistant_response: Agent's final response
-        """
-        # Add user message
-        self._history.append({"role": "user", "content": user_query})
-
-        # Add assistant message
-        self._history.append({"role": "assistant", "content": assistant_response})
-
-        # Prune history if too long (FIFO)
-        if len(self._history) > self._max_history:
-            import sys
-            print(f"[INFO] Pruning history from {len(self._history)} to {self._max_history} messages", file=sys.stderr)
-            self._history = self._history[-self._max_history:]
+        """Interrupt current execution (delegated to AgentSession)"""
+        self.agent_session.interrupt()
 
     async def enqueue_message(self, message: dict) -> bool:
         """
-        Enqueue message to processing queue
+        Enqueue message for processing (delegated to AgentSession)
 
         Args:
             message: Message dict with 'type' field
@@ -142,142 +117,22 @@ class Session:
         Returns:
             True if message enqueued, False if queue full
         """
-        msg_type = message.get("type")
-
-        # Control messages have priority (bypass queue limit)
-        if msg_type == "control":
-            await self._message_queue.put(message)
-            return True
-
-        # Check queue capacity for regular messages
-        if self._message_queue.qsize() >= self.max_queue_size:
-            return False
-
-        await self._message_queue.put(message)
-        return True
+        return await self.agent_session.enqueue_message(message)
 
     async def process_queue(self):
-        """Background task to process message queue"""
+        """
+        Background task to process message queue (simplified)
+
+        Delegates to AgentSession.process_queue() with callback for sending events.
+        """
         while True:
-            message = await self._message_queue.get()
+            message = await self.agent_session._message_queue.get()
 
-            # Process message
-            # Agent checks session_queues at each iteration for interrupts
-            await self._handle_message(message)
-
-    async def _handle_message(self, message: dict):
-        """Handle individual message from queue"""
-        msg_type = message.get("type")
-
-        if msg_type == "control":
-            action = message.get("action")
-            if action == "interrupt":
-                self.interrupt()
-                await self.send({
-                    "type": "info",
-                    "content": "Execution interrupted",
-                })
-
-        elif msg_type == "query":
-            query = message.get("content", "")
-            skills = message.get("skills")
-
-            self.update_activity()
-
-            # Check if this is a follow-up query (within 30 seconds of last response)
-            is_followup = False
-            if self._last_response_time:
-                time_since_response = (datetime.utcnow() - self._last_response_time).total_seconds()
-                if time_since_response < self._followup_window_seconds:
-                    is_followup = True
-                    import sys
-                    print(f"[INFO] Follow-up query detected (within {time_since_response:.1f}s of last response)", file=sys.stderr)
-
-            # Check if agent is already running
-            if self._is_running:
-                # Agent is running, send user intervention signal
-                from fastreact.core.messages import Message
-                import sys
-
-                print(f"[INFO] New query received while agent running, sending user intervention", file=sys.stderr)
-
-                # Push intervention message to agent's session queue
-                # Agent will append this as a new user message, preserving all previous tool results
-                self.agent._session_queues[self.session_id].push(
-                    Message.steering(
-                        query,  # Send the actual user query
-                        metadata={"source": "gateway", "user_intervention": True}
-                    )
-                )
-
-                # Send notification to user
-                await self.send({
-                    "type": "info",
-                    "content": f"[USER INTERVENTION] {query[:50]}{'...' if len(query) > 50 else ''}",
-                })
-                return
-
-            # Agent is idle, start new execution
-            self.reset_interrupt()
-            self._is_running = True
-
-            # If this is a follow-up query, preserve context from history
-            # This helps Agent understand "what we were discussing"
-            if is_followup and len(self._history) > 0:
-                import sys
-                print(f"[INFO] Follow-up query will use conversation history (last {len(self._history)} messages)", file=sys.stderr)
-
-            # Run agent with event streaming (with history!)
-            try:
-                from fastreact.core.events import EventType
-
-                # Track final response for history
-                final_response = None
-                interrupted = False
-
-                async for event in self.agent.run_event_stream(
-                    query,
-                    skills=skills,
-                    session_id=self.session_id,
-                    history=self._history,  # ✅ Pass conversation history
-                ):
-                    # Increment event counter
-                    global _total_events_counter
-                    _total_events_counter += 1
-
-                    # Send event immediately
-                    await self.send({
-                        "type": "event",
-                        "event_type": event.type.value,
-                        "content": event.content,
-                        "tool_name": event.tool_name,
-                        "tool_args": event.tool_args,
-                        "session_id": event.session_id,
-                        "metadata": event.metadata,
-                    })
-
-                    # Track final response
-                    if event.type == EventType.SESSION_END:
-                        final_response = event.content
-                        # Check if this session was interrupted
-                        if "[INTERRUPTED]" in event.content or "User stopped" in event.content:
-                            interrupted = True
-                            break
-
-                # Update history if not interrupted
-                if not interrupted and final_response:
-                    self._update_history(query, final_response)
-                    # Track last response time for follow-up detection
-                    self._last_response_time = datetime.utcnow()
-
-            except Exception as e:
-                await self.send({
-                    "type": "error",
-                    "content": str(e),
-                })
-            finally:
-                # Always reset running state when done
-                self._is_running = False
+            # Process with callback (self.send) to send events to WebSocket client
+            await self.agent_session.process_message(
+                message,
+                on_event=self.send,  # Callback: send events to WebSocket
+            )
 
 
 class SessionManager:

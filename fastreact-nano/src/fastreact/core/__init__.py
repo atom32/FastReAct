@@ -21,6 +21,7 @@ from fastreact.core.events import (
     AgentEvent,
     EventStream,
 )
+from fastreact.core.session import AgentSession
 
 __all__ = [
     # Messages
@@ -53,4 +54,6 @@ __all__ = [
     "EventType",
     "AgentEvent",
     "EventStream",
+    # Session (NEW)
+    "AgentSession",
 ]
