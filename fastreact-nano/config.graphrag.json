@@ -31,7 +31,7 @@
       {
         "name": "graphrag",
         "command": "python3",
-        "args": ["examples/graph_rag_server.py"],
+        "args": ["mcp_servers/builtin/graph_rag_server.py"],
         "isolation": "lazy_per_user",
         "idle_timeout": 300,
         "max_instances": 10,

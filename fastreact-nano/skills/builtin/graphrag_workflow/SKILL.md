@@ -1,7 +1,7 @@
 ---
 name: graphrag_workflow
-description: Guide for using GraphRAG knowledge graph tools effectively to search and explore entities and relationships. GraphRAG知识图谱工具使用指南，支持实体搜索、关系查询、向量检索等功能
-tags: [graphrag, knowledge, search, graph, semantic, 知识图谱, 图数据库, 实体, 关系, 向量搜索]
+description: Guide for using GraphRAG knowledge graph tools to search and query entities and relationships. Use this SKILL for knowledge retrieval tasks like "search for X", "find entities about Y", "what is X". This SKILL is NOT for programming, implementation, or code writing tasks. GraphRAG知识图谱工具使用指南，用于知识检索和实体查询。适用于"搜索"、"查询"、"查找"等任务，不适用于编程实现任务。可以查询任何领域的知识，包括人工智能、机器学习、深度学习等。
+tags: [graphrag, knowledge, search, query, retrieval, entity, relationship, 知识图谱, 实体, 关系, 检索]
 version: 1.0.0
 mcp_servers: [graphrag]
 recommended_tools: [graphrag_search_graph, graphrag_get_entity, graphrag_query_relationships, graphrag_vector_search]

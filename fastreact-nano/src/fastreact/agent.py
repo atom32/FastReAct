@@ -228,8 +228,30 @@ class Agent:
             return []
 
         # Extract keywords from query (simple tokenization)
+        # For Chinese, use character-level matching as fallback
         query_lower = query.lower()
         query_words = set(re.findall(r'\w+', query_lower))
+
+        # Enhanced Chinese tokenization: extract bigrams for better matching
+        # For "机器学习", generate: ["机器", "学习", "机器学习"]
+        chinese_bigrams = set()
+        for char in query_lower:
+            if '\u4e00' <= char <= '\u9fff':  # Chinese character range
+                # Extract consecutive Chinese characters as n-grams
+                chinese_chars = [c for c in query_lower if '\u4e00' <= c <= '\u9fff']
+                for i in range(len(chinese_chars)):
+                    # Unigrams
+                    chinese_bigrams.add(chinese_chars[i])
+                    # Bigrams
+                    if i < len(chinese_chars) - 1:
+                        chinese_bigrams.add(chinese_chars[i] + chinese_chars[i+1])
+                    # Trigrams
+                    if i < len(chinese_chars) - 2:
+                        chinese_bigrams.add(chinese_chars[i] + chinese_chars[i+1] + chinese_chars[i+2])
+                break
+
+        # Combine English words and Chinese n-grams
+        query_words = query_words | chinese_bigrams
 
         # Score each skill
         skill_scores = []
@@ -245,14 +267,29 @@ class Agent:
             desc_lower = skill.description.lower()
             desc_words = set(re.findall(r'\w+', desc_lower))
 
-            # Keyword overlap
-            overlap = query_words & desc_words
+            # Chinese n-grams for description (better matching)
+            desc_chinese = set()
+            for char in desc_lower:
+                if '\u4e00' <= char <= '\u9fff':
+                    chinese_chars = [c for c in desc_lower if '\u4e00' <= c <= '\u9fff']
+                    for i in range(len(chinese_chars)):
+                        desc_chinese.add(chinese_chars[i])
+                        if i < len(chinese_chars) - 1:
+                            desc_chinese.add(chinese_chars[i] + chinese_chars[i+1])
+                        if i < len(chinese_chars) - 2:
+                            desc_chinese.add(chinese_chars[i] + chinese_chars[i+1] + chinese_chars[i+2])
+                    break
+
+            desc_words_enhanced = desc_words | desc_chinese
+
+            # Keyword overlap (enhanced with Chinese n-grams)
+            overlap = query_words & desc_words_enhanced
             score += len(overlap) * 2
 
-            # Tag matching
+            # Tag matching (lower weight to reduce over-matching)
             for tag in skill.metadata.tags:
                 if tag.lower() in query_lower:
-                    score += 5
+                    score += 2  # Reduced from 5 to 2
 
             skill_scores.append((skill.name, score))
 

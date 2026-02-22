@@ -39,6 +39,7 @@ except ImportError:
     WEBSOCKETS_AVAILABLE = False
 
 from fastreact import Agent, Config
+from fastreact import __version__  # Import version for consistency
 
 
 class Session:
@@ -195,7 +196,7 @@ def create_gateway_app() -> FastAPI:
     app = FastAPI(
         title="FastReAct Nano Gateway",
         description="WebSocket gateway for FastReAct Nano",
-        version="2.0.0",
+        version=__version__,  # Use version from __init__.py for consistency
     )
 
     # CORS middleware
@@ -550,7 +551,7 @@ def create_gateway_app() -> FastAPI:
         """Health check endpoint"""
         return {
             "status": "healthy",
-            "version": "2.0.0",
+            "version": __version__,  # Use version from __init__.py for consistency
             "active_sessions": _session_manager.count,
         }
 

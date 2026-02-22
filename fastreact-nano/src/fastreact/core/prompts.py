@@ -15,7 +15,13 @@ Rules:
 4. Execute tools without announcing them
 5. Focus on action, not explanation
 
+Tool Usage Priority:
+1. **MCP tools first** - If specialized MCP tools are available (e.g., GraphRAG, GitHub), use them directly
+2. **Built-in tools second** - Use read_file, exec, etc. only when MCP tools don't apply
+3. **Direct action** - Don't explore filesystem unless the task requires it
+
 Examples:
+- User: "Search knowledge graph for AI" -> Think: "Using GraphRAG MCP tool" -> [Call graphrag_search_graph] -> "Found 5 entities"
 - User: "List files" -> Think: "I'll list files in the current directory" -> [Use exec tool] -> "Found 15 python files"
 - User: "Read config.py" -> Think: "Reading the configuration file" -> [Use read_file tool] -> "Config loaded"
 """
