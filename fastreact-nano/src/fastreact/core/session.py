@@ -10,12 +10,14 @@ Responsibilities:
 - Session state tracking (running, interrupted)
 - Message queue for concurrent inputs
 - Query processing with event streaming
+- Memory consolidation (dual-layer memory system)
 
 This class is CHANNEL-AGNOSTIC - it works with WebSocket, HTTP, CLI, etc.
 """
 
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Callable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -47,6 +49,8 @@ class AgentSession:
         max_history: int = 50,
         followup_window_seconds: int = 30,
         max_queue_size: int = 5,
+        enable_memory: bool = True,
+        workspace_path: Optional[Path] = None,
     ):
         """
         Initialize Agent session
@@ -57,6 +61,8 @@ class AgentSession:
             max_history: Maximum conversation turns to keep in memory
             followup_window_seconds: Time window for follow-up detection (default: 30s)
             max_queue_size: Maximum messages in queue (for flow control)
+            enable_memory: Enable dual-layer memory system (MEMORY.md consolidation)
+            workspace_path: Path to workspace for memory files (auto-detected if None)
         """
         # Identity
         self.session_id = session_id
@@ -82,11 +88,78 @@ class AgentSession:
         self._message_queue: asyncio.Queue = asyncio.Queue(maxsize=max_queue_size)
         self._max_queue_size = max_queue_size
 
+        # Memory management
+        self._enable_memory = enable_memory
+        self._memory_manager = None
+
+        if enable_memory:
+            # Auto-detect workspace path if not provided
+            if workspace_path is None:
+                workspace_path = self._detect_workspace_path()
+
+            if workspace_path:
+                from fastreact.core.memory import MemoryManager
+                self._memory_manager = MemoryManager(
+                    workspace_path=workspace_path,
+                    agent=agent,
+                    consolidation_threshold=max_history,
+                )
+                import sys
+                print(
+                    f"[MEMORY] MemoryManager initialized for session {session_id}",
+                    file=sys.stderr
+                )
+
+    def _detect_workspace_path(self) -> Optional[Path]:
+        """
+        Auto-detect workspace path from agent config
+
+        Returns:
+            Path to workspace directory or None if not found
+        """
+        try:
+            # Try to get workspace from agent config
+            if hasattr(self._agent, 'config') and hasattr(self._agent.config, 'paths'):
+                paths = self._agent.config.paths
+
+                # Check for gateway_workspace (single-tenant mode)
+                if hasattr(paths, 'gateway_workspace'):
+                    return Path(paths.gateway_workspace)
+
+                # Check for workspace (general)
+                if hasattr(paths, 'workspace'):
+                    return Path(paths.workspace)
+
+            # Fallback: check default locations
+            default_candidates = [
+                Path.cwd() / "workspaces" / "default",
+                Path.home() / ".fastreact" / "workspaces" / "default",
+            ]
+
+            for candidate in default_candidates:
+                if candidate.exists():
+                    return candidate
+
+            # Last resort: create workspaces/default
+            default_workspace = Path.cwd() / "workspaces" / "default"
+            default_workspace.mkdir(parents=True, exist_ok=True)
+            return default_workspace
+
+        except Exception as e:
+            import sys
+            print(
+                f"[WARNING] Failed to detect workspace path: {e}",
+                file=sys.stderr
+            )
+            return None
+
     # === History Management ===
 
-    def update_history(self, user_query: str, assistant_response: str):
+    async def update_history(self, user_query: str, assistant_response: str):
         """
         Add conversation turn to history with automatic pruning
+
+        Triggers memory consolidation if history exceeds threshold.
 
         Args:
             user_query: User's input message
@@ -98,8 +171,36 @@ class AgentSession:
         # Add assistant message
         self._history.append({"role": "assistant", "content": assistant_response})
 
-        # Prune history if too long (FIFO)
-        if len(self._history) > self._max_history:
+        # Check if consolidation is needed (only when EXCEEDING threshold)
+        if len(self._history) > self._max_history and self._memory_manager:
+            import sys
+            print(
+                f"[MEMORY] History threshold exceeded ({len(self._history)} > {self._max_history}), "
+                f"triggering consolidation",
+                file=sys.stderr
+            )
+
+            # Try to consolidate to long-term memory
+            new_history = await self._memory_manager.consolidate(
+                self._history,
+                self.session_id
+            )
+
+            # If consolidation succeeded, use new history (empty)
+            # If consolidation failed, fallback to FIFO pruning
+            if len(new_history) == 0:
+                # Success: history was cleared
+                self._history = new_history
+            else:
+                # Failure: fallback to FIFO pruning
+                print(
+                    f"[WARNING] Memory consolidation failed, falling back to FIFO pruning",
+                    file=sys.stderr
+                )
+                self._history = self._history[-self._max_history:]
+
+        # Fallback: prune history if consolidation is disabled or not triggered
+        elif len(self._history) > self._max_history:
             import sys
             print(
                 f"[INFO] Pruning history from {len(self._history)} to {self._max_history} messages",
@@ -331,7 +432,7 @@ class AgentSession:
 
             # Update history if not interrupted
             if not interrupted and final_response:
-                self.update_history(query, final_response)
+                await self.update_history(query, final_response)
                 self.mark_response_sent()
 
         except Exception as e:

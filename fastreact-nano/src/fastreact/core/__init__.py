@@ -22,6 +22,7 @@ from fastreact.core.events import (
     EventStream,
 )
 from fastreact.core.session import AgentSession
+from fastreact.core.memory import MemoryManager
 
 __all__ = [
     # Messages
@@ -56,4 +57,6 @@ __all__ = [
     "EventStream",
     # Session (NEW)
     "AgentSession",
+    # Memory (NEW)
+    "MemoryManager",
 ]
