@@ -51,20 +51,23 @@
 
 ---
 
-## Features & Fixes
+## Features & Technical Reference
 
 ### Ironclad Features (v2.1.0 - v2.4.1)
-- **[FIX_INFINITE_LOOP.md](FIX_INFINITE_LOOP.md)** - Infinite loop protection
-- **[FIX_JSON_PARSING.md](FIX_JSON_PARSING.md)** - JSON 5-level repair
-- **[FIX_MCP_ZOMBIE_RESURRECTION.md](FIX_MCP_ZOMBIE_RESURRECTION.md)** - MCP auto-restart
+- **[FIX_INFINITE_LOOP.md](FIX_INFINITE_LOOP.md)** - Infinite loop protection (25-iteration limit)
+- **[FIX_JSON_PARSING.md](FIX_JSON_PARSING.md)** - JSON 5-level cascading repair
+- **[FIX_MCP_ZOMBIE_RESURRECTION.md](FIX_MCP_ZOMBIE_RESURRECTION.md)** - MCP auto-restart on crash
 
 ### Other Features
 - **[SESSION_QUEUE_INTERRUPT.md](SESSION_QUEUE_INTERRUPT.md)** - User interrupt mechanism
-- **[MCP_TIMESERVER_INTEGRATION.md](MCP_TIMESERVER_INTEGRATION.md)** - Time server MCP
+- **[MCP_TIMESERVER_INTEGRATION.md](MCP_TIMESERVER_INTEGRATION.md)** - Time server MCP example
+- **[MCP_SERVERS_STANDARD_STRUCTURE.md](MCP_SERVERS_STANDARD_STRUCTURE.md)** - MCP server conventions
 
 ### SKILL System
+- **[SKILLS_AND_MCP.md](SKILLS_AND_MCP.md)** - Platform core principle & extension mechanisms
 - **[SKILL_USAGE_GUIDE.md](SKILL_USAGE_GUIDE.md)** - How to use SKILL system
 - **[SKILL_INJECTION_VERIFICATION.md](SKILL_INJECTION_VERIFICATION.md)** - SKILL injection mechanics
+- **[MCP_CALLING_MECHANISM.md](MCP_CALLING_MECHANISM.md)** - MCP tool usage guide
 
 ---
 
@@ -139,6 +142,6 @@
 
 ---
 
-**Total Docs**: 29 active docs + archives
+**Total Active Docs**: 20
 **Maintainer**: Claude Code + User
 **Next Review**: 2025-03-23
