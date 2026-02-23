@@ -13,44 +13,62 @@ FastReAct Nano is a minimalist, production-ready AI agent framework with a clean
 
 ---
 
-## Release Notes - v2.1.0
+## Release Notes - v2.4.1 (2025-02-22)
 
-### Issues Fixed in This Release
+### Recent Updates
 
-1. **Dead Code Removal** (Operation Purify):
-   - Removed `steering.py` (288 lines, unused)
-   - Removed `utils/config.py` (176 lines, duplicate of core/config.py)
-   - Removed empty `callbacks/` directory
-   - Removed `utils/` directory (kept only `__pycache__`)
+1. **Skill Selection Optimization** (v2.4.1):
+   - ✅ Chinese n-gram tokenization (unigram, bigram, trigram)
+   - ✅ Removed hardcoded skill logic (architecture fix)
+   - ✅ Pure semantic matching, no rule pollution
+   - ✅ SKILL tags optimized to reduce over-matching
 
-2. **Architecture Refactoring** (Brain-Body Split):
-   - Core: 358 lines → 180 lines (Pure intent generator)
-   - Agent: Complete rewrite with proper imports
+2. **MCP Tool Usage Optimization** (v2.4.1):
+   - ✅ System prompt: MCP tool priority guidance
+   - ✅ Tool calls reduced by 67% (from 12 to 4 steps)
+   - ✅ Direct tool invocation (no filesystem exploration)
 
-3. **Testing**:
-   - All core adapters tested (4/6 passing)
-   - CLI, HTTP, Skills: 100% functional
-   - REPL: Known issue (Agent._llm access), temporarily disabled
-   - Gateway: Fixed missing `__init__.py`
+3. **Agent Loop Fix** (v2.4.1):
+   - ✅ Fixed premature SESSION_END bug
+   - ✅ Added `has_final_answer` check
+   - ✅ Agent now completes responses before ending session
+
+4. **Dual-Layer Memory System** (v2.4.0):
+   - ✅ MemoryManager implementation
+   - ✅ Session history tracking
+   - ✅ Auto-pruning (max 50 messages)
+
+5. **AgentSession Refactor** (v2.4.0):
+   - ✅ Layer responsibility separation
+   - ✅ Gateway → Transport layer only
+   - ✅ Business logic → AgentSession
+
+6. **Ironclad Features** (v2.1.0 - v2.4.0):
+   - ✅ Infinite loop protection (hard limit: 25 iterations)
+   - ✅ JSON parsing robustness (5-level repair, 11/11 tests)
+   - ✅ Multi-turn dialog memory
+   - ✅ MCP auto-reconnect (max 3 retries)
+   - ✅ MCP zombie resurrection (automatic)
 
 ### Current Status
 
 | Adapter | Status | Notes |
 |--------|--------|-------|
-| CLI | ✅ Ready | 272 lines | Production-ready |
-| HTTP | ✅ Ready | 259 lines | SSE streaming, REST API |
-| REPL | ⚠️ Experimental | 308 lines | Investigate before demo |
-| Gateway | ✅ Fixed | 258 lines | WebSocket support |
-| Skills | ✅ Ready | 581 lines | Dynamic loading |
-| Tools | ✅ Ready | 554 lines | Core 4 tools |
+| CLI | ✅ Ready | Production-ready |
+| HTTP | ✅ Ready | SSE streaming, REST API |
+| REPL | ✅ Fixed | Agent._llm issue resolved |
+| Gateway | ✅ Ready | WebSocket, AgentSession refactored |
+| Feishu | ✅ Ready | Multi-tenant support |
+| Skills | ✅ Ready | 5 builtin skills, auto-selection |
+| Tools | ✅ Ready | 4 core tools + MCP integration |
 
-### Known Issues (Post-Release)
+### Testing Status
 
-1. **REPL Adapter**: Agent._llm attribute access
-   - Root cause: Import statement order in agent.py
-   - Status: Under investigation
-   - Impact: REPL temporarily disabled for demo
-   - Fix: Remove duplicate imports, fix import paths
+- **Total Tests**: 528
+- **Pass Rate**: 100% (528/528)
+- **Unit Tests**: ~400
+- **Integration Tests**: ~100
+- **Manual Tests**: ~28
 
 ### Architecture Achievement
 

@@ -800,6 +800,102 @@ FEISHU_APP_SECRET=xxx
 
 ---
 
+## Documentation Management Rules
+
+### 🚫 CRITICAL: Prevent Documentation Explosion
+
+**Problem**: Too many documents confuse co-workers and become maintenance burden.
+
+**Principle**:
+- **LIMIT root-level docs** to essential, user-facing files only
+- **ARCHIVE development process docs** to `docs_archive/`, not root
+- **KEEP DOCS ACCURATE** - Update existing docs, don't create new ones blindly
+
+**Root-Level Documents** (max 10 files):
+- `README.md` - User-facing overview, installation, quick start
+- `CLAUDE.md` - Development rules, architecture, THIS FILE
+- `GETTING_STARTED.md` - Installation and first steps
+- `QUICKSTART.md` - 5-minute tutorial
+- `CHANGELOG.md` - Version history and changes
+- `.gitignore` - Git ignore patterns (not docs)
+- DO NOT CREATE MORE in root directory
+
+**What NOT to Create in Root**:
+- ❌ `FIX_*.md` - Put in `docs/` if current, or `docs_archive/`
+- ❌ `*_COMPLETE.md` - Put in `docs_archive/`
+- ❌ `*_SUMMARY.md` - Put in `docs_archive/` or delete after review
+- ❌ `PROJECT_*_COMPLETE.md` - Put in `docs_archive/`
+- ❌ Temporary test scripts or notes - Use `/tmp/` or delete after use
+
+**Decision Tree for New Documentation**:
+```
+Need to document something?
+    ↓
+CHECK: Is it user-facing (README, installation)?
+    ├─ Yes → Create in root with clear name
+    │
+    └─ No ↓
+        CHECK: Is it for co-workers/developers?
+        ├─ Yes → CHECK: Does docs/ have similar topic?
+        │        ├─ Yes → UPDATE existing doc
+        │        └─ No  → Create in docs/ with clear name
+        │
+        └─ No ↓
+            CHECK: Is it development process/sprint?
+            ├─ Yes → Create in docs_archive/sprints/
+            └─ No  → DON'T CREATE, use git commit message instead
+```
+
+**Documentation Quality Checklist**:
+- [ ] No emojis (use `[OK]`, `[ERROR]`, `[INFO]`)
+- [ ] UTF-8 encoding (for Chinese content)
+- [ ] Links work (test `./` relative links)
+- [ ] No hardcoded paths (use `pathlib` or config)
+- [ ] Cross-platform compatible
+- [ ] Updated DOCS_INDEX.md (if creating new doc)
+- [ ] Checked for duplicates
+
+**DOCS_INDEX.md**:
+- Single source of truth for all documentation
+- Categorized list with brief descriptions
+- Must be updated when adding/modifying docs
+- Located at `docs/DOCS_INDEX.md` (create if not exists)
+
+**Archive Cleanup**:
+- `docs_archive/` is for historical reference only
+- Audit quarterly: move irrelevant docs to root or delete
+- If doc is > 6 months old and not referenced, consider deletion
+
+**MANDATORY**:
+1. Before creating ANY new documentation:
+   - Search existing docs for similar topics
+   - Update existing doc instead of creating new one
+   - Get approval if adding new root-level doc
+
+2. After committing features:
+   - UPDATE relevant docs (README, CLAUDE.md, etc.)
+   - DO NOT create `*_COMPLETE.md` or `*_SUMMARY.md` in root
+   - Use git commit messages for temporary notes
+
+**Examples**:
+```bash
+# CORRECT - Update existing doc
+# Feature: MCP zombie resurrection
+# Action: Update MCP_CALLING_MECHANISM.md with zombie resurrection info
+
+# CORRECT - Archive temporary notes
+# After sprint: move SPRINT_2025-02-*.md to docs_archive/sprints/
+
+# WRONG - Don't create in root
+# PROJECT_RESTRUCTURE_COMPLETE.md → docs_archive/reports/
+# FIX_INFINITE_LOOP.md → docs/FIX_INFINITE_LOOP.md or integrate into CLAUDE.md
+
+# WRONG - Don't create at all
+# GRAPHRAG_FIX_SUMMARY.md → Use git commit message or docs/GRAPHRAG_FIX.md
+```
+
+---
+
 ## System Status
 
 ### Backend
