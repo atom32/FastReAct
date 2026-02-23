@@ -30,6 +30,20 @@
 
 ---
 
+## Research & Analysis
+
+### Competitive Research
+- **[PROMPT_RESEARCH_REPORT.md](PROMPT_RESEARCH_REPORT.md)** - OpenClaw & NanoBot prompt system research
+- **[ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md)** - Complete architecture visualization
+
+### Security & Audit
+- **[MULTITENANT_AUDIT_REPORT.md](MULTITENANT_AUDIT_REPORT.md)** - Multi-tenant SKILL/MCP isolation audit
+
+### Product Planning
+- **[PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md)** - Product roadmap (PM-facing, feature prioritization)
+
+---
+
 ## Configuration
 
 - **[CONFIG_FILE_LOCATIONS.md](CONFIG_FILE_LOCATIONS.md)** - Config file search paths
