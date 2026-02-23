@@ -88,6 +88,12 @@ test_docs/
 mcp_config*.json
 *_mcp_config*.json
 
+# Workspace data (runtime: user sessions, memory, configs)
+workspace/
+workspaces/*/
+!workspaces/.gitkeep
+!workspaces/default/.gitkeep
+
 # Temporary demo outputs
 demo_output.txt
 demo_live.py
