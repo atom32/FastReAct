@@ -63,6 +63,7 @@
 - **[MCP_TIMESERVER_INTEGRATION.md](MCP_TIMESERVER_INTEGRATION.md)** - Time server MCP example
 - **[MCP_SERVERS_STANDARD_STRUCTURE.md](MCP_SERVERS_STANDARD_STRUCTURE.md)** - MCP server conventions
 - **[MCP_DUAL_TRANSPORT_IMPLEMENTATION.md](MCP_DUAL_TRANSPORT_IMPLEMENTATION.md)** - HTTP transport + SSE heartbeat (v2.4.2)
+- **[MCP_CLI_IMPROVEMENTS.md](MCP_CLI_IMPROVEMENTS.md)** - CLI tools for MCP management (proposed)
 
 ### SKILL System
 - **[SKILLS_AND_MCP.md](SKILLS_AND_MCP.md)** - Platform core principle & extension mechanisms
@@ -93,7 +94,7 @@
 - `implementation/neo4j/NEO4J_GRAPHRAG_IMPLEMENTATION.md` - Neo4j GraphRAG implementation
 
 ### Development
-- `development/mcp/MCP_ADDITION_IMPROVEMENTS.md` - MCP improvement suggestions
+- `development/mcp/` - MCP development proposals (archived)
 
 ### Sprint Reports
 - `sprints/` - Sprint planning and retrospectives
@@ -153,4 +154,4 @@
 
 **Total Active Docs**: 21
 **Maintainer**: Claude Code + User
-**Next Review**: 2025-02-24
+**Next Review**: 2025-02-25
