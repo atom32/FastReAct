@@ -3,10 +3,6 @@ FastReAct Nano - GraphRAG MCP Server (Enhanced)
 
 MCP server providing knowledge graph tools with rich mock data.
 This is a reference implementation for integrating knowledge graph services.
-
-DEPRECATED: This file is kept for backward compatibility.
-New location: mcp_servers/builtin/graphrag/server.py
-Please update your configuration to use the new path.
 """
 
 import asyncio

@@ -1,5 +1,5 @@
 """
-FastReAct Nano v2.4.1 - Ironclad + Professional
+FastReAct Nano v2.4.2 - Dual Transport MCP
 
 Modern AI Agent SDK with Next.js 14 Frontend
 - Next.js 14 App: Chat interface, Admin panel, MCP Marketplace
@@ -9,9 +9,11 @@ Modern AI Agent SDK with Next.js 14 Frontend
 - Professional UI: Unified themes, glassmorphism, gradient accents
 - WebSocket Streaming: Real-time AgentEvent protocol
 - 6 Themes: Cyber Dark, Midnight, Solar Light, Forest, Sunset, Matrix
+- DUAL TRANSPORT MCP: stdio + HTTP for local and remote servers
+- Secure Credentials: Separate credentials.json with env var support
 """
 
-__version__ = "2.4.1"
+__version__ = "2.4.2"
 __author__ = "FastReAct Team"
 
 # Core v2.0 - Event-Driven Architecture

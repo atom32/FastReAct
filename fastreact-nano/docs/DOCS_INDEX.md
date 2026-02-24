@@ -62,6 +62,7 @@
 - **[SESSION_QUEUE_INTERRUPT.md](SESSION_QUEUE_INTERRUPT.md)** - User interrupt mechanism
 - **[MCP_TIMESERVER_INTEGRATION.md](MCP_TIMESERVER_INTEGRATION.md)** - Time server MCP example
 - **[MCP_SERVERS_STANDARD_STRUCTURE.md](MCP_SERVERS_STANDARD_STRUCTURE.md)** - MCP server conventions
+- **[MCP_DUAL_TRANSPORT_IMPLEMENTATION.md](MCP_DUAL_TRANSPORT_IMPLEMENTATION.md)** - HTTP transport + SSE heartbeat (v2.4.2)
 
 ### SKILL System
 - **[SKILLS_AND_MCP.md](SKILLS_AND_MCP.md)** - Platform core principle & extension mechanisms
@@ -80,6 +81,8 @@
 ## MCP Servers
 
 - **[MCP_SERVERS_STANDARD_STRUCTURE.md](MCP_SERVERS_STANDARD_STRUCTURE.md)** - MCP server conventions
+- **[GRAPHRAG_TEST_QUESTIONS.md](GRAPHRAG_TEST_QUESTIONS.md)** - GraphRAG MCP server test questions (diverse queries)
+- **[GRAPHRAG_SKILL_TRIGGER_QUESTIONS.md](GRAPHRAG_SKILL_TRIGGER_QUESTIONS.md)** - Questions that trigger graphrag_workflow SKILL (auto-selection)
 
 ---
 
@@ -142,6 +145,6 @@
 
 ---
 
-**Total Active Docs**: 20
+**Total Active Docs**: 21
 **Maintainer**: Claude Code + User
-**Next Review**: 2025-03-23
+**Next Review**: 2025-02-24

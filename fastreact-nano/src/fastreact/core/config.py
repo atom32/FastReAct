@@ -108,9 +108,14 @@ class MCPServerConfig:
     """Configuration for a single MCP server"""
 
     name: str
-    command: str
+    command: str = ""  # Required for stdio transport
     args: list[str] = field(default_factory=list)
     env: Optional[dict[str, str]] = None
+
+    # Transport configuration
+    transport: str = "stdio"  # "stdio" | "http"
+    url: Optional[str] = None  # HTTP server URL (required for http transport)
+    auth_token_ref: Optional[str] = None  # Reference to credentials.json (e.g., "mcp.server_name")
 
     # Optional skill association
     associated_skill: Optional[str] = None
@@ -132,6 +137,9 @@ class MCPServerConfig:
             command=data.get("command", ""),
             args=data.get("args", []),
             env=data.get("env"),
+            transport=data.get("transport", "stdio"),
+            url=data.get("url"),
+            auth_token_ref=data.get("auth_token_ref"),
             associated_skill=data.get("associated_skill"),
             description=data.get("description"),
             isolation=data.get("isolation", "shared"),

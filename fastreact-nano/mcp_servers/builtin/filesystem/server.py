@@ -12,10 +12,6 @@ Usage:
     # Used by FastReAct Agent
     from fastreact.mcp.protocol import SimpleMCPStdio
     mcp = SimpleMCPStdio("python", ["file_mcp_server.py"])
-
-DEPRECATED: This file is kept for backward compatibility.
-New location: mcp_servers/builtin/filesystem/server.py
-Please update your configuration to use the new path.
 """
 
 import asyncio

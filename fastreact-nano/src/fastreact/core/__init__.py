@@ -5,6 +5,7 @@ Core modules for FastReAct Nano v2.0
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.react import ReActCore
 from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig
+from fastreact.core.credentials import Credentials, get_credentials
 from fastreact.core.context import ContextMonitor, ContextStats, FilesystemMemory, FilesystemNode
 from fastreact.core.safety import (
     SafetyLevel,
@@ -35,6 +36,9 @@ __all__ = [
     "LLMConfig",
     "ToolConfig",
     "ReactConfig",
+    # Credentials (NEW)
+    "Credentials",
+    "get_credentials",
     # Context
     "ContextMonitor",
     "ContextStats",
