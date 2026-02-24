@@ -82,9 +82,7 @@ class AgentEvent:
     @staticmethod
     def session_start(query: str, session_id: str, skills: Optional[list[str]] = None) -> "AgentEvent":
         """Create session start event"""
-        metadata = {}
-        if skills:
-            metadata["skills"] = skills
+        metadata = {"skills": skills or []}  # Always include skills field (empty array if no skills)
 
         return AgentEvent(
             type=EventType.SESSION_START,

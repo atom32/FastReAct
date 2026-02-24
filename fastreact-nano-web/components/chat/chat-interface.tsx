@@ -64,12 +64,13 @@ export function ChatInterface() {
     // Update status label based on event type
     if (event.type === "session_start") {
       // Extract SKILLs from metadata and store in message
+      // Always update skills field (even if empty) to clear previous skills
       const skills = event.metadata?.skills || []
-      if (currentAssistantIdRef.current && skills.length > 0) {
+      if (currentAssistantIdRef.current) {
         setMessagesRef.current((prev) =>
           prev.map((m) =>
             m.id === currentAssistantIdRef.current
-              ? { ...m, skills }
+              ? { ...m, skills }  // Update skills (empty array clears previous skills)
               : m
           )
         )
