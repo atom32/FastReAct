@@ -63,7 +63,7 @@
 - **[MCP_TIMESERVER_INTEGRATION.md](MCP_TIMESERVER_INTEGRATION.md)** - Time server MCP example
 - **[MCP_SERVERS_STANDARD_STRUCTURE.md](MCP_SERVERS_STANDARD_STRUCTURE.md)** - MCP server conventions
 - **[MCP_DUAL_TRANSPORT_IMPLEMENTATION.md](MCP_DUAL_TRANSPORT_IMPLEMENTATION.md)** - HTTP transport + SSE heartbeat (v2.4.2)
-- **[MCP_CLI_IMPROVEMENTS.md](MCP_CLI_IMPROVEMENTS.md)** - CLI tools for MCP management (proposed)
+- **[MCP_ADDITION_IMPROVEMENTS.md](MCP_ADDITION_IMPROVEMENTS.md)** - MCP CLI tools proposal (updated for v2.4.2)
 
 ### SKILL System
 - **[SKILLS_AND_MCP.md](SKILLS_AND_MCP.md)** - Platform core principle & extension mechanisms
