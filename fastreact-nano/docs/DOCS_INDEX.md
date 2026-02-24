@@ -79,22 +79,28 @@
 ---
 
 ## MCP Servers
-
 - **[MCP_SERVERS_STANDARD_STRUCTURE.md](MCP_SERVERS_STANDARD_STRUCTURE.md)** - MCP server conventions
-- **[GRAPHRAG_TEST_QUESTIONS.md](GRAPHRAG_TEST_QUESTIONS.md)** - GraphRAG MCP server test questions (diverse queries)
-- **[GRAPHRAG_SKILL_TRIGGER_QUESTIONS.md](GRAPHRAG_SKILL_TRIGGER_QUESTIONS.md)** - Questions that trigger graphrag_workflow SKILL (auto-selection)
 
 ---
 
 ## Historical Reference (docs_archive/)
 
+### Testing
+- `testing/graphrag/GRAPHRAG_TEST_QUESTIONS.md` - GraphRAG test questions
+- `testing/graphrag/GRAPHRAG_SKILL_TRIGGER_QUESTIONS.md` - SKILL trigger questions
+
+### Implementation
+- `implementation/neo4j/NEO4J_GRAPHRAG_IMPLEMENTATION.md` - Neo4j GraphRAG implementation
+
+### Development
+- `development/mcp/MCP_ADDITION_IMPROVEMENTS.md` - MCP improvement suggestions
+
 ### Sprint Reports
 - `sprints/` - Sprint planning and retrospectives
 
-### Development History
+### Other Archives
 - `development/` - Feature development history
 - `implementation/` - Implementation notes
-- `testing/` - Test suite evolution
 - `reports/` - Status reports and analyses
 
 ---
