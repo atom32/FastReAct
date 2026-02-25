@@ -148,6 +148,8 @@ class Agent:
             max_tokens=self._config.react.max_context_tokens,
             warning_threshold=self._config.react.context_warning_threshold,
             max_tool_output_chars=self._config.react.max_tool_output_chars,
+            model=self._config.react.tiktoken_model,
+            use_tiktoken=self._config.react.use_tiktoken,
         )
 
         # Initialize filesystem memory (Body layer)
@@ -512,7 +514,7 @@ class Agent:
         max_tokens: int = 12000,
         preserve_system: bool = True,
         preserve_initial_query: bool = True,
-        recent_count: int = 15
+        recent_count: Optional[int] = None,
     ) -> list[dict]:
         """
         Multi-level context compression strategy
@@ -526,11 +528,14 @@ class Agent:
             max_tokens: Maximum token limit (default 12000 for GPT-4o with 4K buffer)
             preserve_system: Whether to preserve system prompt
             preserve_initial_query: Whether to preserve the initial user query
-            recent_count: Number of recent messages to preserve
+            recent_count: Number of recent messages to preserve (default: from config)
 
         Returns:
             Compressed message list
         """
+        # Use config value if not specified
+        if recent_count is None:
+            recent_count = self._config.react.sliding_window_size
         if not messages:
             return messages
 
@@ -1056,7 +1061,7 @@ class Agent:
                         max_tokens=12000,  # Leave 4K buffer for GPT-4o (16K total)
                         preserve_system=True,
                         preserve_initial_query=True,
-                        recent_count=15  # Keep last 15 messages
+                        # recent_count defaults to config value
                     )
 
                     # Call Brain (Core) for reasoning step

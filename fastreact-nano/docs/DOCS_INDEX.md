@@ -36,8 +36,16 @@
 - **[PROMPT_RESEARCH_REPORT.md](PROMPT_RESEARCH_REPORT.md)** - OpenClaw & NanoBot prompt system research
 - **[ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md)** - Complete architecture visualization
 
+### Performance & Optimization
+- **[CONTEXT_MANAGEMENT_RESEARCH.md](CONTEXT_MANAGEMENT_RESEARCH.md)** - Context efficiency research (vs OpenClaw, opencode-dev)
+- **[PHASE1_OPTIMIZATION_COMPLETE.md](PHASE1_OPTIMIZATION_COMPLETE.md)** - Phase 1 optimization: Tiktoken + sliding window
+- **[PHASE2_OPTIMIZATION_COMPLETE.md](PHASE2_OPTIMIZATION_COMPLETE.md)** - Phase 2 optimization: Semantic compression + category-aware truncation
+
 ### Security & Audit
 - **[MULTITENANT_AUDIT_REPORT.md](MULTITENANT_AUDIT_REPORT.md)** - Multi-tenant SKILL/MCP isolation audit
+
+### Performance & Optimization
+- **[CONTEXT_MANAGEMENT_RESEARCH.md](CONTEXT_MANAGEMENT_RESEARCH.md)** - Context efficiency research (vs OpenClaw, opencode-dev)
 
 ### Product Planning
 - **[PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md)** - Product roadmap (PM-facing, feature prioritization)
@@ -152,6 +160,6 @@
 
 ---
 
-**Total Active Docs**: 21
+**Total Active Docs**: 23
 **Maintainer**: Claude Code + User
 **Next Review**: 2025-02-25

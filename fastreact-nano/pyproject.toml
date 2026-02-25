@@ -29,6 +29,7 @@ dependencies = [
     "openai>=1.0.0",
     "httpx>=0.25.0",
     "pyyaml>=6.0",
+    "tiktoken>=0.5.0",
 ]
 
 # Optional adapters - install only what you need

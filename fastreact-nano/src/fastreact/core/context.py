@@ -3,7 +3,7 @@ Context Monitor - Token circuit breaker for FastReAct Nano v2.0
 
 Prevents token explosion by:
 1. Monitoring total context size
-2. Truncating tool outputs
+2. Truncating tool outputs (with category-aware strategies)
 3. Managing conversation history
 4. Filesystem memory (Ghost Map)
 """
@@ -12,6 +12,76 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from pathlib import Path
 import re
+
+# Try to import tiktoken for accurate token counting
+# Falls back to simple estimation if not available
+try:
+    import tiktoken
+    _TIKTOKEN_AVAILABLE = True
+except ImportError:
+    _TIKTOKEN_AVAILABLE = False
+
+
+# Tool categories for intelligent truncation
+TOOL_CATEGORIES = {
+    # File operations - preserve structure and syntax
+    "read_file": {
+        "category": "file_content",
+        "preserve": "structure",  # Preserve line numbers, syntax highlighting
+        "head_ratio": 0.9,  # Keep 90% head for file content
+        "tail_ratio": 0.1,
+    },
+    "write_file": {
+        "category": "file_operation",
+        "preserve": "result",  # Just need success/fail
+        "max_chars": 500,  # Short result for write operations
+    },
+    "edit_file": {
+        "category": "file_operation",
+        "preserve": "result",  # Just need success/fail
+        "max_chars": 500,
+    },
+
+    # Command execution - preserve errors and status
+    "exec": {
+        "category": "command",
+        "preserve": "errors",  # Preserve error messages and exit status
+        "head_ratio": 0.5,
+        "tail_ratio": 0.5,
+    },
+
+    # Search/query - preserve matches and context
+    "grep": {
+        "category": "search",
+        "preserve": "matches",  # Preserve matching lines
+        "max_chars": 3000,  # Allow more for search results
+    },
+    "find": {
+        "category": "search",
+        "preserve": "results",
+        "max_chars": 3000,
+    },
+
+    # External tools - preserve key information
+    "web_search": {
+        "category": "external",
+        "preserve": "key_info",  # Preserve search results
+        "max_chars": 2000,
+    },
+    "ask": {
+        "category": "external",
+        "preserve": "key_info",
+        "max_chars": 2000,
+    },
+
+    # Default category for unknown tools
+    "default": {
+        "category": "generic",
+        "preserve": "balanced",
+        "head_ratio": 0.8,
+        "tail_ratio": 0.2,
+    }
+}
 
 
 @dataclass
@@ -29,7 +99,8 @@ class ContextMonitor:
     Context monitor and token circuit breaker
 
     Features:
-    - Fast token estimation (no tiktoken dependency)
+    - Accurate token counting with tiktoken (when available)
+    - Fallback to simple estimation (4:1 character ratio)
     - Smart tool output truncation
     - Context window monitoring
     - Usage statistics
@@ -40,6 +111,8 @@ class ContextMonitor:
         max_tokens: int = 128000,
         warning_threshold: float = 0.8,
         max_tool_output_chars: int = 5000,
+        model: str = "gpt-4o",
+        use_tiktoken: bool = True,
     ):
         """
         Initialize context monitor
@@ -48,31 +121,58 @@ class ContextMonitor:
             max_tokens: Maximum context window size (default: 128k for GPT-4)
             warning_threshold: Warning threshold (0.0-1.0, default: 0.8)
             max_tool_output_chars: Maximum chars per tool output (default: 5000)
+            model: Model name for tiktoken encoding (default: gpt-4o)
+            use_tiktoken: Whether to use tiktoken if available (default: True)
         """
         self._max_tokens = max_tokens
         self._warning_threshold = warning_threshold
         self._max_tool_output_chars = max_tool_output_chars
         self._stats = ContextStats()
 
+        # Initialize tokenizer
+        self._model = model
+        self._use_tiktoken = use_tiktoken and _TIKTOKEN_AVAILABLE
+        self._tokenizer = None
+
+        if self._use_tiktoken:
+            try:
+                self._tokenizer = tiktoken.encoding_for_model(model)
+            except KeyError:
+                # Model not found, try cl100k_base encoding (GPT-4/GPT-3.5-turbo)
+                try:
+                    self._tokenizer = tiktoken.get_encoding("cl100k_base")
+                except Exception:
+                    # Fallback to simple estimation
+                    self._use_tiktoken = False
+
     def estimate_tokens(self, text: str) -> int:
         """
-        Fast token estimation
+        Token counting with tiktoken or fallback estimation
 
-        Strategy: 1 token ≈ 4 chars (English) / 1 char (Chinese)
-        Uses simple length-based estimation for speed.
+        Strategy:
+        1. Use tiktoken for accurate counting (when available)
+        2. Fallback to simple estimation (1 token ≈ 4 chars)
 
         Args:
-            text: Text to estimate
+            text: Text to count tokens
 
         Returns:
-            Estimated token count
+            Token count
         """
         if not text:
             return 0
 
-        # Simple estimation: 1 token ≈ 4 characters
-        # This is fast but not perfectly accurate
-        # For better accuracy, we could use tiktoken, but that adds dependency
+        # Use tiktoken if available
+        if self._use_tiktoken and self._tokenizer:
+            try:
+                return len(self._tokenizer.encode(text))
+            except Exception:
+                # Fallback to simple estimation on error
+                pass
+
+        # Fallback: simple estimation (1 token ≈ 4 characters)
+        # This is reasonably accurate for English text
+        # For mixed content, actual tokens may vary by ±20%
         return int(len(text) * 0.25)
 
     def truncate_tool_output(
@@ -113,6 +213,312 @@ class ContextMonitor:
             f"Shown: {head_chars + len(tail)} chars\n"
             f"Use filtering commands (head, tail, grep) to view specific parts\n"
             f"... [End of truncation notice] ...\n\n"
+        )
+
+        return f"{head}{truncated_msg}{tail}"
+
+    def truncate_by_category(
+        self,
+        output: str,
+        tool_name: str = "unknown",
+    ) -> str:
+        """
+        Category-aware tool output truncation
+
+        Different tools require different truncation strategies:
+        - File content (read_file): Preserve structure, 90% head for syntax
+        - File operations (write_file, edit_file): Just success/fail result
+        - Commands (exec): Preserve errors and exit status, 50/50 split
+        - Search (grep, find): Preserve matches, allow more content
+        - External (web_search, ask): Preserve key info, remove fluff
+
+        Args:
+            output: Tool output to truncate
+            tool_name: Name of the tool
+
+        Returns:
+            Truncated or original output
+        """
+        # Get tool category configuration
+        tool_config = TOOL_CATEGORIES.get(tool_name, TOOL_CATEGORIES["default"])
+        category = tool_config["category"]
+        preserve_mode = tool_config["preserve"]
+
+        # Get limit based on category
+        if "max_chars" in tool_config:
+            limit = tool_config["max_chars"]
+        else:
+            limit = self._max_tool_output_chars
+
+        # If under limit, no truncation needed
+        if len(output) <= limit:
+            return output
+
+        # Update stats
+        self._stats.truncated_count += 1
+        self._stats.last_truncated = tool_name
+
+        # Truncate based on category
+        if preserve_mode == "structure":
+            # File content: preserve more head for syntax/structure
+            return self._truncate_structure(output, limit, tool_name)
+
+        elif preserve_mode == "result":
+            # File operations: just show success/fail
+            return self._truncate_to_result(output, limit, tool_name)
+
+        elif preserve_mode == "errors":
+            # Commands: preserve errors and exit status
+            return self._truncate_preserve_errors(output, limit, tool_name)
+
+        elif preserve_mode == "matches":
+            # Search: preserve matching lines
+            return self._truncate_preserve_matches(output, limit, tool_name)
+
+        elif preserve_mode == "key_info":
+            # External: preserve key information
+            return self._truncate_key_info(output, limit, tool_name)
+
+        else:  # "balanced" or unknown
+            # Default: balanced head/tail
+            head_ratio = tool_config.get("head_ratio", 0.8)
+            tail_ratio = tool_config.get("tail_ratio", 0.2)
+            return self._truncate_balanced(output, limit, tool_name, head_ratio, tail_ratio)
+
+    def _truncate_structure(
+        self,
+        output: str,
+        limit: int,
+        tool_name: str
+    ) -> str:
+        """Truncate file content while preserving structure (line numbers, syntax)"""
+        # For file content, keep more head to preserve imports/definitions
+        head_ratio = 0.9
+        tail_ratio = 0.1
+
+        head_chars = int(limit * head_ratio)
+        tail_chars = int(limit * tail_ratio)
+
+        # Try to break at line boundaries
+        head = output[:head_chars]
+        if tail_chars > 0:
+            last_newline = output.rfind("\n", 0, -tail_chars)
+            if last_newline > 0:
+                tail = output[last_newline+1:]
+            else:
+                tail = output[-tail_chars:]
+        else:
+            tail = ""
+
+        truncated_msg = (
+            f"\n... [File content truncated] ...\n"
+            f"Tool: {tool_name}\n"
+            f"Original: {len(output)} chars, Showing: {len(head) + len(tail)} chars\n"
+            f"Use read_file with start_line/end_line for specific sections\n"
+            f"... [End of truncation] ...\n\n"
+        )
+
+        return f"{head}{truncated_msg}{tail}"
+
+    def _truncate_to_result(
+        self,
+        output: str,
+        limit: int,
+        tool_name: str
+    ) -> str:
+        """Truncate to just show success/fail result"""
+        # For write/edit operations, we mainly care about success/fail
+        # Check for error indicators
+        error_indicators = ["[ERROR]", "Error:", "Failed", "Exception"]
+        has_error = any(indicator in output for indicator in error_indicators)
+
+        if has_error:
+            # Keep the error message
+            # Find the error message (usually at start or end)
+            lines = output.split("\n")
+            error_lines = []
+            for line in lines[:10]:  # Check first 10 lines
+                if any(indicator in line for indicator in error_indicators):
+                    error_lines.append(line)
+                elif error_lines:
+                    error_lines.append(line)
+                if len(error_lines) >= 3:  # Found enough context
+                    break
+
+            result = "\n".join(error_lines[:5])  # Max 5 lines of error
+            if len(result) > limit:
+                result = result[:limit]
+
+            return result
+        else:
+            # Success - just show brief confirmation
+            return f"[OK] {tool_name} completed successfully"
+
+    def _truncate_preserve_errors(
+        self,
+        output: str,
+        limit: int,
+        tool_name: str
+    ) -> str:
+        """Truncate command output while preserving errors"""
+        # Look for error patterns
+        error_patterns = [
+            r"error",
+            r"failed",
+            r"exception",
+            r"traceback",
+            r"exit code",
+        ]
+
+        lines = output.split("\n")
+        important_lines = []
+        error_sections = []
+
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            is_error = any(re.search(pattern, line_lower) for pattern in error_patterns)
+
+            if is_error:
+                # Keep this line and surrounding context
+                start = max(0, i - 2)
+                end = min(len(lines), i + 3)
+                error_sections.extend(lines[start:end])
+            elif len(important_lines) < 10:
+                # Keep some normal output at the start
+                important_lines.append(line)
+
+        # Combine: important lines + error sections
+        combined = important_lines + list(set(error_sections))
+
+        # Build result
+        result_lines = []
+        total_chars = 0
+        for line in combined:
+            if total_chars + len(line) + 1 > limit:
+                break
+            result_lines.append(line)
+            total_chars += len(line) + 1
+
+        result = "\n".join(result_lines)
+
+        if len(result) < len(output):
+            result += f"\n... [Command output truncated from {len(output)} to {len(result)} chars]"
+
+        return result
+
+    def _truncate_preserve_matches(
+        self,
+        output: str,
+        limit: int,
+        tool_name: str
+    ) -> str:
+        """Truncate search results while preserving matches"""
+        lines = output.split("\n")
+
+        # Look for match lines (typically contain the search term or file:line format)
+        match_lines = []
+        context_lines = []
+
+        for line in lines:
+            # Keep match indicators, file references, line numbers
+            if (":" in line or  # File:line format
+                line.strip().startswith("-") or  # Bullet/context
+                len(line.strip()) < 100):  # Short lines are likely matches
+                match_lines.append(line)
+            elif len(match_lines) + len(context_lines) < 100:  # Keep some context
+                context_lines.append(line)
+
+        # Prioritize matches
+        result_lines = match_lines[:80] + context_lines[:20]
+
+        # Build result respecting limit
+        result = ""
+        total_chars = 0
+        for line in result_lines:
+            if total_chars + len(line) + 1 > limit:
+                break
+            result += line + "\n"
+            total_chars += len(line) + 1
+
+        if not result:
+            # Fallback to simple truncation
+            return output[:limit]
+
+        dropped = len(result_lines) - len(result.split("\n"))
+        if dropped > 0:
+            result += f"\n... [Dropped {dropped} more lines] ..."
+
+        return result
+
+    def _truncate_key_info(
+        self,
+        output: str,
+        limit: int,
+        tool_name: str
+    ) -> str:
+        """Truncate external tool output preserving key information"""
+        # Remove common fluff patterns
+        fluff_patterns = [
+            r"Here are the (search )?results?",
+            r"Based on my search?",
+            r"I found?",
+            r"According to",
+        ]
+
+        lines = output.split("\n")
+        key_lines = []
+
+        for line in lines:
+            line_stripped = line.strip()
+
+            # Skip fluff
+            is_fluff = any(re.search(pattern, line, re.IGNORECASE)
+                          for pattern in fluff_patterns)
+
+            if not is_fluff and line_stripped:
+                key_lines.append(line)
+
+            if len("\n".join(key_lines)) > limit:
+                break
+
+        result = "\n".join(key_lines)
+
+        # Trim to limit if needed
+        if len(result) > limit:
+            result = result[:limit]
+
+        return result
+
+    def _truncate_balanced(
+        self,
+        output: str,
+        limit: int,
+        tool_name: str,
+        head_ratio: float = 0.8,
+        tail_ratio: float = 0.2,
+    ) -> str:
+        """Default balanced truncation (head + tail)"""
+        head_chars = int(limit * head_ratio)
+        tail_chars = int(limit * tail_ratio)
+
+        head = output[:head_chars]
+
+        if tail_chars > 0:
+            # Try to break at word boundary
+            tail_start = max(0, len(output) - tail_chars)
+            space_pos = output.rfind(" ", 0, tail_start)
+            if space_pos > 0:
+                tail = output[space_pos+1:]
+            else:
+                tail = output[-tail_chars:]
+        else:
+            tail = ""
+
+        truncated_msg = (
+            f"\n... [Output truncated] ...\n"
+            f"Tool: {tool_name}\n"
+            f"Original: {len(output)} chars, Showing: {len(head) + len(tail)} chars\n"
+            f"... [End of truncation] ...\n\n"
         )
 
         return f"{head}{truncated_msg}{tail}"
@@ -177,7 +583,10 @@ class ContextMonitor:
         else:
             status = "[ALERT]"
 
-        return f"{status} Context: {percentage:5.1f}% [{bar}] {self._stats.total_tokens}/{self._max_tokens} tokens"
+        # Token counting method indicator
+        method = "tiktoken" if self._use_tiktoken else "estimate"
+
+        return f"{status} Context: {percentage:5.1f}% [{bar}] {self._stats.total_tokens}/{self._max_tokens} tokens ({method})"
 
     def reset_stats(self):
         """Reset statistics"""
@@ -536,4 +945,5 @@ __all__ = [
     "ContextStats",
     "FilesystemMemory",
     "FilesystemNode",
+    "TOOL_CATEGORIES",
 ]

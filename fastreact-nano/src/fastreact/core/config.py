@@ -71,6 +71,9 @@ class ReactConfig:
     max_context_tokens: int = 128000
     context_warning_threshold: float = 0.8
     max_tool_output_chars: int = 5000
+    use_tiktoken: bool = True  # Use tiktoken for accurate token counting
+    tiktoken_model: str = "gpt-4o"  # Model name for tiktoken encoding
+    sliding_window_size: int = 15  # Number of recent messages to preserve in compression
 
     # Filesystem memory (Ghost Map)
     enable_filesystem_memory: bool = True
@@ -94,6 +97,9 @@ class ReactConfig:
             max_context_tokens=int(os.getenv("FASTRACT_MAX_CONTEXT_TOKENS", "128000")),
             context_warning_threshold=float(os.getenv("FASTRACT_CONTEXT_WARNING_THRESHOLD", "0.8")),
             max_tool_output_chars=int(os.getenv("FASTRACT_MAX_TOOL_OUTPUT_CHARS", "5000")),
+            use_tiktoken=os.getenv("FASTRACT_USE_TIKTOKEN", "true").lower() == "true",
+            tiktoken_model=os.getenv("FASTRACT_TIKTOKEN_MODEL", "gpt-4o"),
+            sliding_window_size=int(os.getenv("FASTRACT_SLIDING_WINDOW_SIZE", "15")),
             enable_filesystem_memory=os.getenv("FASTRACT_ENABLE_FILESYSTEM_MEMORY", "true").lower() == "true",
             max_tree_depth=int(os.getenv("FASTRACT_MAX_TREE_DEPTH", "3")),
             max_files_per_dir=int(os.getenv("FASTRACT_MAX_FILES_PER_DIR", "50")),
@@ -275,6 +281,9 @@ class Config:
         FASTRACT_MAX_CONTEXT_TOKENS: Max context window size (default: 128000)
         FASTRACT_CONTEXT_WARNING_THRESHOLD: Context warning threshold (default: 0.8)
         FASTRACT_MAX_TOOL_OUTPUT_CHARS: Max tool output chars (default: 5000)
+        FASTRACT_USE_TIKTOKEN: Use tiktoken for accurate token counting (default: true)
+        FASTRACT_TIKTOKEN_MODEL: Model name for tiktoken encoding (default: gpt-4o)
+        FASTRACT_SLIDING_WINDOW_SIZE: Number of recent messages to preserve (default: 15)
         FASTRACT_ENABLE_FILESYSTEM_MEMORY: Enable filesystem memory (default: true)
         FASTRACT_MAX_TREE_DEPTH: Max tree depth for filesystem memory (default: 3)
         FASTRACT_MAX_FILES_PER_DIR: Max files per dir in tree (default: 50)
