@@ -3,6 +3,67 @@
 @tailwind utilities;
 
 @layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* 系统字体栈 - 优先使用好看的系统字体 */
+    font-family:
+      /* macOS */
+      -apple-system,
+      BlinkMacSystemFont,
+      "SF Pro Display",
+      "SF Pro Text",
+      /* Windows */
+      "Segoe UI",
+      /* Linux */
+      "Ubuntu",
+      "Roboto",
+      "Helvetica Neue",
+      /* Fallback */
+      Arial,
+      sans-serif;
+  }
+
+  /* 代码字体 */
+  code,
+  pre,
+  .font-mono {
+    font-family:
+      /* macOS */
+      "SF Mono",
+      "Monaco",
+      "Menlo",
+      /* Windows */
+      "Consolas",
+      "Courier New",
+      /* Linux */
+      "Ubuntu Mono",
+      /* Fallback */
+      monospace;
+  }
+
+  /* 标题字体 */
+  h1, h2, h3, h4, h5, h6,
+  .font-heading {
+    font-family:
+      /* macOS */
+      -apple-system,
+      BlinkMacSystemFont,
+      "SF Pro Display",
+      /* Windows */
+      "Segoe UI",
+      /* Linux */
+      "Ubuntu",
+      "Roboto",
+      /* Fallback */
+      Arial,
+      sans-serif;
+    font-weight: 600;
+  }
+
   :root {
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;

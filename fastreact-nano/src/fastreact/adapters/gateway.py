@@ -10,7 +10,7 @@ import json
 import os
 import psutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -66,8 +66,8 @@ class Session:
     ):
         self.session_id = session_id
         self.websocket = websocket
-        self.created_at = datetime.utcnow()
-        self.last_activity = datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
+        self.last_activity = datetime.now(timezone.utc)
 
         # Background task reference
         self._processing_task: Optional[asyncio.Task] = None
@@ -101,7 +101,7 @@ class Session:
 
     def update_activity(self):
         """Update last activity timestamp (delegated to AgentSession)"""
-        self.last_activity = datetime.utcnow()
+        self.last_activity = datetime.now(timezone.utc)
         self.agent_session.update_activity()
 
     def interrupt(self):
@@ -181,7 +181,7 @@ class SessionManager:
 _session_manager = SessionManager()
 
 # Global metrics
-_gateway_start_time = datetime.utcnow()
+_gateway_start_time = datetime.now(timezone.utc)
 _total_events_counter = 0
 
 
@@ -523,7 +523,7 @@ def create_gateway_app() -> FastAPI:
         global _total_events_counter
 
         # Calculate uptime in seconds
-        uptime_seconds = int((datetime.utcnow() - _gateway_start_time).total_seconds())
+        uptime_seconds = int((datetime.now(timezone.utc) - _gateway_start_time).total_seconds())
 
         # Get memory and CPU usage (if psutil available)
         memory_usage = 0

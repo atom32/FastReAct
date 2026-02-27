@@ -190,10 +190,7 @@ class PathsConfig:
     # Skills directories
     global_skills_dir: Path = field(default_factory=lambda: Path.cwd() / "skills" / "builtin")
     user_skills_template: str = "{user_workspace}/skills"
-
-    # MCP servers
-    global_mcp_config: Path = field(default_factory=lambda: Path.cwd() / "mcp_servers" / "config" / "shared.json")
-    user_mcp_config_template: str = "{user_workspace}/mcp_config.json"
+    user_skills_dir: Optional[Path] = None  # User-defined skills directory
 
     # Workspace
     gateway_workspace: Path = field(default_factory=lambda: Path.cwd() / "workspaces" / "default")
@@ -205,8 +202,6 @@ class PathsConfig:
         return cls(
             global_skills_dir=Path(os.getenv("FASTRACT_SKILLS_DIR", str(Path.cwd() / "skills" / "builtin"))),
             user_skills_template=os.getenv("FASTRACT_USER_SKILLS_TEMPLATE", "{user_workspace}/skills"),
-            global_mcp_config=Path(os.getenv("FASTRACT_MCP_CONFIG", str(Path.cwd() / "mcp_servers" / "config" / "shared.json"))),
-            user_mcp_config_template=os.getenv("FASTRACT_USER_MCP_CONFIG_TEMPLATE", "{user_workspace}/mcp_config.json"),
             gateway_workspace=Path(os.getenv("FASTRACT_GATEWAY_WORKSPACE", str(Path.cwd() / "workspaces" / "default"))),
             feishu_workspace_base=Path(os.getenv("FEISHU_BASE_WORKSPACE", "/var/fastreact/tenants/feishu")),
         )
@@ -293,8 +288,6 @@ class Config:
         FASTRACT_MCP_SERVERS: JSON array of MCP server configs (default: [])
         FASTRACT_SKILLS_DIR: Global skills directory (default: ./skills/builtin)
         FASTRACT_USER_SKILLS_TEMPLATE: User skills path template (default: {user_workspace}/skills)
-        FASTRACT_MCP_CONFIG: Global MCP config file (default: ./mcp_servers/config/shared.json)
-        FASTRACT_USER_MCP_CONFIG_TEMPLATE: User MCP config template (default: {user_workspace}/mcp_config.json)
         FASTRACT_GATEWAY_WORKSPACE: Gateway workspace path (default: ./workspaces/default)
         FEISHU_BASE_WORKSPACE: Feishu multi-tenant base workspace (default: /var/fastreact/tenants/feishu)
     """
@@ -443,8 +436,7 @@ class Config:
                 paths_config = PathsConfig(
                     global_skills_dir=Path(paths_data.get("global_skills_dir", str(Path.cwd() / "skills" / "builtin"))),
                     user_skills_template=paths_data.get("user_skills_template", "{user_workspace}/skills"),
-                    global_mcp_config=Path(paths_data.get("global_mcp_config", str(Path.cwd() / "mcp_servers" / "config" / "shared.json"))),
-                    user_mcp_config_template=paths_data.get("user_mcp_config_template", "{user_workspace}/mcp_config.json"),
+                    user_skills_dir=Path(paths_data.get("user_skills_dir")) if paths_data.get("user_skills_dir") else None,
                     gateway_workspace=Path(paths_data.get("gateway_workspace", str(Path.cwd() / "workspaces" / "default"))),
                     feishu_workspace_base=Path(paths_data.get("feishu_workspace_base", "/var/fastreact/tenants/feishu")),
                 )

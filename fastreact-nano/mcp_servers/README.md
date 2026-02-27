@@ -1,139 +1,82 @@
-# MCP Servers
+# MCP Server Implementation Strategy
 
-This directory contains MCP (Model Context Protocol) server configurations and implementations.
+## Important Update (2025-02-27)
 
-## Directory Structure
+### Custom Servers → Reference Implementations
 
-```
-mcp_servers/
-├── builtin/              # Built-in MCP server implementations
-│   └── .gitkeep          # Add custom MCP server scripts here
-├── config/               # MCP server configurations
-│   ├── shared.json       # Shared mode servers (single instance)
-│   └── per_user.json     # Per-user mode servers (isolated instances)
-└── README.md             # This file
-```
+The RSS and HackerNews MCP servers have been moved to:
+**`mcp_servers/builtin/examples/`**
 
-## MCP Server Modes
+These are now **educational examples** showing how to implement MCP servers.
 
-### Shared Mode
-- **Definition**: Single server instance shared across all users
-- **Use Case**: Stateless operations, read-only resources, shared knowledge bases
-- **Example**: GraphRAG knowledge search, web search
-- **Configuration**: `config/shared.json`
+---
 
-### Per-User Mode
-- **Definition**: Isolated server instance per user
-- **Use Case**: User-specific resources, filesystem access, sensitive operations
-- **Example**: Filesystem operations, user-specific databases
-- **Configuration**: `config/per_user.json`
+## Recommended Approach: Use Official Servers
 
-## Adding a New MCP Server
+### FastReAct Supports Any stdio MCP Server
 
-### 1. Built-in Server (Python)
+FastReAct uses the standard MCP protocol (JSON-RPC over stdio).
+This means you can directly use servers from npm ecosystem!
 
-Create a Python script in `mcp_servers/builtin/`:
+### Example: Official Fetch Server
 
-```python
-# mcp_servers/builtin/my_server.py
-from mcp.server import Server
-import asyncio
-
-server = Server("my-server")
-
-@server.tool()
-async def my_tool(param: str) -> str:
-    """Tool description"""
-    return f"Result: {param}"
-
-async def main():
-    from mcp.server.stdio import stdio_server
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options()
-        )
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### 2. External Server (NPM)
-
-Add to `config/shared.json` or `config/per_user.json`:
+Instead of custom RSS server, use the official `fetch` server:
 
 ```json
 {
-  "name": "my-external-server",
+  "name": "fetch",
   "command": "npx",
-  "args": ["-y", "@modelcontextprotocol/server-my-server", "--option", "value"],
-  "isolation": "shared",
-  "description": "My external MCP server"
+  "args": ["-y", "@modelcontextprotocol/server-fetch"],
+  "isolation": "shared"
 }
 ```
 
-## Configuration Format
+This ONE server handles:
+- RSS feeds
+- REST APIs  
+- HackerNews Firebase API
+- Any HTTP request
 
-### Shared Server Configuration
+---
+
+## Why This Matters
+
+✅ **FastReAct is mature** - Works with standard MCP protocol
+✅ **Ecosystem integration** - Direct npm support
+✅ **Less maintenance** - Use community servers
+✅ **Best practice** - Don't reinvent the wheel
+
+---
+
+## When to Create Custom Servers
+
+Only when:
+1. No official alternative exists
+2. Proprietary integration needed
+3. Educational purpose (→ label as examples/)
+
+---
+
+## Configuration
+
+All MCP servers are configured in `~/.fastreact/config.json`:
 
 ```json
 {
-  "schema_version": "1.0",
-  "description": "Shared MCP servers (single instance for all users)",
-  "servers": [
-    {
-      "name": "server-name",
-      "command": "python3",
-      "args": ["mcp_servers/builtin/server.py"],
-      "isolation": "shared",
-      "description": "Server description",
-      "env": {
-        "ENV_VAR": "value"
+  "mcp": {
+    "servers": [
+      {
+        "name": "fetch",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-fetch"],
+        "isolation": "shared"
       }
-    }
-  ]
+    ]
+  }
 }
 ```
-
-### Per-User Server Configuration
-
-```json
-{
-  "schema_version": "1.0",
-  "description": "Per-user MCP servers (isolated instance per user)",
-  "servers": [
-    {
-      "name": "filesystem",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "{user_workspace}"],
-      "isolation": "per_user",
-      "description": "Filesystem operations (per-user workspace access)",
-      "template_vars": {
-        "user_workspace": "Path to user workspace"
-      }
-    }
-  ]
-}
-```
-
-## Template Variables
-
-Per-user configurations support template variables:
-
-- `{user_workspace}` - Automatically replaced with user's workspace path
-- `{user_id}` - User identifier
-- `{tenant_id}` - Tenant identifier (for multi-tenant deployments)
-
-## Best Practices
-
-1. **Isolation**: Use per-user mode for any server accessing user-specific resources
-2. **Stateless**: Prefer shared mode for stateless, read-only operations
-3. **Error Handling**: Implement proper error handling in built-in servers
-4. **Documentation**: Document tool parameters and return values
-5. **Testing**: Test MCP servers independently before integration
 
 ## See Also
 
-- [MCP Specification](https://modelcontextprotocol.io/)
-- FastReAct Skills and MCP documentation: `docs/SKILLS_AND_MCP.md`
+- `docs/MCP_CALLING_MECHANISM.md` - MCP usage guide
+- `docs/PLATFORM/SKILLS_AND_MCP.md` - Extension mechanisms

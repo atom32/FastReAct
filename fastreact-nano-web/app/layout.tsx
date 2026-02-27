@@ -1,21 +1,8 @@
 import type { Metadata, Viewport } from "next"
-import { Inter, Fira_Code, Orbitron } from "next/font/google"
 import "./globals.css"
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-})
-
-const firaCode = Fira_Code({
-  subsets: ["latin"],
-  variable: "--font-fira-code",
-})
-
-const orbitron = Orbitron({
-  subsets: ["latin"],
-  variable: "--font-orbitron",
-})
+// 使用系统字体栈，不依赖 Google Fonts
+// 这样即使不开梯子也能有好看的字体
 
 export const metadata: Metadata = {
   title: "FastReAct Nano - AI Agent Interface",
@@ -34,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${firaCode.variable} ${orbitron.variable}`}>
+    <html lang="en">
       <body className="font-sans antialiased">
         {children}
       </body>

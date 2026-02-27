@@ -192,6 +192,253 @@ react:
   max_iterations: 20
 ```
 
+---
+
+## Quick Start on New Machine
+
+### Step 1: Create Configuration Directory
+
+```bash
+# Create user config directory
+mkdir -p ~/.fastreact
+```
+
+### Step 2: Create Configuration File
+
+Create `~/.fastreact/config.json`:
+
+```json
+{
+  "llm": {
+    "model": "gpt-4o-mini",
+    "api_key": "your-api-key-here",
+    "api_base": "https://api.openai.com/v1",
+    "temperature": 0.7,
+    "max_tokens": 4096
+  },
+  "paths": {
+    "user_skills_dir": "/Users/YOUR_NAME/.fastreact/skills",
+    "gateway_workspace": "./workspaces"
+  }
+}
+```
+
+**Important**: Replace `/Users/YOUR_NAME/` with your actual home directory path (run `echo ~/.fastreact` to check).
+
+### Step 3: Install FastReAct Nano
+
+```bash
+# Navigate to project directory
+cd fastreact-nano
+
+# Install with all features
+pip install -e ".[all]"
+```
+
+### Step 4: Start Gateway Server
+
+```bash
+# Start Gateway (WebSocket server)
+python3 -m fastreact.adapters.gateway
+
+# Gateway will start on http://0.0.0.0:9000
+# You should see:
+# [INFO] Starting Gateway server...
+# [INFO] MCP server 'filesystem' registered
+# [INFO] Gateway running on http://0.0.0.0:9000
+```
+
+### Step 5: Start Frontend (Optional)
+
+```bash
+# In another terminal, navigate to frontend
+cd fastreact-nano-web
+
+# Install dependencies (first time only)
+npm install
+
+# Start development server
+npm run dev
+
+# Frontend will start on http://localhost:3000
+```
+
+### Step 6: Test Connection
+
+Open browser to `http://localhost:3000` and send a message:
+
+```
+Hello, what can you do?
+```
+
+You should receive a response from the AI agent!
+
+---
+
+## Adding Custom Skills and MCP
+
+FastReAct Nano supports unlimited extension through **Skills** (Markdown) and **MCP Servers** (Python).
+
+### Step 1: Configure User Skills Directory (First-Time Setup)
+
+**Required once** to enable custom skills:
+
+```bash
+python3 -c "
+import json
+from pathlib import Path
+
+config_path = Path.home() / '.fastreact/config.json'
+with open(config_path) as f:
+    config = json.load(f)
+
+if 'paths' not in config:
+    config['paths'] = {}
+
+config['paths']['user_skills_dir'] = str(Path.home() / '.fastreact/skills')
+
+with open(config_path, 'w') as f:
+    json.dump(config, f, indent=2)
+
+print('[OK] User skills directory configured')
+"
+```
+
+**Verify configuration:**
+
+```bash
+cat ~/.fastreact/config.json | grep -A 2 "paths"
+# Should show:
+# "paths": {
+#   "user_skills_dir": "/Users/YOUR_NAME/.fastreact/skills"
+# }
+```
+
+### Step 2: Add a Custom Skill (Zero-Code)
+
+**Skills are pure Markdown files** - no programming required!
+
+```bash
+# Create skill directory
+mkdir -p ~/.fastreact/skills/weather
+
+# Create SKILL.md
+cat > ~/.fastreact/skills/weather/SKILL.md << 'EOF'
+---
+name: weather
+description: Weather query tool
+tags: [weather, api]
+---
+
+Use curl to query weather:
+
+```bash
+# Get weather for Beijing
+curl -s "wttr.in/Beijing?format=3"
+
+# Get weather forecast
+curl -s "wttr.in/?format=j1"
+```
+EOF
+
+# Immediately available!
+fastreact "查询北京天气"
+```
+
+**Skill Format:**
+
+```markdown
+---
+name: skill_name
+description: Brief description
+tags: [tag1, tag2]
+---
+
+# Skill Name
+
+Instructions for using the tool:
+
+\`\`\`bash
+command examples here
+\`\`\`
+```
+
+### Step 3: Add MCP Server (For Complex Features)
+
+**When to use MCP Servers:**
+- Need state management (databases)
+- Complex protocols (SSH, browsers)
+- Cross-language integration
+
+**Edit `~/.fastreact/config.json`:**
+
+```json
+{
+  "mcp": {
+    "servers": [
+      {
+        "name": "my_server",
+        "command": "python3",
+        "args": ["path/to/server.py"],
+        "isolation": "shared"
+      }
+    ]
+  }
+}
+```
+
+### Verification
+
+**Check loaded skills:**
+
+```bash
+python3 -c "
+from pathlib import Path
+from fastreact.skills import SkillLoader
+
+skills_dir = Path.home() / '.fastreact/skills'
+loader = SkillLoader(skills_dir=skills_dir)
+skills = loader.list_skills()
+
+print(f'User skills: {skills}')
+"
+```
+
+**Test with Agent:**
+
+```bash
+fastreact "列出所有可用的技能"
+```
+
+---
+
+## MCP Servers Configuration
+
+MCP servers are configured in `mcp_servers/config/shared.json`.
+
+**Default MCP servers** (already configured):
+- `filesystem` - File operations
+- `fetch` - HTTP requests
+
+**To add custom MCP servers**, edit `mcp_servers/config/shared.json`:
+
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "your_server",
+      "command": "python3",
+      "args": ["path/to/server.py"],
+      "isolation": "shared"
+    }
+  ]
+}
+```
+
+**Note**: User-specific MCP configuration can be placed in `~/.fastreact/config.json` under the `mcp_servers` key.
+
+---
+
 ### Basic Usage
 
 ```python

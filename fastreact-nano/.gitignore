@@ -52,10 +52,10 @@ memory.json
 *.log
 config.json
 
-# Workspace data (user workspaces)
-workspaces/*/
+# Workspace data (runtime and testing)
+workspace/
+workspaces/
 !workspaces/.gitkeep
-!workspaces/default/.gitkeep
 
 # User-defined skills (should be in user workspaces, not project)
 skills/custom/*/

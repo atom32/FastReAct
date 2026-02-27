@@ -116,21 +116,34 @@ class Agent:
             self._multitenant = MultiTenantManager(workspace_path)
 
         # Initialize skills (global skills, not user-specific)
+        from fastreact.skills import SkillLoader, SkillRegistry
         self._skills = SkillRegistry()
         # Always try to load skills from configured locations
         try:
-            from fastreact.skills import SkillLoader
             # Use global skills directory from config
             global_skills_dir = self._config.paths.global_skills_dir
             if global_skills_dir.exists():
                 loader = SkillLoader(skills_dir=global_skills_dir)
                 self._skills = SkillRegistry(loader=loader)
+
+            # Load user skills (if configured)
+            user_skills_dir = self._config.paths.user_skills_dir
+            if user_skills_dir and user_skills_dir.exists():
+                user_loader = SkillLoader(skills_dir=user_skills_dir)
+
+                # Add user skills to existing registry
+                for skill_name in user_loader.list_skills():
+                    skill = user_loader.load_skill(skill_name)
+                    if skill:
+                        self._skills._skills[skill_name] = skill
+
+            # Fallback to custom skills directory parameter
             elif skills_dir:
-                # Fallback to custom skills directory parameter
                 loader = SkillLoader(skills_dir=skills_dir)
                 self._skills = SkillRegistry(loader=loader)
+
+            # Final fallback to legacy location
             else:
-                # Final fallback to legacy location
                 legacy_skills_dir = Path.cwd() / "skills"
                 if legacy_skills_dir.exists():
                     loader = SkillLoader(skills_dir=legacy_skills_dir)
