@@ -564,43 +564,44 @@ class GraphRAGMCPServer(SimpleMCPServer):
             }
         )
 
-        # Tool 5: Create entity
-        self.register_tool(
-            name="create_entity",
-            description="Create a new entity in the knowledge graph",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Entity name"
-                    },
-                    "type": {
-                        "type": "string",
-                        "description": "Entity type (e.g., project, concept, person, algorithm)"
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Entity description"
-                    },
-                    "aliases": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Alternative names for the entity (optional)"
-                    },
-                    "keywords": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Keywords for better search matching (optional)"
-                    },
-                    "properties": {
-                        "type": "object",
-                        "description": "Additional entity properties (optional)"
-                    }
-                },
-                "required": ["name", "type", "description"]
-            }
-        )
+        # Tool 5: Create entity (DISABLED - should not be exposed to LLM)
+        # This is a management operation that could pollute the knowledge graph
+        # self.register_tool(
+        #     name="create_entity",
+        #     description="Create a new entity in the knowledge graph",
+        #     input_schema={
+        #         "type": "object",
+        #         "properties": {
+        #             "name": {
+        #                 "type": "string",
+        #                 "description": "Entity name"
+        #             },
+        #             "type": {
+        #                 "type": "string",
+        #                 "description": "Entity type (e.g., project, concept, person, algorithm)"
+        #             },
+        #             "description": {
+        #                 "type": "string",
+        #                 "description": "Entity description"
+        #             },
+        #             "aliases": {
+        #                 "type": "array",
+        #                 "items": {"type": "string"},
+        #                 "description": "Alternative names for the entity (optional)"
+        #             },
+        #             "keywords": {
+        #                 "type": "array",
+        #                 "items": {"type": "string"},
+        #                 "description": "Keywords for better search matching (optional)"
+        #             },
+        #             "properties": {
+        #                 "type": "object",
+        #                 "description": "Additional entity properties (optional)"
+        #             }
+        #         },
+        #         "required": ["name", "type", "description"]
+        #     }
+        # )
 
     async def handle_tool_call(self, name: str, arguments: Dict[str, Any]) -> str:
         """Handle tool calls"""
@@ -626,15 +627,16 @@ class GraphRAGMCPServer(SimpleMCPServer):
                 arguments.get("top_k", 5)
             )
 
-        elif name == "create_entity":
-            return await self._create_entity(
-                arguments["name"],
-                arguments["type"],
-                arguments["description"],
-                arguments.get("aliases", []),
-                arguments.get("keywords", []),
-                arguments.get("properties", {})
-            )
+        # create_entity tool is disabled - management operation only
+        # elif name == "create_entity":
+        #     return await self._create_entity(
+        #         arguments["name"],
+        #         arguments["type"],
+        #         arguments["description"],
+        #         arguments.get("aliases", []),
+        #         arguments.get("keywords", []),
+        #         arguments.get("properties", {})
+        #     )
 
         else:
             return json.dumps({

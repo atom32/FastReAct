@@ -125,6 +125,11 @@ class Agent:
             if global_skills_dir.exists():
                 loader = SkillLoader(skills_dir=global_skills_dir)
                 self._skills = SkillRegistry(loader=loader)
+                # Load all global skills
+                for skill_name in loader.list_skills():
+                    skill = loader.load_skill(skill_name)
+                    if skill:
+                        self._skills.add_skill(skill_name, skill)
 
             # Load user skills (if configured)
             user_skills_dir = self._config.paths.user_skills_dir
@@ -135,12 +140,16 @@ class Agent:
                 for skill_name in user_loader.list_skills():
                     skill = user_loader.load_skill(skill_name)
                     if skill:
-                        self._skills._skills[skill_name] = skill
+                        self._skills.add_skill(skill_name, skill)
 
             # Fallback to custom skills directory parameter
             elif skills_dir:
                 loader = SkillLoader(skills_dir=skills_dir)
                 self._skills = SkillRegistry(loader=loader)
+                for skill_name in loader.list_skills():
+                    skill = loader.load_skill(skill_name)
+                    if skill:
+                        self._skills.add_skill(skill_name, skill)
 
             # Final fallback to legacy location
             else:
@@ -148,6 +157,10 @@ class Agent:
                 if legacy_skills_dir.exists():
                     loader = SkillLoader(skills_dir=legacy_skills_dir)
                     self._skills = SkillRegistry(loader=loader)
+                    for skill_name in loader.list_skills():
+                        skill = loader.load_skill(skill_name)
+                        if skill:
+                            self._skills.add_skill(skill_name, skill)
         except Exception as e:
             # Skills not available
             pass
@@ -314,7 +327,7 @@ class Agent:
 
         return selected
 
-    def _build_system_prompt_with_skills(self, skills: Optional[list[str]]) -> str:
+    def _build_system_prompt_with_skills(self, skills: Optional[list[str]]) -> tuple[str, str]:
         """
         Build system prompt with skills and tools injected
 
@@ -322,12 +335,18 @@ class Agent:
             skills: List of skill names to inject
 
         Returns:
-            System prompt string with skills and tools
+            Tuple of (base_prompt, skills_content) where:
+            - base_prompt: Constant base system prompt (cacheable)
+            - skills_content: Variable skills and tools content (injected as message)
         """
         from fastreact.core.prompts import get_system_prompt
 
-        # Get base system prompt
+        # Get base system prompt (constant, cacheable)
         base_prompt = get_system_prompt("core")
+
+        # === Build Variable Content Section (skills + tools) ===
+        # This will be injected as a separate system message to preserve cache
+        variable_content = ""
 
         # === Add Available Tools Section ===
         tools_section = "\n\n# Available Tools\nYou have access to the following tools:\n\n"
@@ -372,6 +391,7 @@ class Agent:
                         break
 
         tools_section += "\nUse these tools to complete the user's request."
+        variable_content += tools_section
 
         # === Add Available Skills Section (always show available skills) ===
         skills_list_section = "\n\n# Available Skills\nThese skills are available:\n\n"
@@ -389,6 +409,8 @@ class Agent:
                     skills_list_section += "\n"
         else:
             skills_list_section += "No skills currently available.\n\n"
+
+        variable_content += skills_list_section
 
         # === Add Skills Section (if specific skills selected) ===
         skills_section = ""
@@ -415,9 +437,9 @@ class Agent:
                     if skill.metadata.mcp_servers:
                         mcp_servers_for_skills.update(skill.metadata.mcp_servers)
 
-            # Inject skills into system prompt
+            # Inject skills into variable content
             if skill_descriptions:
-                skills_section = "\n\n# Available Skills\nThese skills are available for this task:\n\n"
+                skills_section = "\n\n# Active Skills\nThese skills are available for this task:\n\n"
                 skills_section += "\n\n".join(skill_descriptions)
                 skills_section += "\n\nUse these skills when appropriate to complete the user's request."
 
@@ -438,14 +460,9 @@ class Agent:
                     if mcp_section_parts:
                         skills_section += "\n\n" + "\n\n".join(mcp_section_parts)
 
-        final_prompt = base_prompt + tools_section + skills_list_section + skills_section
+        variable_content += skills_section
 
-        # === DEBUG: Log system prompt ===
-        import sys
-        print(f"[DEBUG] System prompt length: {len(final_prompt)}", file=sys.stderr)
-        print(f"[DEBUG] Skills section preview:\n{skills_list_section[:500]}", file=sys.stderr)
-
-        return final_prompt
+        return base_prompt, variable_content
 
     def enable_auto_skill_selection(self, max_skills: int = 3):
         """
@@ -960,6 +977,10 @@ class Agent:
         # Pass selected skills to load only required MCP servers
         await self._load_mcp_servers(required_skills=skills)
 
+        # Update Core's tool registry to include newly loaded MCP tools
+        # This ensures Core has access to all tools (builtin + MCP) when generating tool calls
+        self._core._tools = self._tools
+
         # Generate session_id if not provided
         session_id = session_id or str(uuid.uuid4())
 
@@ -981,7 +1002,15 @@ class Agent:
             messages.append(Message.user(query).to_llm_format())
 
             # Build system prompt with skills (skills already selected above)
-            system_prompt = self._build_system_prompt_with_skills(skills)
+            # Returns (base_prompt, skills_content) for cache-friendly injection
+            base_prompt, skills_content = self._build_system_prompt_with_skills(skills)
+
+            # Inject skills content as a separate system message at the START of messages
+            # This keeps base_prompt constant (cacheable) while providing skills context
+            messages.insert(0, {"role": "system", "content": skills_content})
+
+            # Use base_prompt for Core (constant, cacheable)
+            system_prompt = base_prompt
 
             # Interrupt flag
             interrupted = False

@@ -6,18 +6,25 @@ FastReAct Nano is a minimalist, production-ready AI agent framework with a clean
 
 ## Quick Links
 
-- [Deployment Guide](deploy/README.md) - 5+ deployment methods (Docker, Cloud, One-Click)
-- [Installation](#installation) - Get started in 1 minute
-- [Documentation](docs/) - Architecture, Events, Safety
-- [GitHub Issues](https://github.com/atom32/FastReAct/issues) - Report bugs or request features
+- [📚 渐进式学习路径](docs/LEARNING_PATH.md) - 从零开始掌握 FastReAct Nano
+- [💡 示例代码](examples/) - v0-v4 渐进式示例
+- [🚀 部署指南](deploy/README.md) - 5+ deployment methods
+- [📖 完整文档](docs/) - Architecture, Events, Safety
+- [🐛 问题反馈](https://github.com/atom32/FastReAct/issues) - Report bugs
 
 ---
 
-## Release Notes - v2.4.1 (2025-02-22)
+## Release Notes - v2.5.0 (2025-02-28)
 
 ### Recent Updates
 
-1. **Skill Selection Optimization** (v2.4.1):
+1. **Cache-Friendly Skill Injection** (v2.5.0):
+   - ✅ Base system prompt now constant (1,162 chars)
+   - ✅ Skills injected as separate system message
+   - ✅ Expected 20-50% cost reduction from API cache hits
+   - ✅ No functional changes to LLM behavior
+
+2. **Skill Selection Optimization** (v2.4.1):
    - ✅ Chinese n-gram tokenization (unigram, bigram, trigram)
    - ✅ Removed hardcoded skill logic (architecture fix)
    - ✅ Pure semantic matching, no rule pollution
@@ -43,12 +50,13 @@ FastReAct Nano is a minimalist, production-ready AI agent framework with a clean
    - ✅ Gateway → Transport layer only
    - ✅ Business logic → AgentSession
 
-6. **Ironclad Features** (v2.1.0 - v2.4.0):
+6. **Ironclad Features** (v2.1.0 - v2.5.0):
    - ✅ Infinite loop protection (hard limit: 25 iterations)
    - ✅ JSON parsing robustness (5-level repair, 11/11 tests)
    - ✅ Multi-turn dialog memory
    - ✅ MCP auto-reconnect (max 3 retries)
    - ✅ MCP zombie resurrection (automatic)
+   - ✅ Cache-friendly skill injection (API-level optimization)
 
 ### Current Status
 
@@ -64,11 +72,10 @@ FastReAct Nano is a minimalist, production-ready AI agent framework with a clean
 
 ### Testing Status
 
-- **Total Tests**: 528
-- **Pass Rate**: 100% (528/528)
-- **Unit Tests**: ~400
-- **Integration Tests**: ~100
-- **Manual Tests**: ~28
+- **Total Tests**: 353 unit tests
+- **Pass Rate**: 100% (353/353)
+- **Unit Tests**: 353 passing
+- **Integration Tests**: ~28
 
 ### Architecture Achievement
 

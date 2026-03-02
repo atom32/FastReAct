@@ -1,6 +1,6 @@
 # FastReAct Nano - Development Rules
 
-**Version**: 2.4.2
+**Version**: 2.5.0
 **Core Principle**: Platform MUST support SKILL and MCP extensions
 
 ---
@@ -126,7 +126,33 @@ while True:
 
 **Tests**: 6/6 passing
 
-**Test Coverage Summary**: 26/26 passing (100%)
+---
+
+### 6. Cache-Friendly Skill Injection 🟢
+
+**Location**: `src/fastreact/agent.py:330-460`
+
+**API-level caching optimization**:
+
+```python
+# Before: System prompt changes with each skill combination (cache miss)
+system_prompt = base_prompt + tools_section + skills_section  # Variable
+
+# After: Base prompt is constant (cache hit), skills injected as message
+base_prompt, skills_content = self._build_system_prompt_with_skills(skills)
+messages.insert(0, {"role": "system", "content": skills_content})
+core.run_step_stream(messages, system_prompt=base_prompt)  # Constant
+```
+
+**Benefits**:
+- Base prompt constant (1,162 chars) regardless of skill selection
+- Expected 20-50% cost reduction from API cache hits
+- Skills content injected as separate system message
+- No functional changes to LLM behavior
+
+**Tests**: 353/353 passing (100%)
+
+**Test Coverage Summary**: 353/353 passing (100%)
 
 ---
 

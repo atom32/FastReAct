@@ -183,6 +183,16 @@ class SkillRegistry:
 
         return skill
 
+    def add_skill(self, name: str, skill: Skill) -> None:
+        """
+        Add a skill to the registry
+
+        Args:
+            name: Skill name
+            skill: Skill object
+        """
+        self._skills[name] = skill
+
     def get_prompt(self, name: str) -> Optional[str]:
         """
         Get the prompt for a skill
