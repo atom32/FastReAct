@@ -10,6 +10,29 @@ from pathlib import Path
 from typing import Optional, Any
 
 
+def _expand_path(path_str: str | Path) -> Path:
+    """
+    Expand user home directory (~) and environment variables in path.
+
+    Args:
+        path_str: Path string that may contain ~ or $VAR
+
+    Returns:
+        Expanded Path object
+
+    Examples:
+        _expand_path("~/skills") -> /home/user/skills
+        _expand_path("$HOME/skills") -> /home/user/skills
+        _expand_path("/absolute/path") -> /absolute/path
+    """
+    if isinstance(path_str, Path):
+        return path_str
+
+    # First expand environment variables, then expand ~
+    expanded = os.path.expandvars(path_str)
+    return Path(expanded).expanduser()
+
+
 @dataclass
 class LLMConfig:
     """LLM provider configuration"""
@@ -51,10 +74,11 @@ class ToolConfig:
     @classmethod
     def from_env(cls) -> "ToolConfig":
         """Create from environment variables"""
+        working_dir = os.getenv("FASTRACT_WORKING_DIR")
         return cls(
             max_file_size=int(os.getenv("FASTRACT_MAX_FILE_SIZE", str(1024 * 1024))),
             exec_timeout=int(os.getenv("FASTRACT_EXEC_TIMEOUT", "30")),
-            working_dir=Path(os.getenv("FASTRACT_WORKING_DIR")) if os.getenv("FASTRACT_WORKING_DIR") else None,
+            working_dir=_expand_path(working_dir) if working_dir else None,
         )
 
 
@@ -200,10 +224,10 @@ class PathsConfig:
     def from_env(cls) -> "PathsConfig":
         """Create paths config from environment variables"""
         return cls(
-            global_skills_dir=Path(os.getenv("FASTRACT_SKILLS_DIR", str(Path.cwd() / "skills" / "builtin"))),
+            global_skills_dir=_expand_path(os.getenv("FASTRACT_SKILLS_DIR", str(Path.cwd() / "skills" / "builtin"))),
             user_skills_template=os.getenv("FASTRACT_USER_SKILLS_TEMPLATE", "{user_workspace}/skills"),
-            gateway_workspace=Path(os.getenv("FASTRACT_GATEWAY_WORKSPACE", str(Path.cwd() / "workspaces" / "default"))),
-            feishu_workspace_base=Path(os.getenv("FEISHU_BASE_WORKSPACE", "/var/fastreact/tenants/feishu")),
+            gateway_workspace=_expand_path(os.getenv("FASTRACT_GATEWAY_WORKSPACE", str(Path.cwd() / "workspaces" / "default"))),
+            feishu_workspace_base=_expand_path(os.getenv("FEISHU_BASE_WORKSPACE", "/var/fastreact/tenants/feishu")),
         )
 
 
@@ -251,7 +275,7 @@ class FeishuConfig:
             auto_reconnect=os.getenv("FEISHU_AUTO_RECONNECT", "true").lower() == "true",
             log_level=os.getenv("FEISHU_LOG_LEVEL", "info"),
             enable_multitenant=os.getenv("FEISHU_MULTITENANT", "true").lower() == "true",
-            base_workspace=Path(workspace_str) if workspace_str else None,
+            base_workspace=_expand_path(workspace_str) if workspace_str else None,
         )
 
 
@@ -408,11 +432,12 @@ class Config:
             # Extract tools configuration
             if "tools" in data:
                 tools_data = data["tools"]
+                allowed_dir = tools_data.get("allowed_dir")
                 tools_config = ToolConfig(
                     max_file_size=tools_data.get("max_file_size", 1024*1024),
                     protected_paths=tools_data.get("protected_paths", []),
                     exec_timeout=tools_data.get("shell_timeout", 30),
-                    working_dir=Path(tools_data.get("allowed_dir")) if tools_data.get("allowed_dir") else None,
+                    working_dir=_expand_path(allowed_dir) if allowed_dir else None,
                 )
 
             # Extract react configuration
@@ -434,11 +459,11 @@ class Config:
             if "paths" in data:
                 paths_data = data["paths"]
                 paths_config = PathsConfig(
-                    global_skills_dir=Path(paths_data.get("global_skills_dir", str(Path.cwd() / "skills" / "builtin"))),
+                    global_skills_dir=_expand_path(paths_data.get("global_skills_dir", str(Path.cwd() / "skills" / "builtin"))),
                     user_skills_template=paths_data.get("user_skills_template", "{user_workspace}/skills"),
-                    user_skills_dir=Path(paths_data.get("user_skills_dir")) if paths_data.get("user_skills_dir") else None,
-                    gateway_workspace=Path(paths_data.get("gateway_workspace", str(Path.cwd() / "workspaces" / "default"))),
-                    feishu_workspace_base=Path(paths_data.get("feishu_workspace_base", "/var/fastreact/tenants/feishu")),
+                    user_skills_dir=_expand_path(paths_data.get("user_skills_dir")) if paths_data.get("user_skills_dir") else None,
+                    gateway_workspace=_expand_path(paths_data.get("gateway_workspace", str(Path.cwd() / "workspaces" / "default"))),
+                    feishu_workspace_base=_expand_path(paths_data.get("feishu_workspace_base", "/var/fastreact/tenants/feishu")),
                 )
 
             return cls(
