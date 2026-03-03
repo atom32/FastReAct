@@ -429,10 +429,11 @@ class FeishuSDKAdapter:
             # Check MCP manager status before processing
             print(f"[DEBUG] MCP Manager status: {type(self.agent._mcp_manager)}")
             if self.agent._mcp_manager:
-                servers = self.agent._mcp_manager.list_servers()
-                print(f"[DEBUG] MCP Servers: {servers}")
+                # MultiTenantMCPManager has different interface
                 mcp_tools = self.agent._mcp_manager.list_mcp_tools()
-                print(f"[DEBUG] MCP Tools: {mcp_tools}")
+                print(f"[DEBUG] MCP Tools loaded: {len(mcp_tools)} tools")
+                if mcp_tools:
+                    print(f"[DEBUG] MCP Tool names: {mcp_tools[:10]}")
             else:
                 print(f"[DEBUG] MCP Manager is None (will load on first run)")
 
