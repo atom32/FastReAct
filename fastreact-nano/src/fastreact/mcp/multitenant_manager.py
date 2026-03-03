@@ -163,6 +163,7 @@ class MultiTenantMCPManager:
             )
             await manager.add_server(
                 server_config.name,
+                server_config.transport,
                 server_config.command,
                 server_config.args
             )
