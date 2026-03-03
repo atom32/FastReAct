@@ -75,7 +75,7 @@ def main():
 
     # Create agent
     print(f"[INFO] Creating agent with model: {config.llm.model}")
-    agent = Agent(config=config)
+    agent = Agent(config=config, multitenant=True)
 
     # Create Feishu SDK adapter
     print("[INFO] Initializing Feishu SDK adapter")
