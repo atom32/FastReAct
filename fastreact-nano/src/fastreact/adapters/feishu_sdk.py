@@ -325,6 +325,79 @@ class FeishuSDKAdapter:
             import sys
             print(f"[ERROR] Failed to send message: {e}", file=sys.stderr)
 
+    def _format_execution_summary(self, skills: list, tool_calls: list) -> str:
+        """
+        Format execution summary for user
+
+        Args:
+            skills: List of selected skills
+            tool_calls: List of tool calls made
+
+        Returns:
+            Formatted summary string
+        """
+        lines = []
+
+        # Skills section
+        if skills and skills != ["None"]:
+            lines.append("📚 使用技能:")
+            for skill in skills:
+                lines.append(f"  • {skill}")
+
+        # Tools section
+        if tool_calls:
+            lines.append("\n🔧 调用工具:")
+
+            # Group by MCP vs builtin
+            mcp_tools = []
+            builtin_tools = []
+
+            for tool in tool_calls:
+                tool_name = tool["name"]
+                # MCP tools have ":" in name (e.g., "graphrag:search")
+                if ":" in tool_name:
+                    mcp_tools.append(tool)
+                else:
+                    builtin_tools.append(tool)
+
+            # Builtin tools
+            if builtin_tools:
+                lines.append("  系统工具:")
+                for tool in builtin_tools:
+                    tool_name = tool["name"]
+                    # Simplify tool name
+                    if tool_name == "read_file":
+                        tool_name = "📄 读取文件"
+                    elif tool_name == "write_file":
+                        tool_name = "✏️ 写入文件"
+                    elif tool_name == "edit_file":
+                        tool_name = "🔄 编辑文件"
+                    elif tool_name == "exec":
+                        tool_name = "⚡ 执行命令"
+
+                    args = tool["args"]
+                    # Format args concisely
+                    if tool_name == "⚡ 执行命令":
+                        cmd = args.get("command", "unknown")[:50]
+                        lines.append(f"    {tool_name}: {cmd}...")
+                    elif tool_name == "📄 读取文件":
+                        file_path = args.get("path", "unknown")[:40]
+                        lines.append(f"    {tool_name}: {file_path}")
+                    else:
+                        lines.append(f"    {tool_name}")
+
+            # MCP tools
+            if mcp_tools:
+                lines.append("  MCP 工具:")
+                for tool in mcp_tools:
+                    tool_name = tool["name"]
+                    # Extract MCP server name and tool name
+                    if ":" in tool_name:
+                        server, tool_func = tool_name.split(":", 1)
+                        lines.append(f"    [{server}] {tool_func}")
+
+        return "\n".join(lines) if lines else ""
+
     async def _process_agent_stream(
         self,
         user_key: str,
@@ -345,6 +418,7 @@ class FeishuSDKAdapter:
         # Collect thinking and tool calls
         thinking_steps = []
         tool_calls = []
+        selected_skills_list = [None]  # Use list to allow modification in nested scope
 
         print(f"[INFO] Starting agent processing for user: {user_key}")
         print(f"[INFO] Query: {query}")
@@ -360,9 +434,9 @@ class FeishuSDKAdapter:
                 # Handle different event types
                 if agent_event.type == EventType.SESSION_START:
                     print(f"[INFO] Session started")
-                    skills = agent_event.metadata.get("skills", [])
-                    if skills:
-                        print(f"[INFO] Selected skills: {skills}")
+                    selected_skills_list[0] = agent_event.metadata.get("skills", [])
+                    if selected_skills_list[0]:
+                        print(f"[INFO] Selected skills: {selected_skills_list[0]}")
 
                 elif agent_event.type == EventType.THINK:
                     thinking_steps.append(agent_event.content)
@@ -406,10 +480,22 @@ class FeishuSDKAdapter:
                     print(f"[FINAL ANSWER] {agent_event.content}")
                     print(f"[INFO] Agent processing completed")
 
+                    # Generate execution summary
+                    selected_skills = selected_skills_list[0] or []
+                    summary = self._format_execution_summary(selected_skills, tool_calls)
+                    if summary:
+                        print(f"[INFO] Execution Summary:\n{summary}")
+
+                    # Send message with execution summary
+                    if summary:
+                        message = f"✅ **执行完成**\n\n{summary}\n\n---\n\n**回答:**\n\n{agent_event.content}"
+                    else:
+                        message = agent_event.content
+
                     # Send final answer to Feishu
                     await self._send_text_message(
                         chat_id,
-                        agent_event.content
+                        message
                     )
 
                 elif agent_event.type == EventType.ERROR:
