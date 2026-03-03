@@ -135,7 +135,10 @@ class MessageQueue:
 
     def push(self, message: Message):
         """Push message to queue"""
+        import sys
+        print(f"[MESSAGE_QUEUE] push() called, before push: {len(self._messages)} messages", file=sys.stderr)
         self._messages.append(message)
+        print(f"[MESSAGE_QUEUE] push() done, after push: {len(self._messages)} messages", file=sys.stderr)
 
     def extend(self, messages: list[Message]):
         """Extend queue with multiple messages"""
@@ -147,8 +150,11 @@ class MessageQueue:
 
     def drain(self) -> list[Message]:
         """Get and clear all messages"""
+        import sys
+        print(f"[MESSAGE_QUEUE] drain() called, returning {len(self._messages)} messages", file=sys.stderr)
         messages = self._messages
         self._messages = []
+        print(f"[MESSAGE_QUEUE] drain() done, queue now empty", file=sys.stderr)
         return messages
 
     def clear(self):

@@ -408,14 +408,13 @@ class FeishuSDKAdapter:
         """
         Process query with Agent and stream results back to Feishu
 
+        Uses unified run_or_inject API for automatic session management.
+
         Args:
             user_key: User key for multi-tenant (e.g., "feishu:ou_xxx")
             query: User's query
             chat_id: Feishu chat ID
         """
-        # Session ID with user prefix
-        session_id = f"{user_key}:session-{uuid.uuid4()}"
-
         # Collect thinking and tool calls
         thinking_steps = []
         tool_calls = []
@@ -423,7 +422,6 @@ class FeishuSDKAdapter:
 
         print(f"[INFO] Starting agent processing for user: {user_key}")
         print(f"[INFO] Query: {query}")
-        print(f"[INFO] Session ID: {session_id}")
 
         try:
             # Check MCP manager status before processing
@@ -457,15 +455,22 @@ class FeishuSDKAdapter:
                 print(f"[DEBUG]       command: {command}")
                 print(f"[DEBUG]       args: {args}")
 
-            # Stream agent events
-            async for agent_event in self.agent.run_event_stream(
+            # Stream agent events using unified API
+            async for agent_event in self.agent.run_or_inject(
                 query=query,
-                session_id=session_id,
-                user_key=user_key if self._multitenant else None,
+                user_key=user_key,
             ):
                 # Handle different event types
                 if agent_event.type == EventType.SESSION_START:
                     print(f"[INFO] Session started")
+
+                    # Check if message was injected into active session
+                    if agent_event.metadata.get("injected"):
+                        await self._send_text_message(
+                            chat_id,
+                            "[INFO] Message added to active session"
+                        )
+
                     selected_skills_list[0] = agent_event.metadata.get("skills", [])
                     if selected_skills_list[0]:
                         print(f"[INFO] Selected skills: {selected_skills_list[0]}")

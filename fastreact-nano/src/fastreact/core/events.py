@@ -80,15 +80,31 @@ class AgentEvent:
     # === Factory Methods ===
 
     @staticmethod
-    def session_start(query: str, session_id: str, skills: Optional[list[str]] = None) -> "AgentEvent":
-        """Create session start event"""
-        metadata = {"skills": skills or []}  # Always include skills field (empty array if no skills)
+    def session_start(
+        query: str,
+        session_id: str,
+        skills: Optional[list[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> "AgentEvent":
+        """Create session start event
+
+        Args:
+            query: User query
+            session_id: Session identifier
+            skills: List of selected skills (optional)
+            metadata: Additional metadata (optional, merged with skills metadata)
+        """
+        event_metadata = {"skills": skills or []}  # Always include skills field (empty array if no skills)
+
+        # Merge with provided metadata if any
+        if metadata:
+            event_metadata.update(metadata)
 
         return AgentEvent(
             type=EventType.SESSION_START,
             content=query,
             session_id=session_id,
-            metadata=metadata,
+            metadata=event_metadata,
         )
 
     @staticmethod

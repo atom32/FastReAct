@@ -68,6 +68,8 @@ class AgentSession:
         self.session_id = session_id
         self.created_at = datetime.utcnow()
         self.last_activity = datetime.utcnow()
+        self.user_key: Optional[str] = None  # User identifier for multi-tenant
+        self.status: str = "idle"  # Session status: idle | running | closed
 
         # Agent reference (for execution)
         self._agent = agent
@@ -258,6 +260,7 @@ class AgentSession:
             running: True if agent is running, False otherwise
         """
         self._is_running = running
+        self.status = "running" if running else "idle"  # Sync status
 
     @property
     def is_interrupted(self) -> bool:
@@ -444,3 +447,46 @@ class AgentSession:
         finally:
             # Always reset running state when done
             self._is_running = False
+
+    # === Session Metadata ===
+
+    def get_status(self) -> str:
+        """
+        Get session status
+
+        Returns:
+            Current status string: "idle", "running", or "closed"
+        """
+        return self.status
+
+    def set_status(self, status: str):
+        """
+        Set session status with validation
+
+        Args:
+            status: New status ("idle", "running", or "closed")
+
+        Raises:
+            ValueError: If status is not valid
+        """
+        valid_statuses = ["idle", "running", "closed"]
+        if status not in valid_statuses:
+            raise ValueError(f"Invalid status: {status}. Must be one of {valid_statuses}")
+        self.status = status
+
+    def get_metadata(self) -> dict:
+        """
+        Get session metadata for query APIs
+
+        Returns:
+            Dictionary containing session metadata
+        """
+        return {
+            "session_id": self.session_id,
+            "user_key": self.user_key,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "last_activity": self.last_activity.isoformat(),
+            "is_running": self._is_running,
+            "is_interrupted": self._interrupted,
+        }

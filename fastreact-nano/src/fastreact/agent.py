@@ -777,6 +777,7 @@ class Agent:
     def create_session(
         self,
         session_id: str,
+        user_key: Optional[str] = None,
         max_history: int = 50,
         followup_window_seconds: int = 30,
         max_queue_size: int = 5,
@@ -814,6 +815,9 @@ class Agent:
             max_queue_size=max_queue_size,
         )
 
+        # Set user_key for multi-tenant session tracking
+        session.user_key = user_key
+
         self._sessions[session_id] = session
 
         # Also create MessageQueue for legacy compatibility
@@ -850,6 +854,62 @@ class Agent:
         if session_id in self._session_queues:
             del self._session_queues[session_id]
 
+    def find_active_session(self, user_key: str) -> Optional["AgentSession"]:
+        """
+        Find active session for user (non-closed status)
+
+        Args:
+            user_key: User identifier (e.g., "feishu:ou_xxx")
+
+        Returns:
+            AgentSession if found, None otherwise
+
+        Example:
+            >>> session = agent.find_active_session("feishu:ou_123")
+            >>> if session:
+            ...     # Inject message into existing session
+            ...     await session.enqueue_message({"type": "query", "content": "停下"})
+        """
+        for session in self._sessions.values():
+            if session.user_key == user_key and session.status != "closed":
+                return session
+        return None
+
+    def list_sessions(self, user_key: Optional[str] = None) -> list[dict]:
+        """
+        List all sessions (optionally filtered by user)
+
+        Args:
+            user_key: Optional user filter
+
+        Returns:
+            List of session metadata dictionaries
+
+        Example:
+            >>> # All sessions
+            >>> all_sessions = agent.list_sessions()
+            >>> # Specific user's sessions
+            >>> user_sessions = agent.list_sessions("feishu:ou_123")
+        """
+        sessions = []
+        for session in self._sessions.values():
+            if user_key is None or session.user_key == user_key:
+                sessions.append(session.get_metadata())
+        return sessions
+
+    def get_session_status(self, session_id: str) -> Optional[str]:
+        """
+        Get session status
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Status string or None if session not found
+        """
+        session = self.get_session(session_id)
+        return session.get_status() if session else None
+
     # === End Session Management ===
 
     def inject_message(self, session_id: str, message: Message):
@@ -867,6 +927,134 @@ class Agent:
             raise ValueError(f"Session not active: {session_id}")
 
         self._session_queues[session_id].push(message)
+
+    async def run_or_inject(
+        self,
+        query: str,
+        user_key: str,
+        skills: Optional[list[str]] = None,
+        force_new: bool = False,
+    ) -> AsyncIterator["AgentEvent"]:
+        """
+        Unified execution entry: auto-create session OR inject into active session
+
+        This is the RECOMMENDED API for adapters to use. It automatically handles
+        session lifecycle based on user activity.
+
+        Args:
+            query: User message
+            user_key: User identifier (e.g., "feishu:ou_xxx")
+            skills: Optional skill list (only for new sessions)
+            force_new: Force creating new session (even if active session exists)
+
+        Yields:
+            AgentEvent objects stream
+
+        Behavior:
+            - If user has active session AND not force_new: inject message
+            - Otherwise: create new session and execute
+
+        Example:
+            >>> # Feishu adapter usage
+            >>> async for event in agent.run_or_inject(
+            ...     query="停下",
+            ...     user_key="feishu:ou_123"
+            ... ):
+            ...     await send_to_feishu(event)
+        """
+        from fastreact.core.events import AgentEvent
+
+        # Check for active session
+        active_session = None
+        if not force_new:
+            active_session = self.find_active_session(user_key)
+
+        if active_session:
+            # Active session exists - check if it's idle or running
+            import sys
+
+            if active_session.get_status() == "idle":
+                # Session is idle - execute query on existing session
+                print(
+                    f"[INFO] Reusing idle session {active_session.session_id} "
+                    f"for user {user_key}",
+                    file=sys.stderr
+                )
+
+                # Run on existing session (will use history)
+                async for event in self.run_event_stream(
+                    query=query,
+                    session_id=active_session.session_id,
+                    user_key=user_key,
+                ):
+                    yield event
+                return
+            else:
+                # Session is running - inject as user intervention
+                print(
+                    f"[INFO] Injecting into running session {active_session.session_id} "
+                    f"for user {user_key}",
+                    file=sys.stderr
+                )
+
+                # Inject into Agent's session queue (not AgentSession's queue)
+                # This will be checked in run_event_stream's inner loop
+                from fastreact.core.messages import Message
+
+                intervention_msg = Message.steering(
+                    query,
+                    source="feishu",  # Pass as keyword argument, not nested dict
+                    user_intervention=True
+                )
+
+                import sys
+                print(
+                    f"[DEBUG] Pushing intervention message to queue {active_session.session_id}",
+                    file=sys.stderr
+                )
+                self._session_queues[active_session.session_id].push(intervention_msg)
+
+                # Verify message was added
+                queue_after = self._session_queues.get(active_session.session_id, MessageQueue())
+                print(
+                    f"[DEBUG] After push, queue has {len(queue_after._messages)} messages",
+                    file=sys.stderr
+                )
+
+                # Yield injection events
+                yield AgentEvent.session_start(
+                    query,
+                    active_session.session_id,
+                    skills=None,
+                    metadata={
+                        "injected": True,
+                        "user_key": user_key,
+                        "session_status": active_session.get_status(),
+                    }
+                )
+                yield AgentEvent.session_end(
+                    active_session.session_id,
+                    f"[INJECTED] Message added to active session",
+                )
+                return
+
+        # Create new session
+        session_id = f"{user_key}:session-{uuid.uuid4()}"
+        session = self.create_session(
+            session_id=session_id,
+            user_key=user_key,
+            max_history=50,
+            followup_window_seconds=30,
+        )
+
+        # Run execution stream
+        async for event in self.run_event_stream(
+            query=query,
+            skills=skills,
+            session_id=session_id,
+            user_key=user_key,
+        ):
+            yield event
 
     async def run_event_stream(
         self,
@@ -988,8 +1176,20 @@ class Agent:
         if user_context and ":" not in session_id:
             session_id = f"{user_key}:{session_id}"
 
-        # Create session queue for steering/followup
-        self._session_queues[session_id] = MessageQueue()
+        # Get or create session and set user_key
+        session = self.get_session(session_id)
+        if not session:
+            session = self.create_session(session_id, user_key=user_key)
+        else:
+            session.user_key = user_key
+
+        # Set running status
+        session.set_status("running")
+
+        # Create session queue for steering/followup (only if not exists)
+        # This prevents overwriting queue that may have injected messages
+        if session_id not in self._session_queues:
+            self._session_queues[session_id] = MessageQueue()
 
         try:
             # Emit SESSION_START with skills information
@@ -1040,11 +1240,27 @@ class Agent:
                     # 1. Brain: Ask LLM for reasoning
                     pending_messages = self._session_queues.get(session_id, MessageQueue())
 
+                    # Debug: Always log queue status
+                    import sys
+                    msg_count = len(pending_messages._messages) if pending_messages else 0
+                    print(
+                        f"[DEBUG] Inner loop start: queue has {msg_count} messages",
+                        file=sys.stderr
+                    )
+
                     # Process pending messages (steering/interrupt/followup)
                     if pending_messages:
                         for msg in pending_messages.drain():
-                            # Check for user intervention from Gateway
-                            if msg.metadata.get("source") == "gateway":
+                            import sys
+                            print(
+                                f"[DEBUG] Processing message: role={msg.role}, content={msg.content[:30]}",
+                                file=sys.stderr
+                            )
+
+                            # Check for steering messages (user intervention from any adapter)
+                            # Use role="steering" instead of hardcoded adapter types
+                            if msg.role == "steering":
+                                msg_source = msg.metadata.get("source", "unknown")
                                 # User intervention: append as new user message
                                 # This preserves all previous tool results so LLM can understand "what you just did"
                                 messages.append({
@@ -1056,7 +1272,8 @@ class Agent:
                                 yield AgentEvent.think(
                                     f"[USER INTERVENTION] {msg.content}",
                                     session_id,
-                                    metadata={"source": "user", "user_intervention": True}
+                                    source=msg_source,
+                                    user_intervention=True
                                 )
                                 # Continue execution, don't set interrupted flag
                                 break
@@ -1184,6 +1401,49 @@ class Agent:
                                     ).to_llm_format())
                                     continue
 
+                            # User input checkpoint: check for pending messages before tool execution
+                            pending = self._session_queues.get(session_id, MessageQueue())
+                            if pending:
+                                import sys
+                                print(
+                                    f"[DEBUG] Tool execution checkpoint: found {len(pending._messages)} messages",
+                                    file=sys.stderr
+                                )
+                                for msg in pending.drain():
+                                    import sys
+                                    print(
+                                        f"[DEBUG] Tool checkpoint processing: role={msg.role}, content={msg.content[:30]}",
+                                        file=sys.stderr
+                                    )
+
+                                    # Check for steering messages (user intervention from any adapter)
+                                    # Use role="steering" instead of hardcoded adapter types
+                                    if msg.role == "steering":
+                                        msg_source = msg.metadata.get("source", "unknown")
+                                        # User intervention during tool execution
+                                        # Pass metadata as keyword arguments, not nested dict
+                                        yield AgentEvent.think(
+                                            f"[USER INTERVENTION] {msg.content}",
+                                            session_id,
+                                            source=msg_source,
+                                            user_intervention=True,
+                                            tool_interrupted=True
+                                        )
+
+                                        # Add as steering message
+                                        messages.append({
+                                            "role": "user",
+                                            "content": f"[USER INTERVENTION]: {msg.content}"
+                                        })
+
+                                        # Exit tool execution loop
+                                        has_more_tool_calls = False
+                                        break
+
+                                # If user interrupted, skip remaining tools
+                                if not has_more_tool_calls:
+                                    break
+
                             # Execute tool
                             try:
                                 result = await self._tools.execute(
@@ -1226,7 +1486,20 @@ class Agent:
                 # 3. LLM hasn't generated a final answer yet
 
                 # Check for follow-up messages (user intervention, etc.)
-                has_followup = bool(self._session_queues.get(session_id, MessageQueue()))
+                followup_queue = self._session_queues.get(session_id, MessageQueue())
+                has_followup = bool(followup_queue)
+
+                import sys
+                queue_in_dict = self._session_queues.get(session_id)
+                print(
+                    f"[DEBUG] After inner loop: queue_in_dict={queue_in_dict is not None}, has_followup={has_followup}, len={len(followup_queue._messages) if followup_queue else 'N/A'}, executed_tools={executed_tools_this_iteration}",
+                    file=sys.stderr
+                )
+                if has_followup:
+                    print(
+                        f"[DEBUG] Found {len(followup_queue._messages)} follow-up messages, continuing loop",
+                        file=sys.stderr
+                    )
 
                 # If we executed tools in this iteration, continue to next iteration
                 # (LLM needs to process tool results and generate next action)
@@ -1297,6 +1570,13 @@ class Agent:
 
         except Exception as e:
             yield AgentEvent.error(str(e), session_id)
+
+        finally:
+            # Update session state to idle and update activity
+            session = self.get_session(session_id)
+            if session:
+                session.set_status("idle")
+                session.update_activity()
 
     async def run(
         self,
