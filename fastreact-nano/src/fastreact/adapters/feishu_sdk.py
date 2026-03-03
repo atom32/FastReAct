@@ -19,7 +19,7 @@ try:
     from lark_oapi import Client as LarkClient
     from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
     from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
-    from lark_oapi.api.im.v1.model.p2_im_message_read_v1 import P2ImMessageReadV1
+    from lark_oapi.api.im.v1.model.p2_im_message_message_read_v1 import P2ImMessageMessageReadV1
     from lark_oapi.core.enum import LogLevel
     from lark_oapi.event.dispatcher_handler import EventDispatcherHandlerBuilder
     from lark_oapi.ws.client import Client as WSClient
@@ -33,7 +33,7 @@ except ImportError:
     # Type stubs for when SDK is not available
     LarkClient = None
     P2ImMessageReceiveV1 = None
-    P2ImMessageReadV1 = None
+    P2ImMessageMessageReadV1 = None
     LogLevel = None
     EventDispatcherHandlerBuilder = None
     WSClient = None
@@ -123,18 +123,18 @@ class FeishuSDKAdapter:
         builder.register_p2_im_message_receive_v1(self._handle_message_event_v2)
 
         # Register message read event handler (to suppress warnings)
-        builder.register_p2_im_message_read_v1(self._handle_message_read_event_v2)
+        builder.register_p2_im_message_message_read_v1(self._handle_message_read_event_v2)
 
         return builder.build()
 
-    def _handle_message_read_event_v2(self, event: P2ImMessageReadV1) -> None:
+    def _handle_message_read_event_v2(self, event: P2ImMessageMessageReadV1) -> None:
         """
         Handle message read event from Feishu (V2 API)
 
         This is a no-op handler to suppress "processor not found" warnings.
 
         Args:
-            event: Message read event (P2ImMessageReadV1)
+            event: Message read event (P2ImMessageMessageReadV1)
         """
         # Silently ignore message read events
         pass
