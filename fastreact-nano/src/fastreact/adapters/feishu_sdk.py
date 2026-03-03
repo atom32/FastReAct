@@ -473,7 +473,9 @@ class FeishuSDKAdapter:
             skills = self.agent._skills.list_skills()
             print(f"[INFO] Loaded {len(skills)} skills")
             if skills:
-                print(f"[INFO] Available skills: {', '.join(list(skills.keys())[:5])}")
+                # skills is a list, not a dict
+                skill_names = list(skills) if isinstance(skills, dict) else skills[:5]
+                print(f"[INFO] Available skills: {', '.join(skill_names)}")
 
         # Start WebSocket client (blocking)
         self._ws_client.start()
