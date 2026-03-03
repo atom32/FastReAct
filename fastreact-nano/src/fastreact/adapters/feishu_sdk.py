@@ -346,6 +346,10 @@ class FeishuSDKAdapter:
         thinking_steps = []
         tool_calls = []
 
+        print(f"[INFO] Starting agent processing for user: {user_key}")
+        print(f"[INFO] Query: {query}")
+        print(f"[INFO] Session ID: {session_id}")
+
         try:
             # Stream agent events
             async for agent_event in self.agent.run_event_stream(
@@ -354,8 +358,16 @@ class FeishuSDKAdapter:
                 user_key=user_key if self._multitenant else None,
             ):
                 # Handle different event types
-                if agent_event.type == EventType.THINK:
+                if agent_event.type == EventType.SESSION_START:
+                    print(f"[INFO] Session started")
+                    if agent_event.skills:
+                        print(f"[INFO] Selected skills: {agent_event.skills}")
+
+                elif agent_event.type == EventType.THINK:
                     thinking_steps.append(agent_event.content)
+                    # Log to console
+                    print(f"[THINK] {agent_event.content[:100]}...")
+
                     # Send thinking update (truncated for readability)
                     await self._send_text_message(
                         chat_id,
@@ -367,6 +379,10 @@ class FeishuSDKAdapter:
                         "name": agent_event.tool_name,
                         "args": agent_event.tool_args,
                     })
+                    # Log to console
+                    print(f"[TOOL] Calling {agent_event.tool_name}")
+                    print(f"[TOOL] Args: {str(agent_event.tool_args)[:100]}...")
+
                     await self._send_text_message(
                         chat_id,
                         f"🔧 正在调用工具: {agent_event.tool_name}"
@@ -374,6 +390,9 @@ class FeishuSDKAdapter:
 
                 elif agent_event.type == EventType.TOOL_RESULT:
                     result = agent_event.content
+                    # Log to console
+                    print(f"[RESULT] {result[:100]}...")
+
                     if len(result) > 200:
                         result = result[:200] + "..."
                     await self._send_text_message(
@@ -382,13 +401,18 @@ class FeishuSDKAdapter:
                     )
 
                 elif agent_event.type == EventType.SESSION_END:
-                    # Send final answer
+                    # Log final answer to console
+                    print(f"[FINAL ANSWER] {agent_event.content}")
+                    print(f"[INFO] Agent processing completed")
+
+                    # Send final answer to Feishu
                     await self._send_text_message(
                         chat_id,
                         agent_event.content
                     )
 
                 elif agent_event.type == EventType.ERROR:
+                    print(f"[ERROR] {agent_event.content}")
                     await self._send_text_message(
                         chat_id,
                         f"❌ 错误: {agent_event.content}"
@@ -397,6 +421,8 @@ class FeishuSDKAdapter:
         except Exception as e:
             import sys
             print(f"[ERROR] Agent processing failed: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
             await self._send_text_message(
                 chat_id,
                 f"❌ 处理失败: {e}"
@@ -435,6 +461,19 @@ class FeishuSDKAdapter:
         print(f"[INFO] App ID: {self.config.app_id}")
         print(f"[INFO] Multi-tenant: {self.config.enable_multitenant}")
         print(f"[INFO] Auto-reconnect: {self.config.auto_reconnect}")
+
+        # Log MCP configuration
+        if self.agent._mcp_manager:
+            print(f"[INFO] MCP Manager initialized")
+        else:
+            print(f"[INFO] MCP Manager: Will load on first request (lazy initialization)")
+
+        # Log Skills configuration
+        if hasattr(self.agent, '_skills'):
+            skills = self.agent._skills.list_skills()
+            print(f"[INFO] Loaded {len(skills)} skills")
+            if skills:
+                print(f"[INFO] Available skills: {', '.join(list(skills.keys())[:5])}")
 
         # Start WebSocket client (blocking)
         self._ws_client.start()
