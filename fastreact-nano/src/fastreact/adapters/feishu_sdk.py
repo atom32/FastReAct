@@ -360,8 +360,9 @@ class FeishuSDKAdapter:
                 # Handle different event types
                 if agent_event.type == EventType.SESSION_START:
                     print(f"[INFO] Session started")
-                    if agent_event.skills:
-                        print(f"[INFO] Selected skills: {agent_event.skills}")
+                    skills = agent_event.metadata.get("skills", [])
+                    if skills:
+                        print(f"[INFO] Selected skills: {skills}")
 
                 elif agent_event.type == EventType.THINK:
                     thinking_steps.append(agent_event.content)
