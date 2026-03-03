@@ -19,10 +19,12 @@ try:
     from lark_oapi import Client as LarkClient
     from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
     from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
+    from lark_oapi.api.im.v1.model.p2_im_message_read_v1 import P2ImMessageReadV1
     from lark_oapi.core.enum import LogLevel
     from lark_oapi.event.dispatcher_handler import EventDispatcherHandlerBuilder
     from lark_oapi.ws.client import Client as WSClient
     from lark_oapi.core.model.config import Config as LarkConfig
+    import httpx
 
     LARK_SDK_AVAILABLE = True
 except ImportError:
@@ -31,10 +33,12 @@ except ImportError:
     # Type stubs for when SDK is not available
     LarkClient = None
     P2ImMessageReceiveV1 = None
+    P2ImMessageReadV1 = None
     LogLevel = None
     EventDispatcherHandlerBuilder = None
     WSClient = None
     LarkConfig = None
+    httpx = None
 
 
 class FeishuSDKAdapter:
@@ -93,6 +97,13 @@ class FeishuSDKAdapter:
         # API client for sending messages
         self._api_client: Optional[LarkClient] = None
 
+        # HTTP client for direct API calls
+        self._http_client: Optional[httpx.AsyncClient] = None
+
+        # Access token cache
+        self._access_token: Optional[str] = None
+        self._token_expire_time: Optional[float] = None
+
         # WebSocket client (initialized in start())
         self._ws_client: Optional[WSClient] = None
 
@@ -111,7 +122,58 @@ class FeishuSDKAdapter:
         # Register message received event handler (p2 = version 2 API)
         builder.register_p2_im_message_receive_v1(self._handle_message_event_v2)
 
+        # Register message read event handler (to suppress warnings)
+        builder.register_p2_im_message_read_v1(self._handle_message_read_event_v2)
+
         return builder.build()
+
+    def _handle_message_read_event_v2(self, event: P2ImMessageReadV1) -> None:
+        """
+        Handle message read event from Feishu (V2 API)
+
+        This is a no-op handler to suppress "processor not found" warnings.
+
+        Args:
+            event: Message read event (P2ImMessageReadV1)
+        """
+        # Silently ignore message read events
+        pass
+
+    async def _get_access_token(self) -> str:
+        """
+        Get tenant access token for API calls
+
+        Returns:
+            Access token string
+        """
+        import time
+
+        # Check if token is still valid
+        if self._access_token and self._token_expire_time:
+            if time.time() < self._token_expire_time:
+                return self._access_token
+
+        # Fetch new token
+        url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+        payload = {
+            "app_id": self.config.app_id,
+            "app_secret": self.config.app_secret
+        }
+
+        if not self._http_client:
+            self._http_client = httpx.AsyncClient(timeout=30.0)
+
+        response = await self._http_client.post(url, json=payload)
+        data = response.json()
+
+        if data.get("code") != 0:
+            raise Exception(f"Failed to get access token: {data.get('msg')}")
+
+        self._access_token = data.get("tenant_access_token")
+        # Token expires in 2 hours, use 1.5 hours to be safe
+        self._token_expire_time = time.time() + 5400
+
+        return self._access_token
 
     def _handle_message_event_v2(self, event: P2ImMessageReceiveV1) -> None:
         """
@@ -202,7 +264,7 @@ class FeishuSDKAdapter:
             chat_id: Feishu chat ID
             query: User's query
         """
-        message = f"[INFO] Processing your query: {query}\n\nAgent is thinking..."
+        message = f"收到你的消息：「{query}」\n\n正在思考..."
 
         await self._send_text_message(chat_id, message)
 
@@ -218,24 +280,46 @@ class FeishuSDKAdapter:
             chat_id: Feishu chat ID
             text: Message text
         """
-        if not self._api_client:
-            print(f"[FEISHU] Would send to {chat_id}: {text}")
-            return
-
         try:
-            request = CreateMessageRequest()
-            request.body = CreateMessageRequestBody()
-            request.body.receive_id_type = "chat_id"
-            request.body.receive_id = chat_id
-            request.body.msg_type = "text"
-            request.body.content = json.dumps({"text": text})
+            # Get access token
+            access_token = await self._get_access_token()
 
-            response = await self._api_client.im.message.acreate(request)
+            # Send message via HTTP API
+            url = "https://open.feishu.cn/open-apis/im/v1/messages"
 
-            if not response.success():
-                print(f"[ERROR] Failed to send message: {response.code} - {response.msg}")
-            else:
-                print(f"[FEISHU] Message sent to {chat_id}")
+            # Build content - must be a JSON string
+            content_json = json.dumps({"text": text})
+
+            # Payload
+            payload = {
+                "receive_id": chat_id,
+                "msg_type": "text",
+                "content": content_json
+            }
+
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+
+            params = {
+                "receive_id_type": "chat_id"
+            }
+
+            if not self._http_client:
+                self._http_client = httpx.AsyncClient(timeout=30.0)
+
+            # Send with receive_id_type as query parameter
+            response = await self._http_client.post(
+                url,
+                headers=headers,
+                params=params,
+                json=payload
+            )
+            data = response.json()
+
+            if data.get("code") != 0:
+                print(f"[ERROR] Failed to send message: {data.get('msg')}")
 
         except Exception as e:
             import sys
@@ -272,10 +356,10 @@ class FeishuSDKAdapter:
                 # Handle different event types
                 if agent_event.type == EventType.THINK:
                     thinking_steps.append(agent_event.content)
-                    # Send thinking update
+                    # Send thinking update (truncated for readability)
                     await self._send_text_message(
                         chat_id,
-                        f"[THINK] {agent_event.content[:100]}..."
+                        f"💭 {agent_event.content[:100]}..."
                     )
 
                 elif agent_event.type == EventType.TOOL_CALL:
@@ -285,7 +369,7 @@ class FeishuSDKAdapter:
                     })
                     await self._send_text_message(
                         chat_id,
-                        f"[TOOL] Calling {agent_event.tool_name}"
+                        f"🔧 正在调用工具: {agent_event.tool_name}"
                     )
 
                 elif agent_event.type == EventType.TOOL_RESULT:
@@ -294,20 +378,20 @@ class FeishuSDKAdapter:
                         result = result[:200] + "..."
                     await self._send_text_message(
                         chat_id,
-                        f"[RESULT] {result}"
+                        f"📊 工具结果: {result}"
                     )
 
                 elif agent_event.type == EventType.SESSION_END:
                     # Send final answer
                     await self._send_text_message(
                         chat_id,
-                        f"[DONE]\n\n{agent_event.content}"
+                        agent_event.content
                     )
 
                 elif agent_event.type == EventType.ERROR:
                     await self._send_text_message(
                         chat_id,
-                        f"[ERROR] {agent_event.content}"
+                        f"❌ 错误: {agent_event.content}"
                     )
 
         except Exception as e:
@@ -315,7 +399,7 @@ class FeishuSDKAdapter:
             print(f"[ERROR] Agent processing failed: {e}", file=sys.stderr)
             await self._send_text_message(
                 chat_id,
-                f"[ERROR] Processing failed: {e}"
+                f"❌ 处理失败: {e}"
             )
 
     def start(self):
@@ -329,17 +413,14 @@ class FeishuSDKAdapter:
         log_level_map = {
             "debug": LogLevel.DEBUG,
             "info": LogLevel.INFO,
-            "warn": LogLevel.WARN,
+            "warn": LogLevel.WARNING,
+            "warning": LogLevel.WARNING,
             "error": LogLevel.ERROR,
         }
         log_level = log_level_map.get(self.config.log_level.lower(), LogLevel.INFO)
 
-        # Initialize API client
-        lark_config = LarkConfig.new_config_with_app_id_and_app_secret(
-            self.config.app_id,
-            self.config.app_secret
-        )
-        self._api_client = LarkClient(config=lark_config)
+        # Initialize HTTP client
+        self._http_client = httpx.AsyncClient(timeout=30.0)
 
         # Create WebSocket client
         self._ws_client = WSClient(
