@@ -354,8 +354,9 @@ class FeishuSDKAdapter:
 
             for tool in tool_calls:
                 tool_name = tool["name"]
-                # MCP tools have ":" in name (e.g., "graphrag:search")
-                if ":" in tool_name:
+                # MCP tools have "_" prefix with server name (e.g., "graphrag_search_graph")
+                # Builtin tools are simple names (e.g., "read_file", "exec")
+                if "_" in tool_name and tool_name.split("_")[0] in ["graphrag", "filesystem", "fetch", "rss"]:
                     mcp_tools.append(tool)
                 else:
                     builtin_tools.append(tool)
@@ -425,6 +426,21 @@ class FeishuSDKAdapter:
         print(f"[INFO] Session ID: {session_id}")
 
         try:
+            # Check MCP manager status before processing
+            print(f"[DEBUG] MCP Manager status: {type(self.agent._mcp_manager)}")
+            if self.agent._mcp_manager:
+                servers = self.agent._mcp_manager.list_servers()
+                print(f"[DEBUG] MCP Servers: {servers}")
+                mcp_tools = self.agent._mcp_manager.list_mcp_tools()
+                print(f"[DEBUG] MCP Tools: {mcp_tools}")
+            else:
+                print(f"[DEBUG] MCP Manager is None (will load on first run)")
+
+            # Check total tool count
+            all_tools = self.agent._tools.list_all()
+            print(f"[DEBUG] Total tools available: {len(all_tools)}")
+            print(f"[DEBUG] Tool names: {all_tools[:10]}")
+
             # Stream agent events
             async for agent_event in self.agent.run_event_stream(
                 query=query,
