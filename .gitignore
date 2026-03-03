@@ -8,9 +8,11 @@ node_modules/
 .next/
 .env*.local
 .DS_Store
+.pyc
 
 # Testing
 /coverage
+/docs_archive/v1_code/
 
 # Production
 /out/
@@ -30,3 +32,6 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+fastreact-nano-web/logs/server.log
+.claude/settings.local.json
