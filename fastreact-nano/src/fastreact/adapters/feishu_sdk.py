@@ -434,6 +434,11 @@ class FeishuSDKAdapter:
                 print(f"[DEBUG] MCP Tools loaded: {len(mcp_tools)} tools")
                 if mcp_tools:
                     print(f"[DEBUG] MCP Tool names: {mcp_tools[:10]}")
+                else:
+                    print(f"[WARNING] No MCP tools loaded! Checking server status...")
+                    # Try to get shared managers
+                    if hasattr(self.agent._mcp_manager, '_shared_managers'):
+                        print(f"[DEBUG] Shared managers: {list(self.agent._mcp_manager._shared_managers.keys())}")
             else:
                 print(f"[DEBUG] MCP Manager is None (will load on first run)")
 
@@ -441,6 +446,16 @@ class FeishuSDKAdapter:
             all_tools = self.agent._tools.list_all()
             print(f"[DEBUG] Total tools available: {len(all_tools)}")
             print(f"[DEBUG] Tool names: {all_tools[:10]}")
+
+            # Check MCP servers config
+            print(f"[DEBUG] MCP servers configured: {len(self.agent._config.mcp.servers)}")
+            for i, server in enumerate(self.agent._config.mcp.servers):
+                server_name = server.name if hasattr(server, 'name') else server.get("name", "unknown")
+                command = server.command if hasattr(server, 'command') else server.get("command", "unknown")
+                args = server.args if hasattr(server, 'args') else server.get("args", [])
+                print(f"[DEBUG]   [{i+1}] {server_name}:")
+                print(f"[DEBUG]       command: {command}")
+                print(f"[DEBUG]       args: {args}")
 
             # Stream agent events
             async for agent_event in self.agent.run_event_stream(
