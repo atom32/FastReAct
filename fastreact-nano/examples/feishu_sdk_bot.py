@@ -51,12 +51,12 @@ def main():
     print("FastReAct Nano - Feishu SDK Bot")
     print("=" * 60)
 
-    # Load configuration from file (includes MCP config)
+    # Load configuration from file (includes MCP and Feishu config)
     # Falls back to environment variables if file not found
     config = Config.load()
 
-    # Load Feishu configuration
-    feishu_config = FeishuConfig.from_env()
+    # Use Feishu config from loaded config (unified approach)
+    feishu_config = config.feishu
 
     # Validate configuration
     if not feishu_config.app_id or not feishu_config.app_secret:

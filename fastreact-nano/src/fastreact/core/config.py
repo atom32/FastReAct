@@ -278,6 +278,25 @@ class FeishuConfig:
             base_workspace=_expand_path(workspace_str) if workspace_str else None,
         )
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FeishuConfig":
+        """Create Feishu config from dictionary"""
+        workspace_str = data.get("base_workspace")
+        return cls(
+            connection_mode=data.get("connection_mode", "sdk"),
+            app_id=data.get("app_id", ""),
+            app_secret=data.get("app_secret", ""),
+            encrypt_key=data.get("encrypt_key", ""),
+            verification_token=data.get("verification_token", ""),
+            host=data.get("host", "0.0.0.0"),
+            port=data.get("port", 8001),
+            webhook_path=data.get("webhook_path", "/webhook/feishu"),
+            auto_reconnect=data.get("auto_reconnect", True),
+            log_level=data.get("log_level", "info"),
+            enable_multitenant=data.get("enable_multitenant", True),
+            base_workspace=_expand_path(workspace_str) if workspace_str else None,
+        )
+
 
 @dataclass
 class Config:
@@ -321,6 +340,7 @@ class Config:
     react: ReactConfig = field(default_factory=ReactConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
+    feishu: FeishuConfig = field(default_factory=FeishuConfig)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -466,12 +486,19 @@ class Config:
                     feishu_workspace_base=_expand_path(paths_data.get("feishu_workspace_base", "/var/fastreact/tenants/feishu")),
                 )
 
+            # Extract Feishu configuration
+            feishu_config = FeishuConfig()
+            if "feishu" in data:
+                feishu_data = data["feishu"]
+                feishu_config = FeishuConfig.from_dict(feishu_data)
+
             return cls(
                 llm=llm_config,
                 tools=tools_config,
                 react=react_config,
                 mcp=mcp_config,
                 paths=paths_config,
+                feishu=feishu_config,
             )
 
         # Fallback to environment variables
