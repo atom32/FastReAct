@@ -547,6 +547,37 @@ class FeishuSDKAdapter:
                 f"❌ 处理失败: {e}"
             )
 
+    async def _preload_mcp_servers(self) -> None:
+        """
+        Preload MCP servers before accepting user messages
+
+        This ensures MCP tools are available immediately when first message arrives.
+        """
+        print(f"[INFO] Preloading MCP servers...")
+
+        try:
+            # Trigger MCP server loading (creates manager and loads servers)
+            # For multi-tenant mode: loads shared servers only
+            # For single-tenant mode: loads all servers
+            await self.agent._load_mcp_servers()
+
+            # Check loaded tools
+            all_tools = self.agent._tools.list_all()
+            mcp_tools = []
+            if self.agent._mcp_manager:
+                mcp_tools = self.agent._mcp_manager.list_mcp_tools()
+
+            print(f"[OK] MCP preload completed")
+            print(f"[INFO] Total tools available: {len(all_tools)}")
+            print(f"[INFO] MCP tools loaded: {len(mcp_tools)}")
+
+            if mcp_tools:
+                print(f"[INFO] MCP tool names: {mcp_tools[:10]}")
+
+        except Exception as e:
+            import sys
+            print(f"[WARNING] Failed to preload MCP servers: {e}", file=sys.stderr)
+
     def start(self):
         """
         Start Feishu WebSocket connection (blocking)
@@ -566,6 +597,10 @@ class FeishuSDKAdapter:
 
         # Initialize HTTP client
         self._http_client = httpx.AsyncClient(timeout=30.0)
+
+        # Preload MCP servers asynchronously
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self._preload_mcp_servers())
 
         # Create WebSocket client
         self._ws_client = WSClient(
