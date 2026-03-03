@@ -1,108 +1,32 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# v0 runtime files (should only exist in preview, not in git)
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
 
-# Virtual environments
-venv/
-ENV/
-env/
-.venv
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Common ignores
+node_modules/
+.next/
+.env*.local
+.DS_Store
 
 # Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
+/coverage
 
-# OS
-.DS_Store
-Thumbs.db
+# Production
+/out/
+/build
 
-# Project specific
-.env
-*.log
-*.db
+# Misc
+*.pem
 
-# Sensitive configuration (CRITICAL: Never commit API keys!)
-config.json
-config.local.json
-# Exception: Allow example files
-!config.example.json
-!user_config.example.json
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# User configuration (personal API keys)
-.fastreact/
-# Exception: Allow example files in user config dir
-!.fastreact/*.example
-!.fastreact/*.example.json
+# Vercel
+.vercel
 
-# Other configuration templates
-!.env.example
-
-# Claude Code local settings
-.claude/settings.local.json
-.claude/settings.*.json
-
-# Claude Code local settings
-.claude/settings.local.json
-.claude/settings.*.json
-
-# Temporary test files
-test_*.py
-test_*.json
-verify_*.py
-# Exceptions: Keep important test scripts
-!test_config_priority.py
-!test_memory_flush_logic.py
-!tests/mcp_verification/verify_*.py
-
-# Test data directories
-test_docs/
-
-# Temporary MCP configs
-mcp_config*.json
-*_mcp_config*.json
-
-# Workspace data (runtime: user sessions, memory, configs)
-workspace/
-workspaces/*/
-!workspaces/.gitkeep
-!workspaces/default/.gitkeep
-
-# Temporary demo outputs
-demo_output.txt
-demo_live.py
-demo_clean.py
-
-# Windows temporary files
-nul
-test_workspace/
-models/
-
-# Third-party source code (reference only)
-nanobot-main/
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
