@@ -787,6 +787,7 @@ class Agent:
 
         Args:
             session_id: Unique session identifier
+            user_key: User identifier for multi-tenant mode (format: "channel:user_id")
             max_history: Maximum conversation turns to keep in memory
             followup_window_seconds: Time window for follow-up detection (default: 30s)
             max_queue_size: Maximum messages in queue (for flow control)
@@ -794,9 +795,14 @@ class Agent:
         Returns:
             AgentSession instance
 
+        Multi-tenant Support:
+        - If multitenant=True and user_key provided, auto-creates user workspace
+        - Workspace isolation: /var/fastreact/tenants/gateway/{user_key}/
+        - Each user gets their own config, skills, and memory
+
         Example:
-            agent = Agent()
-            session = agent.create_session("user-123")
+            agent = Agent(multitenant=True)
+            session = agent.create_session("session-123", user_key="web:user@example.com")
             # Use session for business logic
             await session.process_message({"type": "query", "content": "Hello"}, on_event=...)
         """
@@ -805,6 +811,14 @@ class Agent:
         # Return existing session if already exists
         if session_id in self._sessions:
             return self._sessions[session_id]
+
+        # NEW: Auto-create workspace for multi-tenant mode
+        user_context = None
+        if self._multitenant_enabled and user_key:
+            # This will auto-create user workspace with proper directory structure
+            # Exceptions will propagate to caller for validation
+            user_context = self._multitenant.get_user_context(user_key)
+            print(f"[Agent] Created/loaded workspace for user: {user_key} at {user_context.workspace}")
 
         # Create new session
         session = AgentSession(
@@ -817,6 +831,10 @@ class Agent:
 
         # Set user_key for multi-tenant session tracking
         session.user_key = user_key
+
+        # NEW: Store user_context in session for workspace access
+        if user_context:
+            session._user_context = user_context
 
         self._sessions[session_id] = session
 
@@ -1470,6 +1488,20 @@ class Agent:
                                 result=result,
                                 call_id=call_id,
                             ).to_llm_format())
+
+                            # ✅ CRITICAL: Check queue immediately after each tool execution
+                            # This allows faster response to user intervention
+                            pending = self._session_queues.get(session_id, MessageQueue())
+                            if pending and pending._messages:
+                                print(
+                                    f"[DEBUG] Post-tool checkpoint: {len(pending._messages)} messages queued after {tool_name}",
+                                    file=sys.stderr
+                                )
+                                # Don't drain here - let next inner loop handle it
+                                # Just break out of tool execution loop to speed up response
+                                has_more_tool_calls = False
+                                break
+
                         # Tools executed, prepare for next LLM call
                         executed_tools_this_iteration = True
                         has_more_tool_calls = False

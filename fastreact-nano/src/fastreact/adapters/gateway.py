@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 try:
-    from fastapi import WebSocket, WebSocketDisconnect, FastAPI
+    from fastapi import WebSocket, WebSocketDisconnect, FastAPI, Request
     from fastapi.responses import HTMLResponse, JSONResponse
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
@@ -24,6 +24,7 @@ try:
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
+    Request = None  # Placeholder for type hints
 
 try:
     import psutil
@@ -53,35 +54,59 @@ class Session:
 
     This class is now a THIN wrapper around AgentSession.
     All business logic (history, follow-ups, state) is in AgentSession.
+
+    Multi-tenant Support:
+    - Each user gets their own Agent instance
+    - User identification via user_key query parameter
+    - Workspace isolation per user
+    - Configurable single-tenant fallback mode
     """
 
     def __init__(
         self,
         session_id: str,
         websocket: WebSocket,
+        user_key: str = "web:default",  # User identifier
         config: Optional["Config"] = None,
         max_queue_size: int = 5,
         base_workspace: Optional[Path] = None,
         max_history: int = 50,
+        multitenant_enabled: bool = True,  # NEW: Enable/disable multi-tenant mode
     ):
         self.session_id = session_id
         self.websocket = websocket
+        self.user_key = user_key
         self.created_at = datetime.now(timezone.utc)
         self.last_activity = datetime.now(timezone.utc)
 
         # Background task reference
         self._processing_task: Optional[asyncio.Task] = None
 
-        # NOTE: Gateway runs in single-tenant mode (no user authentication)
-        # If you need multi-tenant support, implement user auth first
-        self.agent = Agent(
-            config=config,
-            multitenant=False,  # Single-tenant mode (cannot distinguish users)
-        )
+        # Determine workspace path
+        workspace_path = base_workspace or Path.cwd() / "workspaces"
 
-        # Create AgentSession for business logic (NEW: all business logic here)
+        # Multi-tenant or single-tenant mode
+        self.multitenant_enabled = multitenant_enabled
+
+        if multitenant_enabled:
+            # Multi-tenant mode - create per-user Agent
+            self.agent = Agent(
+                config=config,
+                multitenant=True,  # Enable multi-tenant mode
+                base_workspace=workspace_path,
+            )
+        else:
+            # Single-tenant mode - all users share same Agent
+            self.agent = Agent(
+                config=config,
+                multitenant=False,  # Single-tenant mode
+            )
+
+        # Create AgentSession for business logic (all business logic here)
+        # Pass user_key for multi-tenant session tracking (only used in multi-tenant mode)
         self.agent_session = self.agent.create_session(
             session_id=session_id,
+            user_key=user_key if multitenant_enabled else None,
             max_history=max_history,
             followup_window_seconds=30,
             max_queue_size=max_queue_size,
@@ -142,18 +167,44 @@ class SessionManager:
     def __init__(self):
         self._sessions: Dict[str, Session] = {}
 
-    async def connect(self, websocket: WebSocket) -> Session:
-        """Accept connection and create session"""
+    async def connect(
+        self,
+        websocket: WebSocket,
+        user_key: str = "web:default",
+        multitenant_enabled: bool = True,
+        config: Optional["Config"] = None,
+    ) -> Session:
+        """
+        Accept connection and create session
+
+        Args:
+            websocket: WebSocket connection
+            user_key: User identifier (format: "channel:user_id")
+            multitenant_enabled: Enable multi-tenant mode
+            config: Configuration object
+
+        Returns:
+            Session instance
+        """
         await websocket.accept()
 
         session_id = str(uuid.uuid4())
-        session = Session(session_id, websocket)
+        session = Session(
+            session_id,
+            websocket,
+            user_key=user_key,
+            config=config,
+            multitenant_enabled=multitenant_enabled,
+        )
         self._sessions[session_id] = session
 
+        mode = "multi-tenant" if multitenant_enabled else "single-tenant"
         await session.send({
             "type": "connected",
             "session_id": session_id,
-            "message": "Connected to FastReAct Nano Gateway",
+            "user_key": user_key,
+            "mode": mode,  # NEW: Include mode in connection message
+            "message": f"Connected to FastReAct Nano Gateway ({mode} mode)",
         })
 
         return session
@@ -183,6 +234,55 @@ _session_manager = SessionManager()
 # Global metrics
 _gateway_start_time = datetime.now(timezone.utc)
 _total_events_counter = 0
+
+# Admin authentication (loaded from config at runtime)
+ADMIN_API_KEY = None
+
+
+def get_admin_api_key() -> str:
+    """Get admin API key from configuration or environment"""
+    global ADMIN_API_KEY
+
+    if ADMIN_API_KEY is None:
+        # Try environment variable first (backward compatibility)
+        ADMIN_API_KEY = os.getenv("GATEWAY_ADMIN_KEY")
+
+        if ADMIN_API_KEY is None:
+            # Try loading from config file
+            try:
+                config = Config.load()
+                ADMIN_API_KEY = config.gateway.admin_api_key
+            except Exception:
+                # Fallback to default
+                ADMIN_API_KEY = "admin-secret-key-change-in-production"
+
+    return ADMIN_API_KEY
+
+
+def verify_admin(request) -> bool:
+    """
+    Verify admin access
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        True if authenticated, False otherwise
+    """
+    expected_key = get_admin_api_key()
+
+    # Check API key in header
+    api_key = request.headers.get("X-Admin-Key")
+    if api_key:
+        return api_key == expected_key
+
+    # For GET requests, check query params
+    if hasattr(request, "query_params"):
+        api_key = request.query_params.get("admin_key")
+        if api_key:
+            return api_key == expected_key
+
+    return False
 
 
 def create_gateway_app() -> FastAPI:
@@ -276,6 +376,7 @@ def create_gateway_app() -> FastAPI:
             if session:
                 sessions.append({
                     "session_id": session.session_id,
+                    "user_key": getattr(session, 'user_key', 'unknown'),  # NEW: Include user_key
                     "created_at": session.created_at.isoformat(),
                     "last_active": session.last_activity.isoformat(),
                     "status": "active",
@@ -412,7 +513,11 @@ def create_gateway_app() -> FastAPI:
         import asyncio
 
         config = Config.load()
-        agent = Agent(config=config)
+
+        # Determine multi-tenant mode from configuration
+        multitenant_enabled = config.gateway.enable_multitenant
+
+        agent = Agent(config=config, multitenant=multitenant_enabled)
 
         # Load MCP servers to get status
         mcp_loaded = False
@@ -463,8 +568,8 @@ def create_gateway_app() -> FastAPI:
                     "servers": mcp_servers_info
                 },
                 "multi_tenant": {
-                    "enabled": False,
-                    "mode": "single-tenant (Gateway)"
+                    "enabled": multitenant_enabled,
+                    "mode": "multi-tenant (per-user workspace isolation)" if multitenant_enabled else "single-tenant (shared workspace)"
                 }
             }
         }
@@ -555,10 +660,408 @@ def create_gateway_app() -> FastAPI:
             "active_sessions": _session_manager.count,
         }
 
+    # ===== Admin Monitoring Endpoints =====
+
+    @app.get("/admin/sessions")
+    async def admin_list_sessions(request: Request):
+        """
+        Admin endpoint: List all active sessions
+
+        Requires admin authentication via X-Admin-Key header or admin_key query param
+        """
+        if not verify_admin(request):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized. Valid admin API key required."}
+            )
+
+        sessions = []
+        for session_id in _session_manager.list_all():
+            session = _session_manager.get(session_id)
+            if session:
+                sessions.append({
+                    "session_id": session.session_id,
+                    "user_key": getattr(session, 'user_key', 'unknown'),
+                    "created_at": session.created_at.isoformat(),
+                    "last_activity": session.last_activity.isoformat(),
+                    "status": "active",
+                })
+
+        return {
+            "total": len(sessions),
+            "sessions": sessions,
+        }
+
+    @app.get("/admin/users")
+    async def admin_list_users(request: Request):
+        """
+        Admin endpoint: List all users with active sessions
+
+        Requires admin authentication via X-Admin-Key header or admin_key query param
+        """
+        if not verify_admin(request):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized. Valid admin API key required."}
+            )
+
+        # Aggregate sessions by user
+        users = {}
+        for session_id in _session_manager.list_all():
+            session = _session_manager.get(session_id)
+            if session:
+                user_key = getattr(session, 'user_key', 'unknown')
+                if user_key not in users:
+                    users[user_key] = {
+                        "user_key": user_key,
+                        "active_sessions": 0,
+                        "total_sessions": 0,
+                    }
+                users[user_key]["active_sessions"] += 1
+                users[user_key]["total_sessions"] += 1
+
+        return {
+            "total_users": len(users),
+            "users": list(users.values()),
+        }
+
+    @app.get("/admin/metrics")
+    async def admin_metrics(request: Request):
+        """
+        Admin endpoint: System performance metrics
+
+        Requires admin authentication via X-Admin-Key header or admin_key query param
+        """
+        if not verify_admin(request):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized. Valid admin API key required."}
+            )
+
+        # System metrics
+        cpu_usage = 0
+        memory_info = {"percent": 0, "available": 0, "total": 0}
+
+        if PSUTIL_AVAILABLE:
+            try:
+                cpu_usage = psutil.cpu_percent(interval=0.1)
+                memory = psutil.virtual_memory()
+                memory_info = {
+                    "percent": memory.percent,
+                    "available": memory.available,
+                    "total": memory.total,
+                }
+            except Exception:
+                pass
+
+        # Gateway metrics
+        active_sessions = _session_manager.count
+        uptime_seconds = int((datetime.now(timezone.utc) - _gateway_start_time).total_seconds())
+
+        return {
+            "system": {
+                "cpu_usage": cpu_usage,
+                "memory_usage": memory_info["percent"],
+                "memory_available": memory_info["available"],
+                "memory_total": memory_info["total"],
+            },
+            "gateway": {
+                "active_sessions": active_sessions,
+                "uptime": uptime_seconds,
+                "total_events": _total_events_counter,
+            },
+        }
+
+    @app.get("/admin/user/{user_key}")
+    async def admin_get_user_info(user_key: str, request: Request):
+        """
+        Admin endpoint: Get user information (read-only)
+
+        Requires admin authentication via X-Admin-Key header or admin_key query param
+
+        NOTE: Only shows metadata, NOT user data (privacy protection)
+        """
+        if not verify_admin(request):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized. Valid admin API key required."}
+            )
+
+        # Get user workspace path (if multi-tenant)
+        try:
+            from fastreact.core.multitenant import MultiTenantManager
+
+            # Use default workspace path
+            from pathlib import Path as LibPath
+            workspace_path = LibPath.cwd() / "workspaces"
+            manager = MultiTenantManager(workspace_path)
+
+            try:
+                workspace = manager.get_user_workspace(user_key)
+
+                # Get workspace metadata (not content)
+                import os
+                stat = workspace.stat()
+
+                # Calculate workspace size
+                workspace_size = sum(
+                    f.stat().st_size for f in workspace.rglob('*') if f.is_file()
+                )
+
+                return {
+                    "user_key": user_key,
+                    "workspace_path": str(workspace),
+                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "size_bytes": workspace_size,
+                    "size_human": f"{workspace_size / 1024:.2f} KB" if workspace_size < 1024 * 1024 else f"{workspace_size / (1024 * 1024):.2f} MB",
+                    # NOTE: Does NOT expose user data (privacy)
+                }
+            except ValueError as e:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": f"User not found: {user_key}", "detail": str(e)}
+                )
+        except Exception as e:
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Failed to get user info", "detail": str(e)}
+            )
+
+    @app.get("/admin")
+    async def admin_dashboard():
+        """
+        Admin dashboard (HTML)
+
+        Requires admin authentication via API key prompt
+        """
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>FastReAct Nano - Admin Dashboard</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+                .container { max-width: 1400px; margin: 0 auto; }
+                h1 { color: #333; margin-bottom: 20px; }
+                h2 { color: #555; margin-top: 30px; margin-bottom: 15px; font-size: 18px; }
+                .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+                .metric { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                .metric-label { color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+                .metric-value { font-size: 32px; font-weight: bold; color: #333; margin-top: 10px; }
+                table { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 100%; }
+                th { background: #4CAF50; color: white; padding: 12px; text-align: left; font-weight: 500; }
+                td { padding: 12px; border-bottom: 1px solid #eee; }
+                tr:last-child td { border-bottom: none; }
+                .login-form { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 400px; margin: 100px auto; }
+                .login-form input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
+                .login-form button { width: 100%; padding: 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+                .login-form button:hover { background: #45a049; }
+                .error { color: #f44336; margin-top: 10px; }
+                .badge { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+                .badge-web { background: #2196F3; color: white; }
+                .badge-mobile { background: #FF9800; color: white; }
+                .badge-api { background: #9C27B0; color: white; }
+                .badge-default { background: #9E9E9E; color: white; }
+            </style>
+        </head>
+        <body>
+            <div id="login" class="login-form">
+                <h1 style="text-align: center; margin-bottom: 20px;">Admin Login</h1>
+                <input type="password" id="adminKey" placeholder="Enter Admin API Key">
+                <button onclick="login()">Login</button>
+                <div id="loginError" class="error"></div>
+            </div>
+
+            <div id="dashboard" class="container" style="display: none;">
+                <h1>FastReAct Nano - Admin Dashboard</h1>
+
+                <div id="metrics"></div>
+
+                <h2>Users</h2>
+                <div id="users"></div>
+
+                <h2>Active Sessions</h2>
+                <div id="sessions"></div>
+            </div>
+
+            <script>
+                let ADMIN_KEY = '';
+
+                function login() {
+                    ADMIN_KEY = document.getElementById('adminKey').value;
+                    loadDashboard();
+                }
+
+                async function loadDashboard() {
+                    try {
+                        // Test authentication with metrics endpoint
+                        await loadMetrics();
+                        document.getElementById('login').style.display = 'none';
+                        document.getElementById('dashboard').style.display = 'block';
+                        document.getElementById('loginError').textContent = '';
+                    } catch (error) {
+                        document.getElementById('loginError').textContent = 'Invalid admin API key';
+                    }
+                }
+
+                async function loadMetrics() {
+                    const res = await fetch(`/admin/metrics?admin_key=${ADMIN_KEY}`);
+                    if (!res.ok) throw new Error('Unauthorized');
+                    const data = await res.json();
+
+                    document.getElementById('metrics').innerHTML = `
+                        <div class="metrics">
+                            <div class="metric">
+                                <div class="metric-label">CPU Usage</div>
+                                <div class="metric-value">${data.system.cpu_usage.toFixed(1)}%</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Memory Usage</div>
+                                <div class="metric-value">${data.system.memory_usage.toFixed(1)}%</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Active Sessions</div>
+                                <div class="metric-value">${data.gateway.active_sessions}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Uptime</div>
+                                <div class="metric-value">${Math.floor(data.gateway.uptime / 60)} min</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                async function loadUsers() {
+                    const res = await fetch(`/admin/users?admin_key=${ADMIN_KEY}`);
+                    if (!res.ok) throw new Error('Unauthorized');
+                    const data = await res.json();
+
+                    if (data.users.length === 0) {
+                        document.getElementById('users').innerHTML = '<p style="color: #666;">No active users</p>';
+                        return;
+                    }
+
+                    let html = '<table><thead><tr><th>User</th><th>Active Sessions</th></tr></thead><tbody>';
+                    data.users.forEach(user => {
+                        const channel = user.user_key.split(':')[0];
+                        const badgeClass = `badge-${channel}`;
+                        html += `<tr>
+                            <td><span class="badge ${badgeClass}">${user.user_key}</span></td>
+                            <td>${user.active_sessions}</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table>';
+
+                    document.getElementById('users').innerHTML = html;
+                }
+
+                async function loadSessions() {
+                    const res = await fetch(`/admin/sessions?admin_key=${ADMIN_KEY}`);
+                    if (!res.ok) throw new Error('Unauthorized');
+                    const data = await res.json();
+
+                    if (data.sessions.length === 0) {
+                        document.getElementById('sessions').innerHTML = '<p style="color: #666;">No active sessions</p>';
+                        return;
+                    }
+
+                    let html = '<table><thead><tr><th>Session ID</th><th>User</th><th>Created At</th><th>Last Activity</th></tr></thead><tbody>';
+                    data.sessions.forEach(session => {
+                        const channel = session.user_key.split(':')[0];
+                        const badgeClass = `badge-${channel}`;
+                        html += `<tr>
+                            <td style="font-family: monospace; font-size: 12px;">${session.session_id.substring(0, 8)}...</td>
+                            <td><span class="badge ${badgeClass}">${session.user_key}</span></td>
+                            <td>${new Date(session.created_at).toLocaleString()}</td>
+                            <td>${new Date(session.last_activity).toLocaleString()}</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table>';
+
+                    document.getElementById('sessions').innerHTML = html;
+                }
+
+                // Load dashboard data on login
+                function loadDashboard() {
+                    loadMetrics().then(() => {
+                        loadUsers();
+                        loadSessions();
+                    }).catch(() => {
+                        document.getElementById('loginError').textContent = 'Invalid admin API key';
+                    });
+                }
+
+                // Auto-refresh every 5 seconds
+                setInterval(() => {
+                    if (ADMIN_KEY) {
+                        loadMetrics();
+                        loadUsers();
+                        loadSessions();
+                    }
+                }, 5000);
+
+                // Handle Enter key on password field
+                document.getElementById('adminKey').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') login();
+                });
+            </script>
+        </body>
+        </html>
+        """)
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
-        """WebSocket endpoint for real-time communication"""
-        session = await _session_manager.connect(websocket)
+        """
+        WebSocket endpoint for real-time communication
+
+        Multi-tenant Support (default):
+        - Extract user_key from query parameters (format: ?user_key=web:user@example.com)
+        - Default user_key: "web:default" (temporary user, data not persisted)
+        - Each user gets isolated workspace and Agent instance
+
+        Single-tenant Fallback:
+        - If gateway.multitenant=false in config, all users share same workspace
+        - Recommended for Admin-only deployments
+
+        Examples:
+        - ws://localhost:9000/ws
+        - ws://localhost:9000/ws?user_key=web:user@example.com
+        - ws://localhost:9000/ws?user_key=mobile:user123
+        """
+        # Load configuration
+        config = Config.load()
+
+        # Check multi-tenant mode from configuration
+        multitenant_enabled = config.gateway.enable_multitenant
+
+        if not multitenant_enabled:
+            print("[Gateway] Running in single-tenant mode (all users share workspace)")
+        else:
+            print("[Gateway] Running in multi-tenant mode (per-user workspace isolation)")
+
+        # Extract user_key from query params
+        user_key = websocket.query_params.get("user_key", "web:default")
+
+        # Validate user_key format (only in multi-tenant mode)
+        if multitenant_enabled and ":" not in user_key:
+            await websocket.accept()
+            await websocket.send_json({
+                "type": "error",
+                "content": f"Invalid user_key format: '{user_key}'. Expected format: 'channel:user_id' (e.g., 'web:user@example.com')",
+            })
+            await websocket.close()
+            return
+
+        print(f"[Gateway] WebSocket connection - user_key: {user_key}, mode: {'multi-tenant' if multitenant_enabled else 'single-tenant'}")
+
+        session = await _session_manager.connect(
+            websocket,
+            user_key=user_key,
+            multitenant_enabled=multitenant_enabled,
+            config=config,
+        )
         session_id = session.session_id
 
         # Start background queue processing task
@@ -608,19 +1111,19 @@ def create_gateway_app() -> FastAPI:
 
 
 def run_gateway(
-    host: str = "0.0.0.0",
-    port: int = 9000,
-    log_level: str = "info",
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    log_level: Optional[str] = None,
     base_workspace: Optional[Path] = None,
 ):
     """
     Run WebSocket gateway server
 
     Args:
-        host: Host to bind to
-        port: Port to bind to
-        log_level: Log level
-        base_workspace: Base directory for user workspaces (default: ./workspace)
+        host: Host to bind to (default: from config or 0.0.0.0)
+        port: Port to bind to (default: from config or 9000)
+        log_level: Log level (default: from config or info)
+        base_workspace: Base directory for user workspaces (default: from config or ./workspace)
     """
     if not FASTAPI_AVAILABLE:
         print("[ERROR] FastAPI not available")
@@ -633,9 +1136,22 @@ def run_gateway(
     # Load configuration first
     config = Config.load()
 
+    # Use config values or fallback to parameters
+    host = host or config.gateway.host
+    port = port or config.gateway.port
+    log_level = log_level or config.gateway.log_level
+
     # Create workspace directory using configured path
     workspace_path = base_workspace or config.paths.gateway_workspace
     workspace_path.mkdir(parents=True, exist_ok=True)
+
+    # Log configuration
+    print(f"[INFO] Gateway Configuration:")
+    print(f"  - Multi-tenant: {config.gateway.enable_multitenant}")
+    print(f"  - Admin only: {config.gateway.admin_only}")
+    print(f"  - Host: {host}")
+    print(f"  - Port: {port}")
+    print(f"  - Workspace: {workspace_path}")
 
     # Log MCP server configuration
     if config.mcp.servers:
@@ -649,7 +1165,6 @@ def run_gateway(
     app = create_gateway_app()
 
     print(f"[INFO] Gateway starting on {host}:{port}")
-    print(f"[INFO] Workspace: {workspace_path}")
 
     uvicorn.run(
         app,

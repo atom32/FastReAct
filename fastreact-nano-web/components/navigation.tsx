@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { Settings, ShoppingBag, Rocket, Palette } from "lucide-react"
 import { useState, useEffect } from "react"
 import type { ConnectionStatus } from "@/lib/chat-types"
+import { UserSettings } from "@/components/chat/user-settings"
 
 interface NavigationProps {
   chatStatus?: ConnectionStatus
@@ -60,7 +61,7 @@ export function Navigation({ chatStatus, onToggleThemePalette, userInterventionC
           {/* Right side */}
           <div className="flex items-center gap-1">
             {isChatPage ? (
-              // Chat page: Show connection status, intervention count, theme button, and links
+              // Chat page: Show connection status, intervention count, theme button, user settings, and links
               <>
                 {/* Connection Status */}
                 {chatStatus && (
@@ -106,6 +107,9 @@ export function Navigation({ chatStatus, onToggleThemePalette, userInterventionC
                     <Palette className="h-4 w-4 text-white" />
                   </button>
                 )}
+
+                {/* User Settings (Multi-tenant Support) */}
+                <UserSettings />
 
                 <Link
                   href="/admin"

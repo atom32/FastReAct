@@ -8,8 +8,11 @@ This is the "ultimate form" - no webhook, no public network exposure needed.
 import asyncio
 import json
 import uuid
+import os
+import sys
 from typing import Optional, Callable
 from pathlib import Path
+from datetime import datetime
 
 from fastreact import Agent, EventType
 from fastreact.core.config import FeishuConfig
@@ -39,6 +42,49 @@ except ImportError:
     WSClient = None
     LarkConfig = None
     httpx = None
+
+
+# Verbose logging support
+_VERBOSE = os.getenv("FEISHU_VERBOSE", "false").lower() == "true"
+
+
+def _log(level: str, message: str):
+    """
+    Log message with timestamp if verbose mode is enabled
+
+    Args:
+        level: Log level (INFO, DEBUG, WARNING, ERROR)
+        message: Message to log
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Always log INFO and above
+    if level in ["INFO", "WARNING", "ERROR"]:
+        print(f"[{level}] {message}", file=sys.stderr if level == "ERROR" else sys.stdout)
+
+    # Only log DEBUG in verbose mode
+    elif level == "DEBUG" and _VERBOSE:
+        print(f"[{timestamp}] [DEBUG] {message}")
+
+
+def _log_debug(message: str):
+    """Log debug message (only in verbose mode)"""
+    _log("DEBUG", message)
+
+
+def _log_info(message: str):
+    """Log info message (always)"""
+    _log("INFO", message)
+
+
+def _log_warning(message: str):
+    """Log warning message (always)"""
+    _log("WARNING", message)
+
+
+def _log_error(message: str):
+    """Log error message (always)"""
+    _log("ERROR", message)
 
 
 class FeishuSDKAdapter:
@@ -638,3 +684,49 @@ class FeishuSDKAdapter:
 
         # Start WebSocket client (blocking)
         self._ws_client.start()
+
+
+def run_feishu_sdk():
+    """
+    Run Feishu SDK adapter (WebSocket long connection mode)
+
+    This is the recommended mode for Feishu integration:
+    - No webhook server needed
+    - No public network exposure needed
+    - Uses Lark SDK WebSocket long connection
+    - Automatic reconnection
+    - Multi-tenant user isolation
+    """
+    from fastreact.core.config import Config
+
+    # Load configuration
+    config = Config.load()
+    feishu_config = config.feishu
+
+    # Validate required credentials
+    if not feishu_config.app_id or not feishu_config.app_secret:
+        print("[ERROR] FEISHU_APP_ID and FEISHU_APP_SECRET are required")
+        print("[ERROR] Please set them in ~/.fastreact/config.json:")
+        print("")
+        print('{')
+        print('  "feishu": {')
+        print('    "app_id": "cli_xxxxxxxxx",')
+        print('    "app_secret": "your_app_secret",')
+        print('    "connection_mode": "sdk",')
+        print('    "enable_multitenant": true')
+        print('  }')
+        print('}')
+        return
+
+    # Create Agent instance
+    agent = Agent(config=config)
+
+    # Create Feishu SDK adapter
+    adapter = FeishuSDKAdapter(agent=agent, config=feishu_config)
+
+    # Start WebSocket long connection (blocking)
+    adapter.start()
+
+
+if __name__ == "__main__":
+    run_feishu_sdk()

@@ -232,6 +232,47 @@ class PathsConfig:
 
 
 @dataclass
+class GatewayConfig:
+    """Gateway (WebSocket) configuration"""
+
+    # Multi-tenant mode
+    enable_multitenant: bool = True  # Default: multi-tenant mode enabled
+    admin_only: bool = False  # Restrict to admin only (for single-tenant mode)
+
+    # Server configuration
+    host: str = "0.0.0.0"
+    port: int = 9000
+    log_level: str = "info"
+
+    # Admin API
+    admin_api_key: str = "admin-secret-key-change-in-production"
+
+    @classmethod
+    def from_env(cls) -> "GatewayConfig":
+        """Create Gateway config from environment variables"""
+        return cls(
+            enable_multitenant=os.getenv("GATEWAY_MULTITENANT", "true").lower() == "true",
+            admin_only=os.getenv("GATEWAY_ADMIN_ONLY", "false").lower() == "true",
+            host=os.getenv("GATEWAY_HOST", "0.0.0.0"),
+            port=int(os.getenv("GATEWAY_PORT", "9000")),
+            log_level=os.getenv("GATEWAY_LOG_LEVEL", "info"),
+            admin_api_key=os.getenv("GATEWAY_ADMIN_KEY", "admin-secret-key-change-in-production"),
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "GatewayConfig":
+        """Create Gateway config from dictionary"""
+        return cls(
+            enable_multitenant=data.get("enable_multitenant", True),
+            admin_only=data.get("admin_only", False),
+            host=data.get("host", "0.0.0.0"),
+            port=data.get("port", 9000),
+            log_level=data.get("log_level", "info"),
+            admin_api_key=data.get("admin_api_key", "admin-secret-key-change-in-production"),
+        )
+
+
+@dataclass
 class FeishuConfig:
     """Feishu (Lark) channel configuration"""
 
@@ -340,6 +381,7 @@ class Config:
     react: ReactConfig = field(default_factory=ReactConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
+    gateway: GatewayConfig = field(default_factory=GatewayConfig)
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
 
     @classmethod
@@ -492,12 +534,19 @@ class Config:
                 feishu_data = data["feishu"]
                 feishu_config = FeishuConfig.from_dict(feishu_data)
 
+            # Extract Gateway configuration
+            gateway_config = GatewayConfig()
+            if "gateway" in data:
+                gateway_data = data["gateway"]
+                gateway_config = GatewayConfig.from_dict(gateway_data)
+
             return cls(
                 llm=llm_config,
                 tools=tools_config,
                 react=react_config,
                 mcp=mcp_config,
                 paths=paths_config,
+                gateway=gateway_config,
                 feishu=feishu_config,
             )
 

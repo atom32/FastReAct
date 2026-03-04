@@ -4,9 +4,20 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import type { ChatEvent, ConnectionStatus } from "@/lib/chat-types"
 
 // 自动检测：如果是局域网访问，使用本机 IP；否则用 localhost
-const GATEWAY_URL = typeof window !== 'undefined'
-  ? `ws://${window.location.hostname}:9000/ws`
-  : "ws://localhost:9000/ws"
+const getGatewayUrl = (userKey?: string): string => {
+  const baseUrl = typeof window !== 'undefined'
+    ? `ws://${window.location.hostname}:9000/ws`
+    : "ws://localhost:9000/ws"
+
+  // 添加 user_key 参数（多租户支持）
+  if (userKey && userKey !== "web:default") {
+    const url = new URL(baseUrl)
+    url.searchParams.set("user_key", userKey)
+    return url.toString().replace("wss://", "ws://").replace("https://", "http://")
+  }
+
+  return baseUrl
+}
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -17,6 +28,48 @@ const log = isDev
 
 const logError = (...args: any[]) => console.error('[WebSocket]', ...args)
 
+// 用户管理
+const USER_STORAGE_KEY = "fastreact_user"
+
+export interface UserInfo {
+  userKey: string
+  email?: string
+  isLoggedIn: boolean
+}
+
+function getUserInfo(): UserInfo {
+  if (typeof window === 'undefined') {
+    return { userKey: "web:default", isLoggedIn: false }
+  }
+
+  try {
+    const stored = localStorage.getItem(USER_STORAGE_KEY)
+    if (stored) {
+      return JSON.parse(stored)
+    }
+  } catch (error) {
+    logError("Failed to load user info:", error)
+  }
+
+  return { userKey: "web:default", isLoggedIn: false }
+}
+
+function setUserInfo(userInfo: UserInfo) {
+  if (typeof window === 'undefined') return
+
+  try {
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userInfo))
+  } catch (error) {
+    logError("Failed to save user info:", error)
+  }
+}
+
+function generateUserKey(email: string): string {
+  // 将邮箱转换为 user_key 格式：web:email@example.com
+  const sanitizedEmail = email.toLowerCase().trim()
+  return `web:${sanitizedEmail}`
+}
+
 interface WebSocketMessage {
   type: string
   content?: string
@@ -24,6 +77,8 @@ interface WebSocketMessage {
   tool_name?: string
   tool_args?: Record<string, any>
   session_id?: string
+  user_key?: string
+  mode?: string
   metadata?: Record<string, any>
   reason?: string
 }
@@ -34,7 +89,7 @@ interface UseFastReActWSOptions {
   onConfirmationRequired?: (data: {
     reason: string
     tool_name: string
-    tool_args: Record<string, any>
+    tool_args?: Record<string, any>
   }) => void
   onStatusChange?: (status: ConnectionStatus) => void
   onError?: (error: string) => void
@@ -50,14 +105,31 @@ class WebSocketManager {
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
   private isConnecting = false
+  private currentUserKey: string = "web:default"
 
-  private constructor() {}
+  private constructor() {
+    // Load user key on init
+    this.currentUserKey = getUserInfo().userKey
+  }
 
   static getInstance(): WebSocketManager {
     if (!WebSocketManager.instance) {
       WebSocketManager.instance = new WebSocketManager()
     }
     return WebSocketManager.instance
+  }
+
+  setUserKey(userKey: string) {
+    if (this.currentUserKey !== userKey) {
+      this.currentUserKey = userKey
+      // Reconnect with new user key
+      this.disconnect()
+      this.connect()
+    }
+  }
+
+  getUserKey(): string {
+    return this.currentUserKey
   }
 
   subscribe(callback: (msg: WebSocketMessage) => void) {
@@ -93,13 +165,15 @@ class WebSocketManager {
 
     this.isConnecting = true
     this.notifyStatus("connecting")
-    log("Connecting to", GATEWAY_URL)
+
+    const gatewayUrl = getGatewayUrl(this.currentUserKey)
+    log("Connecting to", gatewayUrl, "as", this.currentUserKey)
 
     try {
-      this.ws = new WebSocket(GATEWAY_URL)
+      this.ws = new WebSocket(gatewayUrl)
 
       this.ws.onopen = () => {
-        log("Connection established")
+        log("Connection established as", this.currentUserKey)
         this.isConnecting = false
         this.reconnectAttempts = 0
         this.notifyStatus("connected")
@@ -174,6 +248,7 @@ export function useFastReActWS({
   onError,
 }: UseFastReActWSOptions) {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected")
+  const [currentUser, setCurrentUser] = useState<UserInfo>(getUserInfo)
 
   // Use refs to store callbacks and avoid recreating subscriptions
   const onEventRef = useRef(onEvent)
@@ -215,6 +290,11 @@ export function useFastReActWS({
         })
       } else if (message.type === "error" && onErrorRef.current) {
         onErrorRef.current(message.content || "Unknown error")
+      } else if (message.type === "connected") {
+        // Handle connection message with user info
+        if (message.user_key) {
+          log("Connected as user:", message.user_key, "Mode:", message.mode)
+        }
       }
     })
 
@@ -247,9 +327,44 @@ export function useFastReActWS({
     })
   }, [])
 
+  const login = useCallback((email: string) => {
+    const userKey = generateUserKey(email)
+    const userInfo: UserInfo = {
+      userKey,
+      email,
+      isLoggedIn: true,
+    }
+    setUserInfo(userInfo)
+    setCurrentUser(userInfo)
+
+    // Update WebSocket manager
+    const manager = WebSocketManager.getInstance()
+    manager.setUserKey(userKey)
+
+    log("Logged in as:", email, "->", userKey)
+  }, [])
+
+  const logout = useCallback(() => {
+    const userInfo: UserInfo = {
+      userKey: "web:default",
+      isLoggedIn: false,
+    }
+    setUserInfo(userInfo)
+    setCurrentUser(userInfo)
+
+    // Update WebSocket manager
+    const manager = WebSocketManager.getInstance()
+    manager.setUserKey("web:default")
+
+    log("Logged out, using default user")
+  }, [])
+
   return {
     status,
     sendMessage,
     stopAgent,
+    currentUser,
+    login,
+    logout,
   }
 }
