@@ -59,7 +59,16 @@
 
 ---
 
-## Other Documentation (docs/)
+## System Documentation (docs/)
+
+### System Architecture
+- **[SYSTEM_FLOW.md](../SYSTEM_FLOW.md)** - Complete system flow and execution loop
+- **[EXECUTION_LOOP_AUDIT.md](../EXECUTION_LOOP_AUDIT.md)** - ReAct loop audit and improvements
+
+### Session Management
+- **[AGENT_SESSION_API.md](../AGENT_SESSION_API.md)** - Session API reference
+- **[AGENT_SESSION_API_SUMMARY.md](../AGENT_SESSION_API_SUMMARY.md)** - Session API summary
+- **[USER_INTERRUPTION_DEBUG.md](../USER_INTERRUPTION_DEBUG.md)** - User interruption debugging
 
 ### Feature Documentation
 - **[FRONTEND_POLISH_COMPLETE.md](../FRONTEND_POLISH_COMPLETE.md)** - Frontend improvements
@@ -76,6 +85,21 @@
 ## Archive (docs_archive/)
 
 ### Historical Reference Only
+
+#### Analysis Documents (2025-03-04)
+- **[GATEWAY_USER_INTERVENTION_FIX.md](../docs_archive/GATEWAY_USER_INTERVENTION_FIX.md)** - Gateway user intervention optimization
+- **[GATEWAY_VS_FEISHU_INTERVENTION.md](../docs_archive/GATEWAY_VS_FEISHU_INTERVENTION.md)** - API comparison analysis
+- **[FEISHU_SDK_ARCHITECTURE_ANALYSIS.md](../docs_archive/FEISHU_SDK_ARCHITECTURE_ANALYSIS.md)** - Feishu SDK architecture review
+- **[BASE_ADAPTER_ANALYSIS.md](../docs_archive/BASE_ADAPTER_ANALYSIS.md)** - BaseAdapter design problems
+- **[ADAPTERS_DEPRECATION_ANALYSIS.md](../docs_archive/ADAPTERS_DEPRECATION_ANALYSIS.md)** - Adapter deprecation recommendations
+
+#### Implementation Reports (2025-03)
+- **[MULTITENANT_IMPLEMENTATION_SUMMARY.md](../docs_archive/MULTITENANT_IMPLEMENTATION_SUMMARY.md)** - Multi-tenant implementation details
+- **[MULTITENANT_TEST_GUIDE.md](../docs_archive/MULTITENANT_TEST_GUIDE.md)** - Multi-tenant testing guide
+- **[USER_INTERVENTION_ANALYSIS.md](../docs_archive/USER_INTERVENTION_ANALYSIS.md)** - User intervention mechanism analysis
+- **[USER_INTERVENTION_FIX.md](../docs_archive/USER_INTERVENTION_FIX.md)** - User intervention improvements
+- **[VERBOSE_LOGGING_SUMMARY.md](../docs_archive/VERBOSE_LOGGING_SUMMARY.md)** - Verbose logging implementation
+- **[DEPLOYMENT_STATUS.md](../docs_archive/DEPLOYMENT_STATUS.md)** - Deployment status report
 
 #### sprints/
 - Phase completion reports
@@ -109,12 +133,18 @@
 - Root-level: 5 files (67% reduction)
 - Consolidated analysis: 3 comprehensive docs
 
+### Today's Cleanup (2025-03-04)
+- Root-level: 5 files (maintained)
+- docs/: +1 file (SYSTEM_FLOW.md moved from root)
+- docs_archive/: +6 files (implementation reports and analysis)
+
 ### Quality Improvements
 - ✅ CLAUDE.md focused on rules only (no history)
 - ✅ docs/ organized by category
 - ✅ Overlapping content consolidated
 - ✅ All information preserved
 - ✅ Better navigation and discoverability
+- ✅ Temporary docs moved to archive
 
 ---
 
@@ -173,5 +203,5 @@ Update DOCS_INDEX.md
 ---
 
 **Maintainer**: FastReAct Team
-**Last Updated**: 2025-02-27
+**Last Updated**: 2025-03-04
 **Status**: Current
