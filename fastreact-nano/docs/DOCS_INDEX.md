@@ -47,6 +47,7 @@
 ## Guides (docs/GUIDES/)
 
 ### User and Developer Guides
+- **[MULTITENANT_ARCHITECTURE.md](../MULTITENANT_ARCHITECTURE.md)** - Multi-tenant architecture implementation (PageIndex/OpenViking integration guide)
 - **[MULTITENANT_GUIDE.md](../MULTITENANT_GUIDE.md)** - Multi-tenant deployment guide
 - **[CONFIG_FILE_LOCATIONS.md](../CONFIG_FILE_LOCATIONS.md)** - Configuration reference
 
