@@ -150,6 +150,10 @@ class FeishuSDKAdapter:
         self._access_token: Optional[str] = None
         self._token_expire_time: Optional[float] = None
 
+        # Message deduplication (prevent duplicate processing)
+        self._processed_messages: set[str] = set()
+        self._max_processed_messages: int = 10000  # Prevent unbounded growth
+
         # WebSocket client (initialized in start())
         self._ws_client: Optional[WSClient] = None
 
@@ -253,6 +257,23 @@ class FeishuSDKAdapter:
             # Extract message ID and chat ID
             message_id = event_data.message.message_id
             chat_id = event_data.message.chat_id
+
+            # ✅ Message deduplication (prevent duplicate processing)
+            if message_id in self._processed_messages:
+                print(f"[INFO] Duplicate message ignored: {message_id}")
+                return
+
+            # Add to processed set
+            self._processed_messages.add(message_id)
+
+            # Prevent unbounded growth (keep only recent messages)
+            if len(self._processed_messages) > self._max_processed_messages:
+                # Remove oldest 20% of messages
+                remove_count = int(self._max_processed_messages * 0.2)
+                oldest_messages = list(self._processed_messages)[:remove_count]
+                for old_msg_id in oldest_messages:
+                    self._processed_messages.discard(old_msg_id)
+                print(f"[INFO] Cleaned {remove_count} old message IDs from cache")
 
             # Create event wrapper
             feishu_event = {
@@ -682,8 +703,33 @@ class FeishuSDKAdapter:
                 skill_names = list(skills) if isinstance(skills, dict) else skills[:5]
                 print(f"[INFO] Available skills: {', '.join(skill_names)}")
 
+        # Log message deduplication cache
+        print(f"[INFO] Message deduplication cache: {len(self._processed_messages)} messages")
+        print(f"[INFO] Max cache size: {self._max_processed_messages} messages")
+
         # Start WebSocket client (blocking)
         self._ws_client.start()
+
+    def get_deduplication_stats(self) -> dict:
+        """
+        Get message deduplication statistics
+
+        Returns:
+            Dictionary with deduplication statistics
+        """
+        return {
+            "processed_messages": len(self._processed_messages),
+            "max_cache_size": self._max_processed_messages,
+            "cache_usage_percent": len(self._processed_messages) / self._max_processed_messages * 100,
+        }
+
+    def clear_processed_messages(self):
+        """
+        Clear processed message cache (useful for testing or memory management)
+        """
+        cleared_count = len(self._processed_messages)
+        self._processed_messages.clear()
+        print(f"[INFO] Cleared {cleared_count} message IDs from deduplication cache")
 
 
 def run_feishu_sdk():
