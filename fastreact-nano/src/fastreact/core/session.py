@@ -398,18 +398,20 @@ class AgentSession:
                 file=sys.stderr
             )
 
-        # Run agent with event streaming
+        # Run agent with event streaming (using new API with queue support)
         try:
             from fastreact.core.events import EventType
 
             final_response = None
             interrupted = False
 
-            async for event in self._agent.run_event_stream(
-                query,
-                skills=skills,
+            # ✅ Use new API (run_or_inject) for queue support and fast user intervention
+            # This matches Feishu SDK behavior: checks queue after each tool execution
+            async for event in self._agent.run_or_inject(
+                query=query,
+                user_key=self.user_key,
                 session_id=self.session_id,
-                history=self._history if is_followup else [],
+                skills=skills,
             ):
                 # Check interrupt
                 if self._interrupted:
