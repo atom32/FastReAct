@@ -101,6 +101,11 @@
 - **[VERBOSE_LOGGING_SUMMARY.md](../docs_archive/VERBOSE_LOGGING_SUMMARY.md)** - Verbose logging implementation
 - **[DEPLOYMENT_STATUS.md](../docs_archive/DEPLOYMENT_STATUS.md)** - Deployment status report
 
+#### Debug Scripts (Historical)
+- **[FEISHU_CONFIG_TEST.py](../docs_archive/FEISHU_CONFIG_TEST.py)** - Feishu configuration validation script
+- **[MCP_CHECK_SCRIPT.py](../docs_archive/MCP_CHECK_SCRIPT.py)** - MCP server loading check script
+- **[MCP_DEBUG_SCRIPT.py](../docs_archive/MCP_DEBUG_SCRIPT.py)** - MCP debugging utility
+
 #### sprints/
 - Phase completion reports
 - Sprint summaries
