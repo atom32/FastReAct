@@ -41,6 +41,12 @@ except ImportError:
 
 from fastreact import Agent, Config
 from fastreact import __version__  # Import version for consistency
+from fastreact.core.multitenant import (
+    get_global_agent,
+    generate_temp_user_key,
+    validate_user_key,
+    MultiTenantManager,
+)
 
 
 class Session:
@@ -55,55 +61,40 @@ class Session:
     This class is now a THIN wrapper around AgentSession.
     All business logic (history, follow-ups, state) is in AgentSession.
 
-    Multi-tenant Support:
-    - Each user gets their own Agent instance
-    - User identification via user_key query parameter
-    - Workspace isolation per user
-    - Configurable single-tenant fallback mode
+    Multi-tenant Support (Unified Architecture):
+    - All sessions share a global Agent instance
+    - User identification via user_key parameter
+    - Workspace isolation per user (handled by Agent)
+    - Lightweight sessions with user context
+
+    Architecture Pattern: Shared Agent + user_key (same as Feishu SDK)
     """
 
     def __init__(
         self,
         session_id: str,
         websocket: WebSocket,
-        user_key: str = "web:default",  # User identifier
-        config: Optional["Config"] = None,
-        max_queue_size: int = 5,
-        base_workspace: Optional[Path] = None,
+        user_key: str,
+        agent: "Agent",  # ✅ Shared Agent instance (required)
+        multitenant_enabled: bool = True,
         max_history: int = 50,
-        multitenant_enabled: bool = True,  # NEW: Enable/disable multi-tenant mode
+        max_queue_size: int = 5,
     ):
         self.session_id = session_id
         self.websocket = websocket
         self.user_key = user_key
+        self.multitenant_enabled = multitenant_enabled
         self.created_at = datetime.now(timezone.utc)
         self.last_activity = datetime.now(timezone.utc)
 
         # Background task reference
         self._processing_task: Optional[asyncio.Task] = None
 
-        # Determine workspace path
-        workspace_path = base_workspace or Path.cwd() / "workspaces"
-
-        # Multi-tenant or single-tenant mode
-        self.multitenant_enabled = multitenant_enabled
-
-        if multitenant_enabled:
-            # Multi-tenant mode - create per-user Agent
-            self.agent = Agent(
-                config=config,
-                multitenant=True,  # Enable multi-tenant mode
-                base_workspace=workspace_path,
-            )
-        else:
-            # Single-tenant mode - all users share same Agent
-            self.agent = Agent(
-                config=config,
-                multitenant=False,  # Single-tenant mode
-            )
+        # ✅ Use shared Agent instance (passed from outside)
+        self.agent = agent
 
         # Create AgentSession for business logic (all business logic here)
-        # Pass user_key for multi-tenant session tracking (only used in multi-tenant mode)
+        # Pass user_key for multi-tenant session tracking
         self.agent_session = self.agent.create_session(
             session_id=session_id,
             user_key=user_key if multitenant_enabled else None,
@@ -170,9 +161,9 @@ class SessionManager:
     async def connect(
         self,
         websocket: WebSocket,
-        user_key: str = "web:default",
+        user_key: str,
+        agent: "Agent",  # ✅ Shared Agent instance
         multitenant_enabled: bool = True,
-        config: Optional["Config"] = None,
     ) -> Session:
         """
         Accept connection and create session
@@ -180,8 +171,8 @@ class SessionManager:
         Args:
             websocket: WebSocket connection
             user_key: User identifier (format: "channel:user_id")
+            agent: Shared Agent instance
             multitenant_enabled: Enable multi-tenant mode
-            config: Configuration object
 
         Returns:
             Session instance
@@ -193,7 +184,7 @@ class SessionManager:
             session_id,
             websocket,
             user_key=user_key,
-            config=config,
+            agent=agent,  # ✅ Pass shared Agent
             multitenant_enabled=multitenant_enabled,
         )
         self._sessions[session_id] = session
@@ -231,12 +222,48 @@ class SessionManager:
 # Global session manager
 _session_manager = SessionManager()
 
+# Global agent (unified architecture - simplified)
+_global_agent_cached: Optional[Agent] = None
+
 # Global metrics
 _gateway_start_time = datetime.now(timezone.utc)
 _total_events_counter = 0
 
 # Admin authentication (loaded from config at runtime)
 ADMIN_API_KEY = None
+
+
+def get_gateway_agent(
+    config: Optional["Config"] = None,
+) -> Agent:
+    """
+    Get or create global agent for gateway (simplified)
+
+    Args:
+        config: Configuration object
+
+    Returns:
+        Global Agent instance
+    """
+    global _global_agent_cached
+
+    if _global_agent_cached is None:
+        # Load config if not provided
+        if config is None:
+            config = Config.load()
+
+        # Determine workspace
+        workspace_path = Path.cwd() / "workspace"
+
+        # Create global agent (always multi-tenant mode)
+        _global_agent_cached = get_global_agent(
+            base_workspace=workspace_path,
+            config=config,
+        )
+
+        print(f"[GATEWAY] Using global shared Agent (multi-tenant=True)")
+
+    return _global_agent_cached
 
 
 def get_admin_api_key() -> str:
@@ -479,10 +506,8 @@ def create_gateway_app() -> FastAPI:
     @app.get("/api/skills")
     async def list_skills():
         """List all available skills (global and user-specific)"""
-        from fastreact.core.config import Config
-
-        config = Config.load()
-        agent = Agent(config=config)
+        # ✅ Use shared agent from global agent cache
+        agent = get_gateway_agent()
 
         # Get all available skills
         skill_names = agent._skills.list_available()
@@ -502,22 +527,21 @@ def create_gateway_app() -> FastAPI:
 
         return {
             "skills": skills,
-            "global_skills_dir": str(config.paths.global_skills_dir),
+            "global_skills_dir": str(agent._config.paths.global_skills_dir),
             "total_count": len(skills)
         }
 
     @app.get("/api/status")
     async def get_status():
         """Get system status including SKILL and MCP information"""
-        from fastreact.core.config import Config
         import asyncio
 
-        config = Config.load()
+        # ✅ Use shared agent from global agent cache
+        agent = get_gateway_agent()
+        config = agent._config
 
         # Determine multi-tenant mode from configuration
         multitenant_enabled = config.gateway.enable_multitenant
-
-        agent = Agent(config=config, multitenant=multitenant_enabled)
 
         # Load MCP servers to get status
         mcp_loaded = False
@@ -551,6 +575,11 @@ def create_gateway_app() -> FastAPI:
         # Get skills
         skill_names = agent._skills.list_available()
 
+        # Get temp user stats if multi-tenant
+        temp_user_stats = {}
+        if multitenant_enabled and agent._multitenant:
+            temp_user_stats = agent._multitenant.get_temp_user_stats()
+
         return {
             "status": "healthy",
             "version": "2.4.2",
@@ -569,7 +598,8 @@ def create_gateway_app() -> FastAPI:
                 },
                 "multi_tenant": {
                     "enabled": multitenant_enabled,
-                    "mode": "multi-tenant (per-user workspace isolation)" if multitenant_enabled else "single-tenant (shared workspace)"
+                    "mode": "multi-tenant (per-user workspace isolation)" if multitenant_enabled else "single-tenant (shared workspace)",
+                    "temp_users": temp_user_stats if multitenant_enabled else {}
                 }
             }
         }
@@ -577,11 +607,8 @@ def create_gateway_app() -> FastAPI:
     @app.get("/api/tools")
     async def list_tools():
         """List all available tools (including MCP tools)"""
-        # Create a temporary agent to discover tools
-        from fastreact.core.config import Config
-
-        config = Config.load()
-        agent = Agent(config=config)
+        # ✅ Use shared agent from global agent cache
+        agent = get_gateway_agent()
 
         # Load MCP servers to populate tool registry
         import asyncio
@@ -1016,17 +1043,23 @@ def create_gateway_app() -> FastAPI:
         """
         WebSocket endpoint for real-time communication
 
-        Multi-tenant Support (default):
+        Unified Architecture (Phase 0):
+        - All sessions share a global Agent instance
+        - User identification via user_key query parameter
+        - Temporary user_key auto-generation if not provided
+        - Workspace isolation per user (handled by Agent)
+
+        Multi-tenant Mode (default):
         - Extract user_key from query parameters (format: ?user_key=web:user@example.com)
-        - Default user_key: "web:default" (temporary user, data not persisted)
-        - Each user gets isolated workspace and Agent instance
+        - Auto-generate temporary user_key if not provided (web:temp_xxx)
+        - Each user gets isolated workspace
 
         Single-tenant Fallback:
         - If gateway.multitenant=false in config, all users share same workspace
         - Recommended for Admin-only deployments
 
         Examples:
-        - ws://localhost:9000/ws
+        - ws://localhost:9000/ws (auto-generates temp user_key)
         - ws://localhost:9000/ws?user_key=web:user@example.com
         - ws://localhost:9000/ws?user_key=mobile:user123
         """
@@ -1041,26 +1074,46 @@ def create_gateway_app() -> FastAPI:
         else:
             print("[Gateway] Running in multi-tenant mode (per-user workspace isolation)")
 
-        # Extract user_key from query params
-        user_key = websocket.query_params.get("user_key", "web:default")
+        # ✅ Get shared Agent from global agent cache
+        shared_agent = get_gateway_agent(config)
 
-        # Validate user_key format (only in multi-tenant mode)
-        if multitenant_enabled and ":" not in user_key:
-            await websocket.accept()
-            await websocket.send_json({
-                "type": "error",
-                "content": f"Invalid user_key format: '{user_key}'. Expected format: 'channel:user_id' (e.g., 'web:user@example.com')",
-            })
-            await websocket.close()
-            return
+        # ✅ Extract or generate user_key
+        user_key = websocket.query_params.get("user_key")
+
+        if multitenant_enabled:
+            # Multi-tenant mode: require valid user_key
+            if not user_key:
+                # Auto-generate temporary user_key
+                user_key = generate_temp_user_key()
+                print(f"[Gateway] No user_key provided, using temporary: {user_key}")
+            else:
+                # Validate user_key format
+                is_valid, error = validate_user_key(user_key)
+                if not is_valid:
+                    await websocket.accept()
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": error,
+                    })
+                    await websocket.close(code=1008)  # Policy violation
+                    return
+
+            # ✅ Register temporary user if applicable
+            if shared_agent._multitenant and shared_agent._multitenant.is_temp_user(user_key):
+                shared_agent._multitenant.register_temp_user(user_key)
+        else:
+            # Single-tenant mode: use default user_key
+            if not user_key:
+                user_key = "web:default"
 
         print(f"[Gateway] WebSocket connection - user_key: {user_key}, mode: {'multi-tenant' if multitenant_enabled else 'single-tenant'}")
 
+        # ✅ Create session with shared Agent
         session = await _session_manager.connect(
             websocket,
             user_key=user_key,
+            agent=shared_agent,  # ✅ Pass shared Agent
             multitenant_enabled=multitenant_enabled,
-            config=config,
         )
         session_id = session.session_id
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from fastreact import Agent, EventType
 from fastreact.core.config import Config
 
-from tests.helpers.test_helpers import (
+from tests.helpers import (
     collect_events,
     extract_final_answer,
     assert_session_completed,

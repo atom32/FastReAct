@@ -5,8 +5,62 @@ This module provides helper functions for creating test configurations
 and other test utilities that keep test code clean and maintainable.
 """
 
+import asyncio
+from typing import List
+from fastreact import EventType
 from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig
+from fastreact.core.events import AgentEvent
 from typing import Union, Optional
+
+
+async def collect_events(event_stream) -> List[AgentEvent]:
+    """
+    Collect all events from an async event stream
+
+    Args:
+        event_stream: Async generator of AgentEvent objects
+
+    Returns:
+        List of collected events
+    """
+    events = []
+    async for event in event_stream:
+        events.append(event)
+    return events
+
+
+def extract_final_answer(events: List[AgentEvent]) -> str:
+    """
+    Extract the final answer from a list of events
+
+    Args:
+        events: List of AgentEvent objects
+
+    Returns:
+        Final answer string or None if not found
+    """
+    for event in events:
+        if event.type == EventType.SESSION_END:
+            return event.content
+    return None
+
+
+def assert_session_completed(events: List[AgentEvent]) -> None:
+    """
+    Assert that a session completed successfully
+
+    Args:
+        events: List of AgentEvent objects
+
+    Raises:
+        AssertionError: If session did not complete
+    """
+    # Check that we have events
+    assert len(events) > 0, "No events collected"
+
+    # Check that session ended
+    has_session_end = any(e.type == EventType.SESSION_END for e in events)
+    assert has_session_end, "Session did not complete (no SESSION_END event)"
 
 
 def create_test_config(

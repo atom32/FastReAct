@@ -24,6 +24,15 @@ from fastreact.core.events import (
 )
 from fastreact.core.session import AgentSession
 from fastreact.core.memory import MemoryManager
+from fastreact.core.multitenant import (
+    MultiTenantManager,
+    UserContext,
+    get_global_agent,
+    generate_temp_user_key,
+    validate_user_key,
+    reset_global_agent,
+)
+from fastreact.core.config_manager import ConfigManager
 
 __all__ = [
     # Messages
@@ -36,7 +45,7 @@ __all__ = [
     "LLMConfig",
     "ToolConfig",
     "ReactConfig",
-    # Credentials (NEW)
+    # Credentials
     "Credentials",
     "get_credentials",
     # Context
@@ -55,12 +64,21 @@ __all__ = [
     # Tools
     "Tool",
     "ToolRegistry",
-    # Events (Unified Protocol)
+    # Events
     "EventType",
     "AgentEvent",
     "EventStream",
-    # Session (NEW)
+    # Session
     "AgentSession",
-    # Memory (NEW)
+    # Memory
     "MemoryManager",
+    # Multi-tenant
+    "MultiTenantManager",
+    "UserContext",
+    "get_global_agent",
+    "generate_temp_user_key",
+    "validate_user_key",
+    "reset_global_agent",
+    # Config Manager (Phase 2)
+    "ConfigManager",
 ]

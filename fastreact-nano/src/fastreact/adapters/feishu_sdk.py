@@ -742,8 +742,10 @@ def run_feishu_sdk():
     - Uses Lark SDK WebSocket long connection
     - Automatic reconnection
     - Multi-tenant user isolation
+    - Uses global shared Agent instance (unified architecture)
     """
     from fastreact.core.config import Config
+    from fastreact.core.multitenant import get_global_agent
 
     # Load configuration
     config = Config.load()
@@ -764,8 +766,11 @@ def run_feishu_sdk():
         print('}')
         return
 
-    # Create Agent instance
-    agent = Agent(config=config)
+    # ✅ Use global shared Agent instance (unified architecture)
+    agent = get_global_agent(
+        base_workspace=feishu_config.base_workspace or config.paths.feishu_workspace_base,
+        config=config,
+    )
 
     # Create Feishu SDK adapter
     adapter = FeishuSDKAdapter(agent=agent, config=feishu_config)
