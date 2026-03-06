@@ -410,7 +410,6 @@ class AgentSession:
             async for event in self._agent.run_or_inject(
                 query=query,
                 user_key=self.user_key,
-                session_id=self.session_id,
                 skills=skills,
             ):
                 # Check interrupt
