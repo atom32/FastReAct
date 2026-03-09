@@ -165,6 +165,63 @@ function AskUserEvent({ event }: { event: ChatEvent }) {
   )
 }
 
+function ErrorEvent({ event }: { event: ChatEvent }) {
+  return (
+    <div
+      className="animate-slide-up my-2 flex gap-2.5 rounded-xl px-4 py-3"
+      style={{
+        background: `linear-gradient(90deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.1))`,
+        border: `2px solid rgb(239, 68, 68)`,
+        boxShadow: `0 0 15px rgba(239, 68, 68, 0.15)`,
+      }}
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "rgb(239, 68, 68)" }} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span
+            className="rounded-full px-2 py-0.5 text-xs font-bold"
+            style={{
+              background: "rgb(239, 68, 68)",
+              color: "white",
+            }}
+          >
+            ERROR
+          </span>
+        </div>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--fr-text-primary)" }}>
+          {event.content}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function StepEndEvent({ event }: { event: ChatEvent }) {
+  return (
+    <div
+      className="animate-slide-up my-1.5 flex gap-2.5 rounded-lg px-3 py-2.5"
+      style={{
+        background: `linear-gradient(90deg, rgba(6, 182, 212, 0.06), rgba(59, 130, 246, 0.06))`,
+        borderLeft: "3px solid rgb(6, 182, 212)",
+      }}
+    >
+      <Zap className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "rgb(6, 182, 212)" }} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs font-semibold" style={{ color: "rgb(6, 182, 212)" }}>
+            STEP COMPLETE
+          </span>
+        </div>
+        {event.content && event.content.trim() && (
+          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--fr-text-secondary)" }}>
+            {event.content}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function TextEvent({ event }: { event: ChatEvent }) {
   return (
     <div className="animate-slide-up my-1">
@@ -190,6 +247,10 @@ export function ChatEventRenderer({ event }: { event: ChatEvent }) {
       return <ToolResultEvent event={event} />
     case "ask_user":
       return <AskUserEvent event={event} />
+    case "error":
+      return <ErrorEvent event={event} />
+    case "step_end":
+      return <StepEndEvent event={event} />
     case "text":
       return <TextEvent event={event} />
     default:

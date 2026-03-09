@@ -1,4 +1,4 @@
-export type EventType = "session_start" | "think" | "tool_call" | "tool_result" | "ask_user" | "session_end" | "text"
+export type EventType = "session_start" | "think" | "tool_call" | "tool_result" | "ask_user" | "session_end" | "error" | "step_end" | "text"
 
 export interface ChatEvent {
   id: string
