@@ -1,11 +1,12 @@
-# FastReAct
+# ⚠️ 分支废弃警告
 
-> **企业级 AI Agent 基础设施框架** - 双模式执行引擎（ReAct + IEL）
+> **本分支（main）已废弃，效果不佳，请勿使用！**
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version: 1.1.0-alpha](https://img.shields.io/badge/version-1.1.0--alpha-orange.svg)](https://github.com/atom32/FastReAct)
-[![MCP Support](https://img.shields.io/badge/MCP-supported-brightgreen.svg)](https://modelcontextprotocol.io)
+**请立即切换到 `nano` 分支获取最新和改进的版本：**
+
+```bash
+git checkout nano
+```
 
 ---
 
