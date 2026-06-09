@@ -10,7 +10,8 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List, Dict, Any
-from datetime import datetime
+
+from fastreact.core.time import utc_iso
 
 
 @dataclass
@@ -30,7 +31,7 @@ class MockFeishuEvent:
     def __post_init__(self):
         """Generate timestamp if not provided"""
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow().isoformat()
+            self.timestamp = utc_iso()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary (mimics Feishu event structure)"""
@@ -52,7 +53,7 @@ class SentMessage:
     chat_id: str
     content: str
     message_type: str = "text"
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=utc_iso)
 
 
 class MockFeishuClient:

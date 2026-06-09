@@ -5,6 +5,7 @@ Manages MCP server connections and integrates MCP tools into the ToolRegistry.
 """
 
 import asyncio
+import logging
 from typing import Any, Dict, Optional, TYPE_CHECKING, Union
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from fastreact.core.credentials import Credentials
 
 if TYPE_CHECKING:
     from fastreact.core.multitenant import UserContext
+
+logger = logging.getLogger(__name__)
 
 
 class MCPToolWrapper(Tool):
@@ -95,7 +98,6 @@ class MCPToolWrapper(Tool):
         3. Automatic reconnection on connection loss - for both transports
         4. Retry logic for transient errors - for both transports
         """
-        import sys
         import asyncio
 
         # Extract user_key from user_context
@@ -123,9 +125,9 @@ class MCPToolWrapper(Tool):
                     if self._transport == "stdio" and hasattr(self._mcp_manager, 'is_server_alive'):
                         if not self._mcp_manager.is_server_alive(self._server_name):
                             # Server crashed, try to resurrect
-                            print(
-                                f"[WARNING] Server '{self._server_name}' crashed during execution, resurrecting...",
-                                file=sys.stderr
+                            logger.warning(
+                                "Server '%s' crashed during execution, resurrecting...",
+                                self._server_name,
                             )
                             if await self._mcp_manager.resurrect_server(self._server_name):
                                 # Resurrection successful, update client reference
@@ -140,10 +142,11 @@ class MCPToolWrapper(Tool):
                     # For both transports, try to reconnect
                     if attempt < self._max_retries - 1:
                         # Try to reconnect
-                        print(
-                            f"[WARNING] MCP connection lost for '{self.name}', "
-                            f"reconnecting... (attempt {attempt + 1}/{self._max_retries})",
-                            file=sys.stderr
+                        logger.warning(
+                            "MCP connection lost for '%s', reconnecting... (attempt %s/%s)",
+                            self.name,
+                            attempt + 1,
+                            self._max_retries,
                         )
 
                         reconnect_success = False
@@ -154,13 +157,14 @@ class MCPToolWrapper(Tool):
 
                             # Reconnect (works for both stdio and http)
                             await self._mcp_client.connect()
-                            print(f"[OK] Reconnected to MCP server '{self._server_name}'", file=sys.stderr)
+                            logger.info("Reconnected to MCP server '%s'", self._server_name)
                             reconnect_success = True
 
                         except Exception as reconnect_error:
-                            print(
-                                f"[ERROR] Reconnect failed for '{self.name}': {reconnect_error}",
-                                file=sys.stderr
+                            logger.warning(
+                                "Reconnect failed for '%s': %s",
+                                self.name,
+                                reconnect_error,
                             )
                             # Reconnect failed, but will retry the call in next loop iteration
                             continue
@@ -297,10 +301,9 @@ class MCPToolManager:
                 if auth_token_ref:
                     auth_token = self._credentials.get_auth_token(auth_token_ref)
                     if not auth_token:
-                        print(
-                            f"[WARNING] Auth token '{auth_token_ref}' not found in credentials, "
-                            f"connecting without authentication",
-                            file=sys.stderr
+                        logger.warning(
+                            "Auth token '%s' not found in credentials, connecting without authentication",
+                            auth_token_ref,
                         )
 
                 client = StreamableHTTPMCPClient(
@@ -330,7 +333,7 @@ class MCPToolManager:
                 "auth_token_ref": auth_token_ref,
                 "isolation_mode": self._isolation_mode,
             }
-            print(f"[OK] MCP server '{name}' ({transport}) registered and ready", file=sys.stderr)
+            logger.info("MCP server '%s' (%s) registered and ready", name, transport)
 
         except Exception as e:
             raise RuntimeError(f"Failed to add MCP server '{name}': {e}")
@@ -397,8 +400,6 @@ class MCPToolManager:
         Returns:
             True if process is alive, False if crashed (zombie)
         """
-        import sys
-
         client = self._servers.get(server_name)
         if not client:
             return False
@@ -407,20 +408,17 @@ class MCPToolManager:
         if isinstance(client, SimpleMCPClient):
             if client._process and client._process.returncode is not None:
                 # Process has exited (zombie detected!)
-                print(
-                    f"[WARNING] Zombie process detected: MCP server '{server_name}' "
-                    f"crashed with exit code {client._process.returncode}",
-                    file=sys.stderr
+                logger.warning(
+                    "Zombie process detected: MCP server '%s' crashed with exit code %s",
+                    server_name,
+                    client._process.returncode,
                 )
                 return False
 
         # For http transport, check connection status
         elif isinstance(client, StreamableHTTPMCPClient):
             if not client.is_alive():
-                print(
-                    f"[WARNING] MCP HTTP server '{server_name}' connection lost",
-                    file=sys.stderr
-                )
+                logger.warning("MCP HTTP server '%s' connection lost", server_name)
                 return False
 
         return True
@@ -441,21 +439,16 @@ class MCPToolManager:
         Raises:
             RuntimeError: If server config not found or resurrection fails
         """
-        import sys
-
         # Check if server config exists
         if server_name not in self._server_configs:
-            print(
-                f"[ERROR] Cannot resurrect '{server_name}': no saved configuration",
-                file=sys.stderr
-            )
+            logger.error("Cannot resurrect '%s': no saved configuration", server_name)
             return False
 
         config = self._server_configs[server_name]
         transport = config.get("transport", "stdio")
 
         try:
-            print(f"[INFO] Resurrecting MCP server '{server_name}' ({transport})...", file=sys.stderr)
+            logger.info("Resurrecting MCP server '%s' (%s)...", server_name, transport)
 
             # Close old connection if exists
             if server_name in self._servers:
@@ -511,18 +504,15 @@ class MCPToolManager:
             # Update server reference
             self._servers[server_name] = client
 
-            print(
-                f"[OK] MCP server '{server_name}' resurrected successfully "
-                f"({len(tools)} tools available)",
-                file=sys.stderr
+            logger.info(
+                "MCP server '%s' resurrected successfully (%s tools available)",
+                server_name,
+                len(tools),
             )
             return True
 
         except Exception as e:
-            print(
-                f"[ERROR] Failed to resurrect MCP server '{server_name}': {e}",
-                file=sys.stderr
-            )
+            logger.error("Failed to resurrect MCP server '%s': %s", server_name, e)
             return False
 
     async def ensure_server_alive(self, server_name: str) -> bool:
@@ -537,17 +527,12 @@ class MCPToolManager:
         Returns:
             True if server is alive or was successfully resurrected
         """
-        import sys
-
         # Check if alive
         if self.is_server_alive(server_name):
             return True
 
         # Server is dead, try to resurrect
-        print(
-            f"[INFO] Zombie detected for '{server_name}', attempting resurrection...",
-            file=sys.stderr
-        )
+        logger.info("Zombie detected for '%s', attempting resurrection...", server_name)
         return await self.resurrect_server(server_name)
 
     async def close_all(self) -> None:

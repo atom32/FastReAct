@@ -40,7 +40,7 @@ def main():
     parser.add_argument(
         "suite",
         nargs="?",
-        choices=["unit", "integration", "all", "quick", "contracts", "release-llm"],
+        choices=["unit", "integration", "all", "quick", "contracts", "release-llm", "release-full"],
         default="all",
         help="Test suite to run (default: all)"
     )
@@ -67,6 +67,44 @@ def main():
 
     # Determine which tests to run
     project_root = Path(__file__).parent
+    repo_root = project_root.parent
+    frontend_root = repo_root / "fastreact-nano-web"
+
+    if args.suite == "release-full":
+        checks = [
+            (
+                [
+                    "python3",
+                    "-m",
+                    "compileall",
+                    "-q",
+                    str(project_root / "src" / "fastreact"),
+                    str(project_root / "scripts"),
+                    str(project_root / "run_tests.py"),
+                ],
+                "Python Compile Check",
+            ),
+            (["python3", str(project_root / "run_tests.py"), "quick"], "Quick Suite"),
+            (["python3", str(project_root / "run_tests.py"), "integration"], "Integration Suite"),
+            (["python3", str(project_root / "run_tests.py"), "all"], "All Default Tests"),
+            (["npm", "run", "build"], "Frontend Build"),
+            (["npm", "audit", "--omit=dev"], "Frontend Production Audit"),
+            (["python3", str(project_root / "scripts" / "frontend_e2e.py")], "Frontend E2E"),
+            (["python3", str(project_root / "run_tests.py"), "release-llm"], "Release LLM Efficiency Gate"),
+        ]
+        for cmd, description in checks:
+            cwd = frontend_root if cmd[0] == "npm" else repo_root
+            print(f"\n{'='*60}")
+            print(f"[Running] {description}")
+            print(f"[Command] {' '.join(cmd)}")
+            print('='*60)
+            result = subprocess.run(cmd, cwd=cwd)
+            if result.returncode == 0:
+                print(f"[OK] {description}")
+            else:
+                print(f"[FAILED] {description}")
+                return False
+        return True
 
     if args.suite == "release-llm":
         return run_command(

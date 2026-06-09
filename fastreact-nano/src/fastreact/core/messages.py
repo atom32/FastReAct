@@ -11,6 +11,11 @@ from dataclasses import dataclass, field
 from typing import Optional, Any, Literal
 from datetime import datetime
 import json
+import logging
+
+from fastreact.core.time import utc_now
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,7 +36,7 @@ class Message:
     metadata: dict[str, Any] = field(default_factory=dict)
     tool_call_id: Optional[str] = None
     tool_name: Optional[str] = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utc_now)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization"""
@@ -135,10 +140,9 @@ class MessageQueue:
 
     def push(self, message: Message):
         """Push message to queue"""
-        import sys
-        print(f"[MESSAGE_QUEUE] push() called, before push: {len(self._messages)} messages", file=sys.stderr)
+        logger.debug("MessageQueue push before=%s", len(self._messages))
         self._messages.append(message)
-        print(f"[MESSAGE_QUEUE] push() done, after push: {len(self._messages)} messages", file=sys.stderr)
+        logger.debug("MessageQueue push after=%s", len(self._messages))
 
     def extend(self, messages: list[Message]):
         """Extend queue with multiple messages"""
@@ -150,11 +154,9 @@ class MessageQueue:
 
     def drain(self) -> list[Message]:
         """Get and clear all messages"""
-        import sys
-        print(f"[MESSAGE_QUEUE] drain() called, returning {len(self._messages)} messages", file=sys.stderr)
+        logger.debug("MessageQueue drain count=%s", len(self._messages))
         messages = self._messages
         self._messages = []
-        print(f"[MESSAGE_QUEUE] drain() done, queue now empty", file=sys.stderr)
         return messages
 
     def clear(self):

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { RefreshCw } from "lucide-react"
+import { gatewayApi } from "@/lib/gateway"
 
 interface AuditRecord {
   created_at: string
@@ -32,8 +33,8 @@ export function AuditLog() {
 
   const load = async () => {
     const [auditRes, approvalRes] = await Promise.all([
-      fetch("http://localhost:9000/api/audit"),
-      fetch("http://localhost:9000/api/control/pending-approvals"),
+      fetch(gatewayApi("/api/audit")),
+      fetch(gatewayApi("/api/control/pending-approvals")),
     ])
     if (auditRes.ok) {
       const data = await auditRes.json()

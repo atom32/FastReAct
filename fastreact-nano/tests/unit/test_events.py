@@ -9,7 +9,7 @@ Test Count: 25 tests
 
 import pytest
 import json
-from datetime import datetime
+import time
 from typing import AsyncIterator
 from fastreact.core.events import (
     EventType,
@@ -77,9 +77,9 @@ class TestAgentEventCreation:
 
     def test_event_timestamp_default(self):
         """Test event gets timestamp by default"""
-        before = datetime.utcnow().timestamp()
+        before = time.time()
         event = AgentEvent(type=EventType.THINK)
-        after = datetime.utcnow().timestamp()
+        after = time.time()
         assert before <= event.timestamp <= after
 
     def test_event_metadata_none_handling(self):

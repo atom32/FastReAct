@@ -21,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional, TYPE_CHECKING
 
+from fastreact.core.time import utc_now
+
 if TYPE_CHECKING:
     from fastreact import Agent
     from fastreact.core.events import AgentEvent
@@ -69,8 +71,8 @@ class AgentSession:
         """
         # Identity
         self.session_id = session_id
-        self.created_at = datetime.utcnow()
-        self.last_activity = datetime.utcnow()
+        self.created_at = utc_now()
+        self.last_activity = utc_now()
         self.user_key: Optional[str] = None  # User identifier for multi-tenant
         self.status: str = "idle"  # Session status: idle | running | closed
 
@@ -109,7 +111,7 @@ class AgentSession:
                     agent=agent,
                     consolidation_threshold=max_history,
                 )
-                logger.debug("[MEMORY] MemoryManager initialized for session %s", session_id)
+                logger.debug("MemoryManager initialized for session %s", session_id)
 
     def _detect_workspace_path(self) -> Optional[Path]:
         """
@@ -171,7 +173,7 @@ class AgentSession:
         # Check if consolidation is needed (only when EXCEEDING threshold)
         if len(self._history) > self._max_history and self._memory_manager:
             logger.debug(
-                "[MEMORY] History threshold exceeded (%s > %s), triggering consolidation",
+                "History threshold exceeded (%s > %s), triggering memory consolidation",
                 len(self._history),
                 self._max_history,
             )
@@ -219,7 +221,7 @@ class AgentSession:
             return False
 
         time_since_response = (
-            datetime.utcnow() - self._last_response_time
+            utc_now() - self._last_response_time
         ).total_seconds()
 
         return time_since_response < self._followup_window_seconds
@@ -230,7 +232,7 @@ class AgentSession:
 
         Should be called after sending final response to user
         """
-        self._last_response_time = datetime.utcnow()
+        self._last_response_time = utc_now()
 
     # === Session State ===
 
@@ -264,7 +266,7 @@ class AgentSession:
 
     def update_activity(self):
         """Update last activity timestamp"""
-        self.last_activity = datetime.utcnow()
+        self.last_activity = utc_now()
 
     # === Message Queue ===
 
@@ -371,12 +373,8 @@ class AgentSession:
         if self._is_running:
             # Send user intervention signal
             from fastreact.core.messages import Message
-            import sys
 
-            print(
-                f"[INFO] New query received while agent running, sending user intervention",
-                file=sys.stderr
-            )
+            logger.info("New query received while agent is running; sending user intervention")
 
             # Check if agent has session queue (backward compatibility)
             if hasattr(self._agent, '_session_queues') and self.session_id in self._agent._session_queues:
@@ -400,10 +398,9 @@ class AgentSession:
 
         # If follow-up query, log it
         if is_followup and len(self._history) > 0:
-            import sys
-            print(
-                f"[INFO] Follow-up query will use conversation history (last {len(self._history)} messages)",
-                file=sys.stderr
+            logger.info(
+                "Follow-up query will use conversation history (last %s messages)",
+                len(self._history),
             )
 
         # Run agent with event streaming (using new API with queue support)

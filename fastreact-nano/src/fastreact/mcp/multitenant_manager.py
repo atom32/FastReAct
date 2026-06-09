@@ -6,13 +6,17 @@ Supports three isolation modes: shared, per_user, and lazy_per_user.
 """
 
 import asyncio
+import logging
 from typing import Any, Dict, Optional, TYPE_CHECKING
 from pathlib import Path
 from datetime import datetime, timedelta
 
+from fastreact.core.time import utc_now
 from fastreact.mcp.client import SimpleMCPClient
 from fastreact.mcp.manager import MCPToolManager, MCPToolWrapper
 from fastreact.core.tools import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fastreact.core.multitenant import UserContext
@@ -41,13 +45,13 @@ class LazyMCPInstance:
         """
         self._manager = manager
         self._idle_timeout = idle_timeout
-        self._last_used = datetime.now()
+        self._last_used = utc_now()
         self._ref_count = 0
 
     @property
     def manager(self) -> MCPToolManager:
         """Get the underlying MCP manager"""
-        self._last_used = datetime.now()
+        self._last_used = utc_now()
         self._ref_count += 1
         return self._manager
 
@@ -61,7 +65,7 @@ class LazyMCPInstance:
         if self._ref_count > 0:
             return False
 
-        idle_time = (datetime.now() - self._last_used).total_seconds()
+        idle_time = (utc_now() - self._last_used).total_seconds()
         return idle_time >= self._idle_timeout
 
     async def cleanup(self) -> None:
@@ -325,8 +329,11 @@ class MultiTenantMCPManager:
                     await self._get_shared_manager(server_config.name, server_config)
                 except Exception as e:
                     # Log error but continue with other servers
-                    import sys
-                    print(f"[ERROR] Failed to preload shared MCP server '{server_config.name}': {e}", file=sys.stderr)
+                    logger.warning(
+                        "Failed to preload shared MCP server '%s': %s",
+                        server_config.name,
+                        e,
+                    )
 
     def list_mcp_tools(self) -> list[str]:
         """

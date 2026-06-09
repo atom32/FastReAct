@@ -7,6 +7,7 @@ Install with: pip install fastreact-nano[gateway]
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -46,6 +47,8 @@ from fastreact.core.multitenant import (
     validate_user_key,
     MultiTenantManager,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class Session:
@@ -261,7 +264,7 @@ def get_gateway_agent(
             config=config,
         )
 
-        print(f"[GATEWAY] Using global shared Agent (multi-tenant=True)")
+        logger.info("Using global shared Agent (multi-tenant=True)")
 
     return _global_agent_cached
 
@@ -326,13 +329,22 @@ def create_gateway_app() -> FastAPI:
         version=__version__,  # Use version from __init__.py for consistency
     )
 
+    configured_origins = [
+        origin.strip()
+        for origin in os.getenv("FASTREACT_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
             "http://localhost:3000",  # Next.js frontend
+            "http://127.0.0.1:3000",  # Next.js frontend
             "http://localhost:5173",  # Vue 3 frontend (dev)
             "http://localhost:9000",  # Gateway self
+            "http://127.0.0.1:9000",  # Gateway self
+            *configured_origins,
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -1137,9 +1149,9 @@ def create_gateway_app() -> FastAPI:
         multitenant_enabled = config.gateway.enable_multitenant
 
         if not multitenant_enabled:
-            print("[Gateway] Running in single-tenant mode (all users share workspace)")
+            logger.info("Running in single-tenant mode (all users share workspace)")
         else:
-            print("[Gateway] Running in multi-tenant mode (per-user workspace isolation)")
+            logger.info("Running in multi-tenant mode (per-user workspace isolation)")
 
         # ✅ Get shared Agent from global agent cache
         shared_agent = get_gateway_agent(config)
@@ -1152,7 +1164,7 @@ def create_gateway_app() -> FastAPI:
             if not user_key:
                 # Auto-generate temporary user_key
                 user_key = generate_temp_user_key()
-                print(f"[Gateway] No user_key provided, using temporary: {user_key}")
+                logger.debug("No user_key provided, using temporary: %s", user_key)
             else:
                 # Validate user_key format
                 is_valid, error = validate_user_key(user_key)
@@ -1172,7 +1184,11 @@ def create_gateway_app() -> FastAPI:
             if not user_key:
                 user_key = "web:default"
 
-        print(f"[Gateway] WebSocket connection - user_key: {user_key}, mode: {'multi-tenant' if multitenant_enabled else 'single-tenant'}")
+        logger.info(
+            "WebSocket connection user_key=%s mode=%s",
+            user_key,
+            "multi-tenant" if multitenant_enabled else "single-tenant",
+        )
 
         # ✅ Create session with shared Agent
         session = await _session_manager.connect(
@@ -1269,25 +1285,27 @@ def run_gateway(
     workspace_path.mkdir(parents=True, exist_ok=True)
 
     # Log configuration
-    print(f"[INFO] Gateway Configuration:")
-    print(f"  - Multi-tenant: {config.gateway.enable_multitenant}")
-    print(f"  - Admin only: {config.gateway.admin_only}")
-    print(f"  - Host: {host}")
-    print(f"  - Port: {port}")
-    print(f"  - Workspace: {workspace_path}")
+    logger.info(
+        "Gateway configuration: multi_tenant=%s admin_only=%s host=%s port=%s workspace=%s",
+        config.gateway.enable_multitenant,
+        config.gateway.admin_only,
+        host,
+        port,
+        workspace_path,
+    )
 
     # Log MCP server configuration
     if config.mcp.servers:
-        print(f"[INFO] Loaded {len(config.mcp.servers)} MCP servers:")
+        logger.info("Loaded %s MCP servers", len(config.mcp.servers))
         for server in config.mcp.servers:
             isolation = server.isolation if hasattr(server, 'isolation') else server.get("isolation", "shared")
-            print(f"  - {server.name} (isolation: {isolation})")
+            logger.debug("MCP server %s isolation=%s", server.name, isolation)
     else:
-        print("[WARNING] No MCP servers configured")
+        logger.warning("No MCP servers configured")
 
     app = create_gateway_app()
 
-    print(f"[INFO] Gateway starting on {host}:{port}")
+    logger.info("Gateway starting on %s:%s", host, port)
 
     uvicorn.run(
         app,

@@ -34,7 +34,7 @@ export default function AdminPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full min-w-[760px] grid-cols-7 lg:w-[980px]">
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 lg:w-[980px]">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
             <TabsTrigger value="tasks">Tasks</TabsTrigger>

@@ -16,12 +16,16 @@ AgentSession → MemoryManager.consolidate() → MEMORY.md + HISTORY.md
 """
 
 import asyncio
-from datetime import datetime
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from fastreact.core.time import utc_iso
+
 if TYPE_CHECKING:
     from fastreact import Agent
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
@@ -74,7 +78,7 @@ class MemoryManager:
             self._memory_file.write_text(
                 "# Long-Term Memory\n\n"
                 "_This file contains key facts extracted from conversations._\n\n"
-                f"_Created: {datetime.utcnow().isoformat()}_\n\n"
+                f"_Created: {utc_iso()}_\n\n"
                 "---\n\n",
                 encoding="utf-8"
             )
@@ -83,7 +87,7 @@ class MemoryManager:
             self._history_file.write_text(
                 "# Conversation History\n\n"
                 "_This file contains archived conversation history._\n\n"
-                f"_Created: {datetime.utcnow().isoformat()}_\n\n"
+                f"_Created: {utc_iso()}_\n\n"
                 "---\n\n",
                 encoding="utf-8"
             )
@@ -110,12 +114,7 @@ class MemoryManager:
             Empty list (history is cleared after consolidation) on success,
             or original history if consolidation fails
         """
-        import sys
-
-        print(
-            f"[MEMORY] Consolidating {len(history)} messages for session {session_id}",
-            file=sys.stderr
-        )
+        logger.debug("Consolidating %s messages for session %s", len(history), session_id)
 
         try:
             # Step 1: Extract key facts using LLM
@@ -127,28 +126,19 @@ class MemoryManager:
 
             # Step 2: Append to MEMORY.md
             await self._append_to_memory(key_facts, history)
-            print(
-                f"[MEMORY] Extracted {len(key_facts)} key facts to MEMORY.md",
-                file=sys.stderr
-            )
+            logger.debug("Extracted %s key facts to MEMORY.md", len(key_facts))
 
             # Step 3: Archive to HISTORY.md
             await self._archive_to_history(history)
 
             # Step 4: Clear history on success
-            print(
-                f"[MEMORY] Archived history to HISTORY.md, cleared short-term memory",
-                file=sys.stderr
-            )
+            logger.debug("Archived history to HISTORY.md and cleared short-term memory")
 
             return []  # Success: clear history
 
         except Exception as e:
             # Failure: return original history
-            print(
-                f"[ERROR] Memory consolidation failed: {e}, keeping original history",
-                file=sys.stderr
-            )
+            logger.warning("Memory consolidation failed, keeping original history: %s", e)
             return history  # Return original history (fallback)
 
     async def _extract_key_facts(self, history: list[dict]) -> list[str]:
@@ -206,11 +196,7 @@ Key facts:"""
                     return facts
 
         except Exception as e:
-            import sys
-            print(
-                f"[ERROR] Failed to extract key facts: {e}",
-                file=sys.stderr
-            )
+            logger.warning("Failed to extract key facts: %s", e)
 
         return []
 
@@ -245,7 +231,7 @@ Key facts:"""
             history: Original conversation (for context)
         """
         # Build entry
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = utc_iso()
         entry = f"\n## Memory Update - {timestamp}\n\n"
 
         if facts:
@@ -262,11 +248,7 @@ Key facts:"""
                 encoding="utf-8"
             )
         except Exception as e:
-            import sys
-            print(
-                f"[ERROR] Failed to append to MEMORY.md: {e}",
-                file=sys.stderr
-            )
+            logger.warning("Failed to append to MEMORY.md: %s", e)
 
     async def _archive_to_history(self, history: list[dict]):
         """
@@ -276,7 +258,7 @@ Key facts:"""
             history: Conversation history to archive
         """
         # Build entry
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = utc_iso()
         entry = f"\n## Conversation - {timestamp}\n\n"
 
         for msg in history:
@@ -294,11 +276,7 @@ Key facts:"""
                 encoding="utf-8"
             )
         except Exception as e:
-            import sys
-            print(
-                f"[ERROR] Failed to archive to HISTORY.md: {e}",
-                file=sys.stderr
-            )
+            logger.warning("Failed to archive to HISTORY.md: %s", e)
 
     async def recall(self, query: str, top_k: int = 5) -> list[str]:
         """
@@ -332,11 +310,7 @@ Key facts:"""
             return facts
 
         except Exception as e:
-            import sys
-            print(
-                f"[ERROR] Failed to recall from memory: {e}",
-                file=sys.stderr
-            )
+            logger.warning("Failed to recall from memory: %s", e)
             return []
 
     def get_memory_stats(self) -> dict:

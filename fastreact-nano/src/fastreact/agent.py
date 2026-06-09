@@ -14,6 +14,7 @@ The Agent layer handles:
 
 import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Optional, AsyncIterator
@@ -46,6 +47,8 @@ from fastreact.runtime import (
     TaskListTool,
     TaskGetTool,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class Agent:
@@ -798,8 +801,7 @@ class Agent:
 
             except Exception as e:
                 # Log error but continue with other servers
-                import sys
-                print(f"[ERROR] Failed to load MCP server '{server_name}': {e}", file=sys.stderr)
+                logger.warning("Failed to load MCP server '%s': %s", server_name, e)
 
     async def close_mcp_servers(self) -> None:
         """Close all MCP server connections"""
@@ -853,7 +855,7 @@ class Agent:
             # This will auto-create user workspace with proper directory structure
             # Exceptions will propagate to caller for validation
             user_context = self._multitenant.get_user_context(user_key)
-            print(f"[Agent] Created/loaded workspace for user: {user_key} at {user_context.workspace}")
+            logger.debug("Created/loaded workspace for user %s at %s", user_key, user_context.workspace)
 
         # Create new session
         session = AgentSession(
@@ -1083,14 +1085,12 @@ class Agent:
 
         if active_session:
             # Active session exists - check if it's idle or running
-            import sys
-
             if active_session.get_status() == "idle":
                 # Session is idle - execute query on existing session
-                print(
-                    f"[INFO] Reusing idle session {active_session.session_id} "
-                    f"for user {user_key}",
-                    file=sys.stderr
+                logger.info(
+                    "Reusing idle session %s for user %s",
+                    active_session.session_id,
+                    user_key,
                 )
 
                 # Run on existing session (will use history)
@@ -1103,10 +1103,10 @@ class Agent:
                 return
             else:
                 # Session is running - inject as user intervention
-                print(
-                    f"[INFO] Injecting into running session {active_session.session_id} "
-                    f"for user {user_key}",
-                    file=sys.stderr
+                logger.info(
+                    "Injecting into running session %s for user %s",
+                    active_session.session_id,
+                    user_key,
                 )
 
                 # Inject into Agent's session queue (not AgentSession's queue)
@@ -1119,19 +1119,12 @@ class Agent:
                     user_intervention=True
                 )
 
-                import sys
-                print(
-                    f"[DEBUG] Pushing intervention message to queue {active_session.session_id}",
-                    file=sys.stderr
-                )
+                logger.debug("Pushing intervention message to queue %s", active_session.session_id)
                 self._session_queues[active_session.session_id].push(intervention_msg)
 
                 # Verify message was added
                 queue_after = self._session_queues.get(active_session.session_id, MessageQueue())
-                print(
-                    f"[DEBUG] After push, queue has {len(queue_after._messages)} messages",
-                    file=sys.stderr
-                )
+                logger.debug("After push, queue has %s messages", len(queue_after._messages))
 
                 # Yield injection events
                 yield AgentEvent.session_start(

@@ -2,22 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react"
 import type { ChatEvent, ConnectionStatus } from "@/lib/chat-types"
-
-// 自动检测：如果是局域网访问，使用本机 IP；否则用 localhost
-const getGatewayUrl = (userKey?: string): string => {
-  const baseUrl = typeof window !== 'undefined'
-    ? `ws://${window.location.hostname}:9000/ws`
-    : "ws://localhost:9000/ws"
-
-  // 添加 user_key 参数（多租户支持）
-  if (userKey && userKey !== "web:default") {
-    const url = new URL(baseUrl)
-    url.searchParams.set("user_key", userKey)
-    return url.toString().replace("wss://", "ws://").replace("https://", "http://")
-  }
-
-  return baseUrl
-}
+import { gatewayWsPath } from "@/lib/gateway"
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -167,7 +152,7 @@ class WebSocketManager {
     this.isConnecting = true
     this.notifyStatus("connecting")
 
-    const gatewayUrl = getGatewayUrl(this.currentUserKey)
+    const gatewayUrl = gatewayWsPath("/ws", this.currentUserKey)
     log("Connecting to", gatewayUrl, "as", this.currentUserKey)
 
     try {

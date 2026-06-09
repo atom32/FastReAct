@@ -6,6 +6,9 @@ interface ConfirmationModalProps {
   isOpen: boolean
   title: string
   description: string
+  toolName?: string
+  requestId?: string
+  paramsSummary?: string
   onApprove: () => void
   onDeny: () => void
 }
@@ -14,6 +17,9 @@ export function ConfirmationModal({
   isOpen,
   title,
   description,
+  toolName,
+  requestId,
+  paramsSummary,
   onApprove,
   onDeny,
 }: ConfirmationModalProps) {
@@ -59,11 +65,40 @@ export function ConfirmationModal({
           {title}
         </h3>
         <p
-          className="mb-8 text-center text-sm leading-relaxed"
+          className="mb-4 text-center text-sm leading-relaxed"
           style={{ color: "var(--fr-text-secondary)" }}
         >
           {description}
         </p>
+
+        <div
+          className="mb-6 space-y-2 rounded-lg border p-3 text-xs"
+          style={{
+            borderColor: "rgba(255,255,255,0.12)",
+            color: "var(--fr-text-secondary)",
+          }}
+        >
+          <div className="flex justify-between gap-3">
+            <span>Tool</span>
+            <span className="min-w-0 truncate font-mono" style={{ color: "var(--fr-text-primary)" }}>
+              {toolName || "-"}
+            </span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span>Request</span>
+            <span className="min-w-0 truncate font-mono" style={{ color: "var(--fr-text-primary)" }}>
+              {requestId || "-"}
+            </span>
+          </div>
+          {paramsSummary && (
+            <pre
+              className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md p-2 font-mono text-[11px]"
+              style={{ background: "rgba(0,0,0,0.24)" }}
+            >
+              {paramsSummary}
+            </pre>
+          )}
+        </div>
 
         {/* Buttons */}
         <div className="flex gap-3">

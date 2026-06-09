@@ -14,8 +14,9 @@ Design Principles:
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Any, Dict, AsyncIterator
-from datetime import datetime
 import json
+
+from fastreact.core.time import utc_timestamp
 
 
 class EventType(str, Enum):
@@ -65,7 +66,7 @@ class AgentEvent:
     session_id: str = ""
 
     # Timestamp
-    timestamp: float = field(default_factory=lambda: datetime.utcnow().timestamp())
+    timestamp: float = field(default_factory=utc_timestamp)
 
     # Structured data (payload)
     tool_name: Optional[str] = None
@@ -209,7 +210,7 @@ class AgentEvent:
             type=EventType(data["type"]),
             content=data.get("content", ""),
             session_id=data.get("session_id", ""),
-            timestamp=data.get("timestamp", datetime.utcnow().timestamp()),
+            timestamp=data.get("timestamp", utc_timestamp()),
             tool_name=data.get("tool_name"),
             tool_args=data.get("tool_args"),
             metadata=data.get("metadata", {}),

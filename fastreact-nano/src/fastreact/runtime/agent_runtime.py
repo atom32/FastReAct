@@ -295,10 +295,10 @@ class AgentRuntime:
                     # 1. Brain: Ask LLM for reasoning
                     pending_messages = agent._session_queues.get(session_id, MessageQueue())
 
-                    # Debug: Always log queue status
+                    # Log queue status at debug level only.
                     msg_count = len(pending_messages._messages) if pending_messages else 0
                     logger.debug(
-                        "[DEBUG] Inner loop start: queue has %s messages",
+                        "Inner loop start: queue has %s messages",
                         msg_count,
                     )
 
@@ -306,7 +306,7 @@ class AgentRuntime:
                     if pending_messages:
                         for msg in pending_messages.drain():
                             logger.debug(
-                                "[DEBUG] Processing message: role=%s, content=%s",
+                                "Processing message: role=%s, content=%s",
                                 msg.role,
                                 msg.content[:30],
                             )
@@ -444,12 +444,12 @@ class AgentRuntime:
                             pending = agent._session_queues.get(session_id, MessageQueue())
                             if pending:
                                 logger.debug(
-                                    "[DEBUG] Tool execution checkpoint: found %s messages",
+                                    "Tool execution checkpoint: found %s messages",
                                     len(pending._messages),
                                 )
                                 for msg in pending.drain():
                                     logger.debug(
-                                        "[DEBUG] Tool checkpoint processing: role=%s, content=%s",
+                                        "Tool checkpoint processing: role=%s, content=%s",
                                         msg.role,
                                         msg.content[:30],
                                     )
@@ -512,7 +512,12 @@ class AgentRuntime:
                             yield result_event
 
                             # Add tool result to history
-                            logger.debug(f"[DEBUG] Tool result: tool_name={tool_name}, call_id='{call_id}', result_length={len(result)}")
+                            logger.debug(
+                                "Tool result: tool_name=%s, call_id=%r, result_length=%s",
+                                tool_name,
+                                call_id,
+                                len(result),
+                            )
                             messages.append(Message.tool(
                                 name=tool_name,
                                 result=result,
@@ -524,7 +529,7 @@ class AgentRuntime:
                             pending = agent._session_queues.get(session_id, MessageQueue())
                             if pending and pending._messages:
                                 logger.debug(
-                                    "[DEBUG] Post-tool checkpoint: %s messages queued after %s",
+                                    "Post-tool checkpoint: %s messages queued after %s",
                                     len(pending._messages),
                                     tool_name,
                                 )
@@ -536,7 +541,7 @@ class AgentRuntime:
                         # Tools executed, prepare for next LLM call
                         executed_tools_this_iteration = True
                         has_more_tool_calls = False
-                        logger.debug(f"[DEBUG] Tools executed in this iteration, will continue to next iteration")
+                        logger.debug("Tools executed in this iteration, will continue to next iteration")
                     else:
                         # No tool calls - exit inner loop
                         has_more_tool_calls = False
@@ -553,7 +558,7 @@ class AgentRuntime:
 
                 queue_in_dict = agent._session_queues.get(session_id)
                 logger.debug(
-                    "[DEBUG] After inner loop: queue_in_dict=%s, has_followup=%s, len=%s, executed_tools=%s",
+                    "After inner loop: queue_in_dict=%s, has_followup=%s, len=%s, executed_tools=%s",
                     queue_in_dict is not None,
                     has_followup,
                     len(followup_queue._messages) if followup_queue else "N/A",
@@ -561,7 +566,7 @@ class AgentRuntime:
                 )
                 if has_followup:
                     logger.debug(
-                        "[DEBUG] Found %s follow-up messages, continuing loop",
+                        "Found %s follow-up messages, continuing loop",
                         len(followup_queue._messages),
                     )
 
@@ -588,15 +593,28 @@ class AgentRuntime:
 
                 # Only break if we have a final answer OR we've hit max iterations
                 if has_final_answer:
-                    logger.debug(f"[DEBUG] Agent loop completed: has_final_answer=True, executed_tools={executed_tools_this_iteration}, has_followup={has_followup}")
+                    logger.debug(
+                        "Agent loop completed: has_final_answer=True, executed_tools=%s, has_followup=%s",
+                        executed_tools_this_iteration,
+                        has_followup,
+                    )
                     break
                 elif not executed_tools_this_iteration and not has_followup:
                     # LLM didn't call tools AND didn't generate text response
                     # This might be an error or empty response - log warning
-                    logger.debug(f"[WARNING] Agent loop ended without final answer or tool calls (executed_tools={executed_tools_this_iteration}, has_followup={has_followup})")
+                    logger.debug(
+                        "Agent loop ended without final answer or tool calls (executed_tools=%s, has_followup=%s)",
+                        executed_tools_this_iteration,
+                        has_followup,
+                    )
                     break
                 # Otherwise, continue the loop
-                logger.debug(f"[DEBUG] Agent loop continuing (executed_tools={executed_tools_this_iteration}, has_followup={has_followup}, has_final_answer={has_final_answer})")
+                logger.debug(
+                    "Agent loop continuing (executed_tools=%s, has_followup=%s, has_final_answer=%s)",
+                    executed_tools_this_iteration,
+                    has_followup,
+                    has_final_answer,
+                )
 
             # Check if we were interrupted
             if interrupted:

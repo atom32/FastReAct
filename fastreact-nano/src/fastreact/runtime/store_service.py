@@ -2,9 +2,10 @@
 
 import json
 import threading
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+from fastreact.core.time import utc_iso
 
 
 SENSITIVE_KEYS = {"api_key", "apikey", "token", "pat", "password", "secret", "authorization"}
@@ -27,7 +28,7 @@ class StoreService:
 
     def append(self, stream: str, record: dict[str, Any]) -> dict[str, Any]:
         record = dict(record)
-        record.setdefault("created_at", datetime.utcnow().isoformat())
+        record.setdefault("created_at", utc_iso())
         record = self.sanitize(record)
         path = self.root / f"{stream}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)

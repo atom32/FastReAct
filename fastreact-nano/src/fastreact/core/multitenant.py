@@ -5,6 +5,7 @@ Manages user workspace isolation for multi-tenant deployments.
 """
 
 import json
+import logging
 import re
 import shutil
 import uuid
@@ -13,9 +14,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
+from fastreact.core.time import utc_now
+
 if TYPE_CHECKING:
     from fastreact.mcp.manager import MCPToolManager
     from fastreact.core.config_manager import ConfigManager
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityError(Exception):
@@ -65,7 +70,7 @@ def get_global_agent(
             multitenant=True,  # Always use multi-tenant mode
             base_workspace=workspace_path,
         )
-        print(f"[MULTITENANT] Created global shared Agent")
+        logger.info("Created global shared Agent")
 
     return _global_agent
 
@@ -79,7 +84,7 @@ def reset_global_agent():
     """
     global _global_agent
     _global_agent = None
-    print(f"[MULTITENANT] Reset global agent")
+    logger.info("Reset global agent")
 
 
 # ============================================================================
@@ -458,7 +463,7 @@ class MultiTenantManager:
         else:
             # Generate temporary user_key
             temp_key = self.generate_temp_user_key(fallback_channel)
-            print(f"[MULTITENANT] Generated temp user_key: {temp_key}")
+            logger.debug("Generated temp user_key: %s", temp_key)
             return temp_key
 
     def register_temp_user(self, user_key: str) -> None:
@@ -469,8 +474,8 @@ class MultiTenantManager:
             user_key: Temporary user identifier
         """
         if self.is_temp_user(user_key):
-            self._temp_users[user_key] = datetime.utcnow()
-            print(f"[MULTITENANT] Registered temp user: {user_key}")
+            self._temp_users[user_key] = utc_now()
+            logger.debug("Registered temp user: %s", user_key)
 
     def update_temp_user_activity(self, user_key: str) -> None:
         """
@@ -480,7 +485,7 @@ class MultiTenantManager:
             user_key: User identifier (only updates if temp user)
         """
         if self.is_temp_user(user_key) and user_key in self._temp_users:
-            self._temp_users[user_key] = datetime.utcnow()
+            self._temp_users[user_key] = utc_now()
 
     def cleanup_temp_users(self, max_age_seconds: Optional[int] = None) -> int:
         """
@@ -495,7 +500,7 @@ class MultiTenantManager:
         if max_age_seconds is None:
             max_age_seconds = self._temp_user_ttl
 
-        now = datetime.utcnow()
+        now = utc_now()
         expired_users = []
 
         # Find expired users
@@ -515,12 +520,12 @@ class MultiTenantManager:
                 if user_key in self._user_contexts:
                     del self._user_contexts[user_key]
 
-                print(f"[MULTITENANT] Cleaned expired temp user: {user_key}")
+                logger.info("Cleaned expired temp user: %s", user_key)
             except Exception as e:
-                print(f"[ERROR] Failed to cleanup temp user {user_key}: {e}")
+                logger.warning("Failed to cleanup temp user %s: %s", user_key, e)
 
         if expired_users:
-            print(f"[MULTITENANT] Cleaned {len(expired_users)} expired temp users")
+            logger.info("Cleaned %s expired temp users", len(expired_users))
 
         return len(expired_users)
 
@@ -535,9 +540,9 @@ class MultiTenantManager:
             workspace = self.get_user_workspace(user_key)
             if workspace.exists():
                 shutil.rmtree(workspace)
-                print(f"[MULTITENANT] Deleted workspace: {workspace}")
+                logger.info("Deleted workspace: %s", workspace)
         except Exception as e:
-            print(f"[ERROR] Failed to delete workspace for {user_key}: {e}")
+            logger.warning("Failed to delete workspace for %s: %s", user_key, e)
 
     def get_temp_user_stats(self) -> dict:
         """
@@ -546,7 +551,7 @@ class MultiTenantManager:
         Returns:
             Dictionary with temp user statistics
         """
-        now = datetime.utcnow()
+        now = utc_now()
         active_count = 0
         expired_count = 0
 

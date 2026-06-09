@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RefreshCw } from "lucide-react"
+import { gatewayApi } from "@/lib/gateway"
 
 export function ToolsPanel() {
   const [tools, setTools] = useState<string[]>([])
@@ -13,7 +14,7 @@ export function ToolsPanel() {
   const [servers, setServers] = useState<Array<{ name: string; alive: boolean }>>([])
 
   const load = async () => {
-    const res = await fetch("http://localhost:9000/api/tools")
+    const res = await fetch(gatewayApi("/api/tools"))
     if (res.ok) {
       const data = await res.json()
       setTools(data.tools || [])

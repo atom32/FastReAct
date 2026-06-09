@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Trash2, Search, Eye } from "lucide-react"
+import { gatewayApi } from "@/lib/gateway"
 
 interface Session {
   session_id: string
@@ -50,7 +51,7 @@ export function SessionManager() {
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch("http://localhost:9000/api/sessions")
+      const response = await fetch(gatewayApi("/api/sessions"))
       if (response.ok) {
         const data = await response.json()
         setSessions(data.sessions || [])
@@ -66,7 +67,7 @@ export function SessionManager() {
     if (!confirm("Are you sure you want to terminate this session?")) return
 
     try {
-      const response = await fetch(`http://localhost:9000/api/sessions/${sessionId}`, {
+      const response = await fetch(gatewayApi(`/api/sessions/${sessionId}`), {
         method: "DELETE",
       })
       if (response.ok) {
@@ -78,14 +79,14 @@ export function SessionManager() {
   }
 
   const viewSession = async (sessionId: string) => {
-    const response = await fetch(`http://localhost:9000/api/sessions/${sessionId}`)
+    const response = await fetch(gatewayApi(`/api/sessions/${sessionId}`))
     if (response.ok) {
       setSelected(await response.json())
     }
   }
 
   const resumeSession = async (sessionId: string) => {
-    await fetch(`http://localhost:9000/api/sessions/${sessionId}/resume`, { method: "POST" })
+    await fetch(gatewayApi(`/api/sessions/${sessionId}/resume`), { method: "POST" })
     await viewSession(sessionId)
   }
 

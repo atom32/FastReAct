@@ -15,6 +15,8 @@ from typing import Optional, Callable, Awaitable, Any, Dict, List
 from enum import Enum
 from datetime import datetime
 
+from fastreact.core.time import utc_now
+
 
 class SafetyLevel(Enum):
     """Safety classification for operations"""
@@ -46,7 +48,7 @@ class SafetyDecision:
 @dataclass
 class AuditLog:
     """Audit log entry for safety events"""
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utc_now)
     tool_name: str = ""
     args: Dict[str, Any] = field(default_factory=dict)
     decision: SafetyDecision = None

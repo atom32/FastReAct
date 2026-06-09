@@ -1,9 +1,9 @@
 """Durable task/plan service backed by JSONL snapshots."""
 
 import uuid
-from datetime import datetime
 from typing import Any, Optional
 
+from fastreact.core.time import utc_iso
 from fastreact.core.tools import Tool
 
 
@@ -28,7 +28,7 @@ class TaskService:
     ) -> dict[str, Any]:
         if priority not in VALID_PRIORITIES:
             priority = "normal"
-        now = datetime.utcnow().isoformat()
+        now = utc_iso()
         task = {
             "task_id": f"task-{uuid.uuid4().hex[:10]}",
             "title": title,
@@ -59,7 +59,7 @@ class TaskService:
                 raise ValueError(f"Invalid priority: {value}")
             current[key] = value
 
-        current["updated_at"] = datetime.utcnow().isoformat()
+        current["updated_at"] = utc_iso()
         self._store.upsert_snapshot("tasks", "task_id", current)
         return current
 

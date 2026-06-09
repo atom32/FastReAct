@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { RefreshCw } from "lucide-react"
+import { gatewayApi } from "@/lib/gateway"
 
 interface Trace {
   created_at: string
@@ -20,7 +21,7 @@ export function TraceViewer() {
   const [traces, setTraces] = useState<Trace[]>([])
 
   const load = async () => {
-    const res = await fetch("http://localhost:9000/api/traces")
+    const res = await fetch(gatewayApi("/api/traces"))
     if (res.ok) {
       const data = await res.json()
       setTraces(data.traces || [])

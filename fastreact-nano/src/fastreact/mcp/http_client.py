@@ -7,10 +7,13 @@ with SSE (Server-Sent Events) for streaming responses.
 
 import asyncio
 import json
+import logging
 from typing import Any, Optional, Dict, AsyncIterator
 from urllib.parse import urljoin
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class StreamableHTTPMCPClient:
@@ -65,8 +68,6 @@ class StreamableHTTPMCPClient:
         Raises:
             RuntimeError: If connection fails
         """
-        import sys
-
         try:
             # Create HTTP client
             self._client = httpx.AsyncClient(
@@ -101,7 +102,7 @@ class StreamableHTTPMCPClient:
                 raise RuntimeError(f"MCP init failed: {response['error']}")
 
             self._connected = True
-            print(f"[OK] Connected to MCP HTTP server at {self._base_url}", file=sys.stderr)
+            logger.info("Connected to MCP HTTP server at %s", self._base_url)
 
         except httpx.ConnectError as e:
             raise RuntimeError(f"Failed to connect to MCP server: {e}")
@@ -221,7 +222,6 @@ class StreamableHTTPMCPClient:
         Raises:
             RuntimeError: If SSE connection fails after max retries
         """
-        import sys
         import time
 
         if not self._connected:
@@ -246,10 +246,7 @@ class StreamableHTTPMCPClient:
                             await asyncio.sleep(5.0)  # Check every 5 seconds
                             if time.time() - last_data_time > heartbeat_interval:
                                 # No data for too long, connection might be stale
-                                print(
-                                    f"[INFO] SSE heartbeat timeout, reconnecting...",
-                                    file=sys.stderr
-                                )
+                                logger.info("SSE heartbeat timeout, reconnecting...")
                                 response.close()
                                 break
 
@@ -280,10 +277,11 @@ class StreamableHTTPMCPClient:
                     )
 
                 # Exponential backoff
-                print(
-                    f"[WARNING] SSE connection lost, retrying in {backoff:.1f}s "
-                    f"(attempt {retry_count}/{max_retries})",
-                    file=sys.stderr
+                logger.warning(
+                    "SSE connection lost, retrying in %.1fs (attempt %s/%s)",
+                    backoff,
+                    retry_count,
+                    max_retries,
                 )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60.0)  # Max 60 seconds
@@ -291,12 +289,9 @@ class StreamableHTTPMCPClient:
                 # Reconnect
                 try:
                     await self.connect()
-                    print(f"[OK] SSE reconnected successfully", file=sys.stderr)
+                    logger.info("SSE reconnected successfully")
                 except Exception as reconnect_error:
-                    print(
-                        f"[ERROR] SSE reconnect failed: {reconnect_error}",
-                        file=sys.stderr
-                    )
+                    logger.warning("SSE reconnect failed: %s", reconnect_error)
                     continue
 
     def is_alive(self) -> bool:

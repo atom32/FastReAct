@@ -9,6 +9,7 @@ import { ThemePalette } from "./theme-palette"
 import { ConfirmationModal } from "./confirmation-modal"
 import { WelcomeScreen } from "./welcome-screen"
 import { useFastReActWS } from "./use-fastreact-ws"
+import { summarizeSafe } from "@/lib/gateway"
 
 function generateId() {
   return Math.random().toString(36).substring(2, 12)
@@ -24,6 +25,8 @@ export function ChatInterface() {
     title: string
     description: string
     requestId?: string
+    toolName?: string
+    paramsSummary?: string
   }>({ isOpen: false, title: "", description: "" })
   const [userInterventionCount, setUserInterventionCount] = useState(0)
 
@@ -94,6 +97,8 @@ export function ChatInterface() {
         title: "Confirmation Required",
         description: event.content,
         requestId: event.metadata?.request_id,
+        toolName: event.toolName,
+        paramsSummary: summarizeSafe(event.toolArgs || {}),
       })
     }
 
@@ -148,8 +153,10 @@ export function ChatInterface() {
     setConfirmModalRef.current({
       isOpen: true,
       title: "Confirmation Required",
-      description: `${data.reason}\n\nTool: ${data.tool_name}`,
+      description: data.reason,
       requestId: data.request_id,
+      toolName: data.tool_name,
+      paramsSummary: summarizeSafe(data.tool_args || {}),
     })
   }, [])
 
@@ -225,6 +232,7 @@ export function ChatInterface() {
     if (confirmModal.requestId) {
       approveTool(confirmModal.requestId)
     }
+    setStatusLabel(`Approved tool request ${confirmModal.requestId || ""}`.trim())
     setConfirmModal({ isOpen: false, title: "", description: "" })
   }, [approveTool, confirmModal.requestId])
 
@@ -232,6 +240,7 @@ export function ChatInterface() {
     if (confirmModal.requestId) {
       denyTool(confirmModal.requestId)
     }
+    setStatusLabel(`Denied tool request ${confirmModal.requestId || ""}`.trim())
     setConfirmModal({ isOpen: false, title: "", description: "" })
   }, [denyTool, confirmModal.requestId])
 
@@ -285,6 +294,9 @@ export function ChatInterface() {
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}
         description={confirmModal.description}
+        toolName={confirmModal.toolName}
+        requestId={confirmModal.requestId}
+        paramsSummary={confirmModal.paramsSummary}
         onApprove={handleConfirmApprove}
         onDeny={handleConfirmDeny}
       />

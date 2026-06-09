@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Save, RotateCcw, Download, Upload } from "lucide-react"
+import { gatewayApi } from "@/lib/gateway"
 
 interface LLMConfig {
   provider: string
@@ -56,7 +57,7 @@ export function ConfigEditor() {
 
   const fetchConfig = async () => {
     try {
-      const response = await fetch("http://localhost:9000/api/config")
+      const response = await fetch(gatewayApi("/api/config"))
       if (response.ok) {
         const data = await response.json()
         setConfig(data)
@@ -71,7 +72,7 @@ export function ConfigEditor() {
   const saveConfig = async () => {
     setSaving(true)
     try {
-      const response = await fetch("http://localhost:9000/api/config", {
+      const response = await fetch(gatewayApi("/api/config"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),

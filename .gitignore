@@ -36,6 +36,9 @@ next-env.d.ts
 fastreact-nano-web/logs/server.log
 fastreact-nano/release_llm_report.json
 fastreact-nano/MagicMock/
+MagicMock/
+workspace/
+workspaces/
 .claude/settings.local.json
 
 # Test and debug files (keep repo clean)
