@@ -15,6 +15,16 @@ interface Metrics {
   version?: string
 }
 
+interface DependencyHealth {
+  status: string
+  checks: {
+    llm?: { status: string; model?: string }
+    store?: { status: string; root?: string; streams?: number; records?: number; bytes?: number }
+    mcp?: { status: string; configured_servers?: number }
+    gateway?: { status: string; admin_api_auth?: boolean; multitenant?: boolean }
+  }
+}
+
 export function Dashboard() {
   const [metrics, setMetrics] = useState<Metrics>({
     activeSessions: 0,
@@ -25,13 +35,15 @@ export function Dashboard() {
     version: "2.4.2",
   })
   const [loading, setLoading] = useState(true)
+  const [health, setHealth] = useState<DependencyHealth | null>(null)
 
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        const [metricsRes, statusRes] = await Promise.all([
+        const [metricsRes, statusRes, healthRes] = await Promise.all([
           adminFetch("/api/metrics"),
-          adminFetch("/api/status")
+          adminFetch("/api/status"),
+          adminFetch("/api/health/dependencies")
         ])
 
         if (metricsRes.ok) {
@@ -50,6 +62,10 @@ export function Dashboard() {
         if (statusRes.ok) {
           const status = await statusRes.json()
           setMetrics(prev => ({ ...prev, version: status.version }))
+        }
+
+        if (healthRes.ok) {
+          setHealth(await healthRes.json())
         }
       } catch (error) {
         console.error("Failed to fetch metrics:", error)
@@ -73,6 +89,25 @@ export function Dashboard() {
   const formatMemory = (bytes: number) => {
     const mb = bytes / (1024 * 1024)
     return `${mb.toFixed(1)} MB`
+  }
+
+  const statusBadge = (status?: string) => {
+    const healthy = status === "healthy" || status === "configured" || status === "writable"
+    const neutral = status === "not_configured" || status === "external"
+    return (
+      <Badge
+        variant="outline"
+        className={
+          healthy
+            ? "border-green-200 bg-green-50 text-green-700"
+            : neutral
+              ? "border-slate-200 bg-slate-50 text-slate-700"
+              : "border-amber-200 bg-amber-50 text-amber-700"
+        }
+      >
+        {status || "unknown"}
+      </Badge>
+    )
   }
 
   return (
@@ -151,6 +186,33 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Environment</span>
             <span className="text-sm text-muted-foreground">Development</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Dependency Health</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium">LLM Provider</span>
+            {statusBadge(health?.checks.llm?.status)}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium">JSONL Store</span>
+            {statusBadge(health?.checks.store?.status)}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium">MCP</span>
+            {statusBadge(health?.checks.mcp?.status)}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium">Admin Auth</span>
+            {statusBadge(health?.checks.gateway?.admin_api_auth ? "enabled" : "disabled")}
+          </div>
+          <div className="md:col-span-2 rounded-md border px-3 py-2 text-xs text-muted-foreground">
+            Store: {health?.checks.store?.records ?? 0} records across {health?.checks.store?.streams ?? 0} streams
           </div>
         </CardContent>
       </Card>

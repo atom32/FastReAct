@@ -752,6 +752,69 @@ def create_gateway_app() -> FastAPI:
             }
         }
 
+    @app.get("/api/health/dependencies")
+    async def dependency_health(request: Request):
+        """Return deploy-time dependency health without exposing secrets."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
+
+        agent = get_gateway_agent()
+        config = agent.config
+        store_stats = agent.store.stats()
+
+        llm_configured = bool(config.llm.model) and bool(config.llm.api_key or os.getenv("OPENAI_API_KEY"))
+        store_writable = False
+        try:
+            agent.store.root.mkdir(parents=True, exist_ok=True)
+            store_writable = os.access(agent.store.root, os.W_OK)
+        except Exception:
+            store_writable = False
+
+        mcp_servers = agent.list_mcp_server_status()
+        checks = {
+            "llm": {
+                "status": "configured" if llm_configured else "missing_key",
+                "model": config.llm.model,
+                "api_base_configured": bool(config.llm.api_base),
+            },
+            "store": {
+                "status": "writable" if store_writable else "not_writable",
+                "root": store_stats["root"],
+                "streams": len(store_stats["streams"]),
+                "records": store_stats["total_records"],
+                "bytes": store_stats["total_bytes"],
+            },
+            "mcp": {
+                "status": "configured" if config.mcp.servers else "not_configured",
+                "configured_servers": len(config.mcp.servers),
+                "known_servers": mcp_servers,
+            },
+            "gateway": {
+                "status": "healthy",
+                "active_sessions": _session_manager.count,
+                "admin_api_auth": admin_api_auth_enabled(),
+                "multitenant": config.gateway.enable_multitenant,
+            },
+            "frontend": {
+                "status": "external",
+                "expected_http_env": "NEXT_PUBLIC_FASTREACT_GATEWAY_HTTP_URL",
+                "expected_ws_env": "NEXT_PUBLIC_FASTREACT_GATEWAY_WS_URL",
+            },
+        }
+
+        overall = "healthy"
+        if checks["store"]["status"] != "writable":
+            overall = "degraded"
+        if checks["llm"]["status"] != "configured":
+            overall = "degraded"
+
+        return {
+            "status": overall,
+            "version": __version__,
+            "checks": checks,
+        }
+
     @app.get("/api/tools")
     async def list_tools(request: Request):
         """List all available tools (including MCP tools)"""

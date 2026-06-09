@@ -59,6 +59,54 @@ class StoreService:
             records = records[-limit:]
         return records
 
+    def stream_path(self, stream: str) -> Path:
+        """Return the JSONL path for a stream without creating it."""
+        return self.root / f"{stream}.jsonl"
+
+    def streams(self) -> list[str]:
+        """List known JSONL stream names."""
+        if not self.root.exists():
+            return []
+        return sorted(path.stem for path in self.root.glob("*.jsonl") if path.is_file())
+
+    def stats(self) -> dict[str, Any]:
+        """Return lightweight store statistics for health checks and diagnostics."""
+        streams: dict[str, dict[str, Any]] = {}
+        total_bytes = 0
+        total_records = 0
+
+        for stream in self.streams():
+            path = self.stream_path(stream)
+            size = path.stat().st_size
+            records = 0
+            last_created_at = None
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    records += 1
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    last_created_at = record.get("created_at") or last_created_at
+
+            streams[stream] = {
+                "records": records,
+                "bytes": size,
+                "last_created_at": last_created_at,
+            }
+            total_bytes += size
+            total_records += records
+
+        return {
+            "root": str(self.root),
+            "exists": self.root.exists(),
+            "streams": streams,
+            "total_records": total_records,
+            "total_bytes": total_bytes,
+        }
+
     def latest_by_id(self, stream: str, id_field: str, value: str) -> Optional[dict[str, Any]]:
         records = self.read(stream, limit=0)
         for record in reversed(records):

@@ -2,6 +2,7 @@ import pytest
 
 from fastreact import Agent, Config, LLMConfig, ReactConfig, ToolConfig
 from fastreact.core.events import EventType
+from fastreact.runtime.store_service import StoreService
 
 
 def make_test_config(tmp_path):
@@ -60,6 +61,18 @@ def test_store_task_service_jsonl_roundtrip(tmp_path):
     assert updated["status"] == "in_progress"
     assert tasks[0]["task_id"] == task["task_id"]
     assert "Current Task Board" in agent.tasks.prompt_context("session-a")
+
+
+def test_store_service_reports_stream_stats(tmp_path):
+    store = StoreService(tmp_path / ".fastreact")
+    store.append("audit", {"session_id": "s1", "tool_name": "read_file"})
+    store.append("traces", {"session_id": "s1", "time_to_final_ms": 42})
+
+    stats = store.stats()
+
+    assert stats["total_records"] == 2
+    assert stats["streams"]["audit"]["records"] == 1
+    assert stats["streams"]["traces"]["bytes"] > 0
 
 
 @pytest.mark.asyncio

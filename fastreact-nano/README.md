@@ -1,584 +1,119 @@
 # FastReAct Nano
 
-**Ultra-Lightweight Event-Driven AI Agent SDK**
+FastReAct Nano is a single-agent workbench with a stable event stream API, WebSocket Gateway, JSONL control-plane store, task tools, permission approvals, and an Admin console.
 
-FastReAct Nano is a minimalist, production-ready AI agent framework with a clean Brain-Body split architecture.
+The current product boundary is intentionally small: one agent runtime, no database, no OS-level sandbox, and no multi-agent worker platform. Risky tools are controlled by confirmation and audit.
 
-## Quick Links
-
-- [📚 渐进式学习路径](docs/LEARNING_PATH.md) - 从零开始掌握 FastReAct Nano
-- [💡 示例代码](examples/) - v0-v4 渐进式示例
-- [🚀 部署指南](deploy/README.md) - 5+ deployment methods
-- [📖 完整文档](docs/) - Architecture, Events, Safety
-- [🐛 问题反馈](https://github.com/atom32/FastReAct/issues) - Report bugs
-
----
-
-## Release Notes - v2.5.0 (2025-02-28)
-
-### Recent Updates
-
-1. **Cache-Friendly Skill Injection** (v2.5.0):
-   - ✅ Base system prompt now constant (1,162 chars)
-   - ✅ Skills injected as separate system message
-   - ✅ Expected 20-50% cost reduction from API cache hits
-   - ✅ No functional changes to LLM behavior
-
-2. **Skill Selection Optimization** (v2.4.1):
-   - ✅ Chinese n-gram tokenization (unigram, bigram, trigram)
-   - ✅ Removed hardcoded skill logic (architecture fix)
-   - ✅ Pure semantic matching, no rule pollution
-   - ✅ SKILL tags optimized to reduce over-matching
-
-2. **MCP Tool Usage Optimization** (v2.4.1):
-   - ✅ System prompt: MCP tool priority guidance
-   - ✅ Tool calls reduced by 67% (from 12 to 4 steps)
-   - ✅ Direct tool invocation (no filesystem exploration)
-
-3. **Agent Loop Fix** (v2.4.1):
-   - ✅ Fixed premature SESSION_END bug
-   - ✅ Added `has_final_answer` check
-   - ✅ Agent now completes responses before ending session
-
-4. **Dual-Layer Memory System** (v2.4.0):
-   - ✅ MemoryManager implementation
-   - ✅ Session history tracking
-   - ✅ Auto-pruning (max 50 messages)
-
-5. **AgentSession Refactor** (v2.4.0):
-   - ✅ Layer responsibility separation
-   - ✅ Gateway → Transport layer only
-   - ✅ Business logic → AgentSession
-
-6. **Ironclad Features** (v2.1.0 - v2.5.0):
-   - ✅ Infinite loop protection (hard limit: 25 iterations)
-   - ✅ JSON parsing robustness (5-level repair, 11/11 tests)
-   - ✅ Multi-turn dialog memory
-   - ✅ MCP auto-reconnect (max 3 retries)
-   - ✅ MCP zombie resurrection (automatic)
-   - ✅ Cache-friendly skill injection (API-level optimization)
-
-### Current Status
-
-| Adapter | Status | Notes |
-|--------|--------|-------|
-| CLI | ✅ Ready | Production-ready |
-| HTTP | ✅ Ready | SSE streaming, REST API |
-| REPL | ✅ Fixed | Agent._llm issue resolved |
-| Gateway | ✅ Ready | WebSocket, AgentSession refactored |
-| Feishu | ✅ Ready | Multi-tenant support |
-| Skills | ✅ Ready | 5 builtin skills, auto-selection |
-| Tools | ✅ Ready | 4 core tools + MCP integration |
-
-### Testing Status
-
-- **Total Tests**: 353 unit tests
-- **Pass Rate**: 100% (353/353)
-- **Unit Tests**: 353 passing
-- **Integration Tests**: ~28
-
-### Architecture Achievement
-
-```
-┌────────────────────────────────────────┐
-│  FastReAct Nano v2.1.0          │
-│                                  │
-│  Lines of Code: 5,592            │
-│  Core (Brain): 180 lines (0.3%) │
-│  ┌──────────────────────────────────┤
-│ │ Module                   │ Lines │ % of Total │
-│ ├─────────────────────────┼───────┤
-│ │ Core Messages          │ 2,454 │  44% │
-│ │ Context/Tools        │ 2,666 │  56% │
-│ │ Safety/Events        │   986 │  100% │
-│ │ Skills/Adapters      │   823 │  14% │
-│ └────────────────────────────────┴
-│        Total                    │ 5,592 │ 100% │
-└─────────────────────────────────────────┘
-```
-
-### Instructions for Demo
-
-1. **Use CLI Adapter** - Fully functional
-   ```bash
-   fastreact "分析这个代码库" --model gpt-4o-mini
-   ```
-
-2. **Avoid REPL** - Has known issues, temporarily disabled
-
-3. **Show Architecture**:
-   - 180-line pure reasoning core
-   - Event-driven protocol
-   - Brain-Body separation (shown above)
-
-**Ready for Production Demo!**
-
-### Installation
-
-#### Method 1: uv (Recommended - Fastest)
+## Quick Start
 
 ```bash
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+cd fastreact-nano
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[all]"
 
-# Install FastReAct Nano
-uv tool install fastreact-nano
-
-# Run
-fastreact-nano
-```
-
-#### Method 2: One-Click Installation Script
-
-```bash
-# Linux/macOS
-curl -sSL https://raw.githubusercontent.com/atom32/FastReAct/main/fastreact-nano/deploy/install.sh | bash
-
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/atom32/FastReAct/main/fastreact-nano/deploy/install.bat | iex
-```
-
-#### Method 3: Docker Compose (Production)
-
-```bash
-# Navigate to deployment directory
-cd fastreact-nano/deploy
-
-# Copy environment template
 cp .env.example .env
+# Edit .env and set FASTRACT_API_KEY or OPENAI_API_KEY.
 
-# Edit .env and add your API keys
-nano .env
-
-# Start services
-docker-compose up -d
-
-# Access services
-# - Gateway: http://localhost:9000
-# - WebUI: http://localhost:8501
-```
-
-#### Method 4: Manual pip Installation
-
-```bash
-# Install from source
-cd fastreact-nano
-pip install -e .
-
-# Or install with CLI support
-pip install -e ".[cli]"
-
-# Or install with all features
-pip install -e ".[all]"
-```
-
-### Configuration
-
-Create a `.env` file or set environment variables:
-
-```bash
-# LLM Configuration
-export ANTHROPIC_API_KEY="sk-xxx"  # or OPENAI_API_KEY, DEEPSEEK_API_KEY
-export MODEL="claude-3-5-sonnet-20241022"
-
-# FastReAct Configuration (optional)
-export FASTREACT_BASE_DIR=".fastreact"
-```
-
-Or create `fastreact.yaml`:
-
-```yaml
-llm:
-  model: "claude-3-5-sonnet-20241022"
-  temperature: 0.7
-  max_tokens: 4096
-
-react:
-  enable_safety: true
-  enable_filesystem_memory: true
-  max_iterations: 20
-```
-
----
-
-## Quick Start on New Machine
-
-### Step 1: Create Configuration Directory
-
-```bash
-# Create user config directory
-mkdir -p ~/.fastreact
-```
-
-### Step 2: Create Configuration File
-
-Create `~/.fastreact/config.json`:
-
-```json
-{
-  "llm": {
-    "model": "gpt-4o-mini",
-    "api_key": "your-api-key-here",
-    "api_base": "https://api.openai.com/v1",
-    "temperature": 0.7,
-    "max_tokens": 4096
-  },
-  "paths": {
-    "user_skills_dir": "/Users/YOUR_NAME/.fastreact/skills",
-    "gateway_workspace": "./workspaces"
-  }
-}
-```
-
-**Important**: Replace `/Users/YOUR_NAME/` with your actual home directory path (run `echo ~/.fastreact` to check).
-
-### Step 3: Install FastReAct Nano
-
-```bash
-# Navigate to project directory
-cd fastreact-nano
-
-# Install with all features
-pip install -e ".[all]"
-```
-
-### Step 4: Start Gateway Server
-
-```bash
-# Start Gateway (WebSocket server)
-python3 -m fastreact.adapters.gateway
-
-# Gateway will start on http://0.0.0.0:9000
-# You should see:
-# [INFO] Starting Gateway server...
-# [INFO] MCP server 'filesystem' registered
-# [INFO] Gateway running on http://0.0.0.0:9000
-```
-
-### Step 5: Start Frontend (Optional)
-
-```bash
-# In another terminal, navigate to frontend
-cd fastreact-nano-web
-
-# Install dependencies (first time only)
+cd ../fastreact-nano-web
 npm install
+cp .env.example .env.local
 
-# Start development server
-npm run dev
-
-# Frontend will start on http://localhost:3000
+cd ..
+./fastreact-nano/scripts/dev_full.sh
 ```
 
-### Step 6: Test Connection
+Open:
 
-Open browser to `http://localhost:3000` and send a message:
+- Web console: http://localhost:3000
+- Gateway health: http://localhost:9000/health
+- Gateway status: http://localhost:9000/api/status
 
-```
-Hello, what can you do?
-```
+## Configuration
 
-You should receive a response from the AI agent!
+Backend values are read from environment variables, then from `~/.fastreact/config.json`, `./.fastreact/config.json`, or `./config.json` where applicable.
 
----
+Use [`.env.example`](.env.example) for backend settings:
 
-## Adding Custom Skills and MCP
+- `FASTRACT_MODEL`, `FASTRACT_API_BASE`, `FASTRACT_API_KEY`
+- `FASTRACT_GATEWAY_WORKSPACE`
+- `GATEWAY_HOST`, `GATEWAY_PORT`, `GATEWAY_ADMIN_KEY`
+- `FASTREACT_ADMIN_API_AUTH`
+- `FASTREACT_CORS_ORIGINS`
+- `FASTRACT_MCP_SERVERS`
 
-FastReAct Nano supports unlimited extension through **Skills** (Markdown) and **MCP Servers** (Python).
+Use [`../fastreact-nano-web/.env.example`](../fastreact-nano-web/.env.example) for frontend settings:
 
-### Step 1: Configure User Skills Directory (First-Time Setup)
+- `NEXT_PUBLIC_FASTREACT_GATEWAY_HTTP_URL`
+- `NEXT_PUBLIC_FASTREACT_GATEWAY_WS_URL`
+- `NEXT_PUBLIC_FASTREACT_ADMIN_KEY`
 
-**Required once** to enable custom skills:
+Do not put real LLM keys, PATs, or private tokens in frontend environment variables.
 
-```bash
-python3 -c "
-import json
-from pathlib import Path
+## Runtime APIs
 
-config_path = Path.home() / '.fastreact/config.json'
-with open(config_path) as f:
-    config = json.load(f)
-
-if 'paths' not in config:
-    config['paths'] = {}
-
-config['paths']['user_skills_dir'] = str(Path.home() / '.fastreact/skills')
-
-with open(config_path, 'w') as f:
-    json.dump(config, f, indent=2)
-
-print('[OK] User skills directory configured')
-"
-```
-
-**Verify configuration:**
-
-```bash
-cat ~/.fastreact/config.json | grep -A 2 "paths"
-# Should show:
-# "paths": {
-#   "user_skills_dir": "/Users/YOUR_NAME/.fastreact/skills"
-# }
-```
-
-### Step 2: Add a Custom Skill (Zero-Code)
-
-**Skills are pure Markdown files** - no programming required!
-
-```bash
-# Create skill directory
-mkdir -p ~/.fastreact/skills/weather
-
-# Create SKILL.md
-cat > ~/.fastreact/skills/weather/SKILL.md << 'EOF'
----
-name: weather
-description: Weather query tool
-tags: [weather, api]
----
-
-Use curl to query weather:
-
-```bash
-# Get weather for Beijing
-curl -s "wttr.in/Beijing?format=3"
-
-# Get weather forecast
-curl -s "wttr.in/?format=j1"
-```
-EOF
-
-# Immediately available!
-fastreact "查询北京天气"
-```
-
-**Skill Format:**
-
-```markdown
----
-name: skill_name
-description: Brief description
-tags: [tag1, tag2]
----
-
-# Skill Name
-
-Instructions for using the tool:
-
-\`\`\`bash
-command examples here
-\`\`\`
-```
-
-### Step 3: Add MCP Server (For Complex Features)
-
-**When to use MCP Servers:**
-- Need state management (databases)
-- Complex protocols (SSH, browsers)
-- Cross-language integration
-
-**Edit `~/.fastreact/config.json`:**
-
-```json
-{
-  "mcp": {
-    "servers": [
-      {
-        "name": "my_server",
-        "command": "python3",
-        "args": ["path/to/server.py"],
-        "isolation": "shared"
-      }
-    ]
-  }
-}
-```
-
-### Verification
-
-**Check loaded skills:**
-
-```bash
-python3 -c "
-from pathlib import Path
-from fastreact.skills import SkillLoader
-
-skills_dir = Path.home() / '.fastreact/skills'
-loader = SkillLoader(skills_dir=skills_dir)
-skills = loader.list_skills()
-
-print(f'User skills: {skills}')
-"
-```
-
-**Test with Agent:**
-
-```bash
-fastreact "列出所有可用的技能"
-```
-
----
-
-## MCP Servers Configuration
-
-MCP servers are configured in `mcp_servers/config/shared.json`.
-
-**Default MCP servers** (already configured):
-- `filesystem` - File operations
-- `fetch` - HTTP requests
-
-**To add custom MCP servers**, edit `mcp_servers/config/shared.json`:
-
-```json
-{
-  "mcp_servers": [
-    {
-      "name": "your_server",
-      "command": "python3",
-      "args": ["path/to/server.py"],
-      "isolation": "shared"
-    }
-  ]
-}
-```
-
-**Note**: User-specific MCP configuration can be placed in `~/.fastreact/config.json` under the `mcp_servers` key.
-
----
-
-### Basic Usage
+Stable Python entrypoint:
 
 ```python
-import asyncio
-from fastreact import Agent
-
-async def main():
-    # Create agent
-    agent = Agent()
-
-    # Run with event stream
-    async for event in agent.run_event_stream("What is 2+2?"):
-        if event.type == EventType.THINK:
-            print(f"Thinking: {event.content}")
-        elif event.type == EventType.TOOL_CALL:
-            print(f"Calling: {event.tool_name}")
-        elif event.type == EventType.SESSION_END:
-            print(f"Answer: {event.content}")
-
-asyncio.run(main())
+async for event in agent.run_event_stream(
+    query,
+    skills=None,
+    session_id=None,
+    history=None,
+    user_key=None,
+):
+    ...
 ```
 
-### Simple API
+Stable WebSocket controls:
 
-```python
-from fastreact import ask
+- `query`
+- `control interrupt`
+- `list_skills`
+- `approve_tool`
+- `deny_tool`
+- `resume_session`
 
-# Quick query
-response = await ask("Analyze this codebase")
-print(response)
+Admin HTTP APIs include sessions, tasks, audit, traces, tools, config, metrics, and dependency health. Set `FASTREACT_ADMIN_API_AUTH=true` to require `X-Admin-Key`.
+
+## Test Gates
+
+```bash
+cd fastreact-nano
+
+python3 -m compileall -q src/fastreact scripts run_tests.py
+python3 run_tests.py quick
+python3 run_tests.py integration
+python3 run_tests.py all
+python3 run_tests.py release-llm
+python3 run_tests.py release-full
 ```
 
-## Architecture: Brain-Body Split
+`release-llm` reads `~/api_key.txt`, records first-event and final timings, and fails unless the LLM Judge passes. `release-full` chains backend tests, frontend build, production audit, E2E, and the release LLM gate.
 
-```
-User Query → Agent (Body) → Core (Brain)
-                   ↓              ↓
-              ┌────────────────────────┐
-              │  Loop Control          │
-              │  - Safety Checks       │    ┌──────────────┐
-              │  - Tool Execution      │ ←→ │ Pure Intent  │
-              │  - Context Monitor     │    │ - LLM Call   │
-              │  - Filesystem Memory   │    │ - Emit Event │
-              └────────────────────────┘    └──────────────┘
-                   595 lines                  180 lines
+`~/Github_PAT.txt` is only used after release gates pass and a push is required.
+
+## Store Maintenance
+
+Control-plane data is stored as JSONL under:
+
+```text
+$FASTRACT_GATEWAY_WORKSPACE/.fastreact/
 ```
 
-**The Brain (Core)**: 180 lines of pure reasoning
-- Calls LLM
-- Emits THINK events
-- Emits TOOL_CALL intents
-- Zero execution, zero side effects
+Maintenance commands:
 
-**The Body (Agent)**: Full execution layer
-- Loop control
-- Tool execution
-- Safety checks
-- Context monitoring
-- Filesystem memory
-- Steering injection
-
-## Event Protocol
-
-All communication flows through `AgentEvent`:
-
-```python
-class EventType:
-    SESSION_START = "session_start"
-    THINK = "think"              # LLM reasoning
-    TOOL_CALL = "tool_call"      # Intent to use tool
-    TOOL_RESULT = "tool_result"  # Tool execution result
-    STEP_END = "step_end"        # Reasoning step complete
-    SESSION_END = "session_end"
-    ERROR = "error"
-    ASK_USER = "ask_user"        # Confirmation request
+```bash
+python3 scripts/store_maintenance.py stats
+python3 scripts/store_maintenance.py backup
+python3 scripts/store_maintenance.py export --output .fastreact/export.json
+python3 scripts/store_maintenance.py compact --keep-last 5000
 ```
 
-## Project Status
+`compact` keeps the latest session/task snapshots and trims append-only streams after creating a backup by default.
 
-**Version**: 2.1.0
-**Status**: Production Ready
+## Operational Docs
 
-### Completed
-- [x] Brain-Body Split Architecture
-- [x] 180-Line Core (Pure Intent Generator)
-- [x] Event-Driven Protocol
-- [x] Safety Policy (Guardrails)
-- [x] Context Monitor (Token Management)
-- [x] Filesystem Memory (Ghost Map)
-- [x] Steering System (Real-time Intervention)
-- [x] CLI Adapter
-- [x] HTTP Adapter (SSE Streaming)
-- [x] REPL Adapter (Session Management)
-- [x] Gateway Adapter (WebSocket)
-
-### Adapters
-- **CLI**: Command-line interface with Rich UI
-- **HTTP**: REST API with Server-Sent Events
-- **REPL**: Interactive session with history
-- **Gateway**: WebSocket support for web UIs
-
-## Design Principles
-
-1. **Anti-Entropy**: Core is locked at 180 lines, preventing AI-induced bloat
-2. **SDK-First**: Core as high-concurrency logic engine
-3. **Human-Comprehensible**: Code is readable and modifiable
-4. **Ecosystem Isolation**: All adapters are replaceable plugins
-
-## Compliance
-
-| Principle | Score | Notes |
-|-----------|-------|-------|
-| 反熵增 (Anti-Entropy) | 100/100 | Core locked at 180 lines |
-| SDK化 (SDK-First) | 100/100 | Pure intent generator |
-| 人类掌控 (Human Control) | 100/100 | Readable, intervenable |
-| 生态隔离 (Ecosystem) | 100/100 | Adapters are plugins |
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Event Protocol](docs/EVENTS.md)
-- [Safety System](docs/SAFETY.md)
-- [Adapter Guide](docs/ADAPTERS.md)
-
-## License
-
-MIT License - see LICENSE file
-
-## Contributing
-
-Please follow CLAUDE.md rules:
-- No emojis in code
-- No hardcoded paths
-- UTF-8 encoding
-- Module independence
-- DRY principle
+- [Deployment](docs/deployment.md)
+- [Architecture](docs/architecture.md)
+- [Security](docs/security.md)

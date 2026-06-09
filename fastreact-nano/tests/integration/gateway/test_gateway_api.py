@@ -38,6 +38,9 @@ class FakeSessions:
 
 class FakeStore:
     def __init__(self):
+        from pathlib import Path
+
+        self.root = Path("/tmp/fastreact-test-store")
         self.records = {
             "traces": [{"session_id": "s1", "time_to_final_ms": 10}],
             "audit": [{"session_id": "s1", "tool_name": "read_file"}],
@@ -50,6 +53,15 @@ class FakeStore:
     def append(self, stream, record):
         self.records.setdefault(stream, []).append(record)
         return record
+
+    def stats(self):
+        return {
+            "root": "/tmp/fastreact-store",
+            "exists": True,
+            "streams": {"audit": {"records": 1}, "traces": {"records": 1}},
+            "total_records": 2,
+            "total_bytes": 128,
+        }
 
 
 class FakeTasks:
@@ -103,11 +115,25 @@ class FakeAgent:
 
     @property
     def config(self):
+        class LLM:
+            model = "gpt-4o-mini"
+            api_key = "test-key"
+            api_base = None
+
+        class MCP:
+            servers = []
+
         class Paths:
             global_skills_dir = "/tmp/skills"
 
+        class Gateway:
+            enable_multitenant = True
+
         class Config:
+            llm = LLM()
+            mcp = MCP()
             paths = Paths()
+            gateway = Gateway()
 
         return Config()
 
@@ -137,6 +163,11 @@ def test_gateway_control_plane_apis(monkeypatch):
     tools = client.get("/api/tools").json()
     assert tools["schemas"][0]["name"] == "read_file"
     assert tools["mcp_servers"][0]["alive"] is True
+
+    health = client.get("/api/health/dependencies").json()
+    assert health["status"] == "healthy"
+    assert health["checks"]["llm"]["status"] == "configured"
+    assert health["checks"]["store"]["records"] == 2
 
 
 def test_gateway_control_plane_optional_admin_auth(monkeypatch):

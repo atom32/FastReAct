@@ -56,6 +56,37 @@ class GateResult:
     reason: str = ""
 
 
+def parse_judge_response(content: str) -> dict[str, Any] | None:
+    """Parse strict or lightly wrapped JSON from the judge response."""
+    content = content.strip()
+    if not content:
+        return None
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    if content.startswith("```"):
+        lines = content.splitlines()
+        if len(lines) >= 3:
+            content = "\n".join(lines[1:-1]).strip()
+            if content.startswith("json"):
+                content = content[4:].strip()
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                pass
+
+    start = content.find("{")
+    end = content.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(content[start:end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
 def load_api_env(path: Path = API_KEY_FILE) -> None:
     """Load credentials from JSON or KEY=VALUE lines without printing secrets."""
     if not path.exists():
@@ -172,9 +203,8 @@ async def judge_answer(
         timeout=20,
     )
     content = (response.content or "").strip()
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError:
+    parsed = parse_judge_response(content)
+    if not parsed:
         return False, "judge returned non-JSON"
     return bool(parsed.get("pass")), str(parsed.get("reason", ""))
 
