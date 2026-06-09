@@ -1,5 +1,6 @@
 const DEFAULT_GATEWAY_HTTP = "http://localhost:9000"
 const DEFAULT_GATEWAY_WS = "ws://localhost:9000"
+const ADMIN_KEY_STORAGE = "fastreact_admin_key"
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "")
@@ -31,6 +32,40 @@ export function gatewayWsBase(): string {
 export function gatewayApi(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`
   return `${gatewayHttpBase()}${normalized}`
+}
+
+export function getAdminKey(): string {
+  if (process.env.NEXT_PUBLIC_FASTREACT_ADMIN_KEY) {
+    return process.env.NEXT_PUBLIC_FASTREACT_ADMIN_KEY
+  }
+  if (typeof window === "undefined") return ""
+  try {
+    return localStorage.getItem(ADMIN_KEY_STORAGE) || ""
+  } catch {
+    return ""
+  }
+}
+
+export function setAdminKey(value: string): void {
+  if (typeof window === "undefined") return
+  try {
+    if (value.trim()) {
+      localStorage.setItem(ADMIN_KEY_STORAGE, value.trim())
+    } else {
+      localStorage.removeItem(ADMIN_KEY_STORAGE)
+    }
+  } catch {
+    // Ignore storage failures; the next request will simply omit the header.
+  }
+}
+
+export function adminFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const key = getAdminKey()
+  const headers = new Headers(init.headers)
+  if (key) {
+    headers.set("X-Admin-Key", key)
+  }
+  return fetch(gatewayApi(path), { ...init, headers })
 }
 
 export function gatewayWsPath(path = "/ws", userKey?: string): string {

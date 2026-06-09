@@ -315,6 +315,27 @@ def verify_admin(request) -> bool:
     return False
 
 
+def admin_api_auth_enabled() -> bool:
+    """Return whether REST control-plane APIs require admin authentication."""
+    env_value = os.getenv("FASTREACT_ADMIN_API_AUTH")
+    if env_value is not None:
+        return env_value.lower() in ("1", "true", "yes", "on")
+    try:
+        return Config.load().gateway.admin_only
+    except Exception:
+        return False
+
+
+def require_admin_api(request: Request) -> Optional[JSONResponse]:
+    """Return a 401 response when protected admin API access is unauthorized."""
+    if admin_api_auth_enabled() and not verify_admin(request):
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Unauthorized. Valid admin API key required."},
+        )
+    return None
+
+
 def create_gateway_app() -> FastAPI:
     """Create FastAPI gateway application"""
     if not FASTAPI_AVAILABLE:
@@ -407,15 +428,21 @@ def create_gateway_app() -> FastAPI:
         }
 
     @app.get("/api/sessions")
-    async def list_sessions_api():
+    async def list_sessions_api(request: Request):
         """List all active sessions (REST API)"""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         sessions = agent.sessions.list()
         return {"sessions": sessions, "count": len(sessions)}
 
     @app.get("/api/sessions/{session_id}")
-    async def get_session_api(session_id: str):
+    async def get_session_api(session_id: str, request: Request):
         """Get live or persisted session detail with event replay."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         detail = agent.sessions.detail(session_id)
         if not detail:
@@ -426,8 +453,11 @@ def create_gateway_app() -> FastAPI:
         return detail
 
     @app.post("/api/sessions/{session_id}/resume")
-    async def resume_session_api(session_id: str):
+    async def resume_session_api(session_id: str, request: Request):
         """Mark a persisted session as resumable for clients."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         detail = agent.sessions.detail(session_id)
         if not detail:
@@ -441,8 +471,11 @@ def create_gateway_app() -> FastAPI:
         return {"message": "Session ready to resume", "session_id": session_id}
 
     @app.delete("/api/sessions/{session_id}")
-    async def terminate_session(session_id: str):
+    async def terminate_session(session_id: str, request: Request):
         """Terminate a session by ID"""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         session = _session_manager.get(session_id)
         if session:
             # Close WebSocket connection
@@ -461,15 +494,21 @@ def create_gateway_app() -> FastAPI:
             )
 
     @app.get("/api/tasks")
-    async def list_tasks(status: Optional[str] = None, owner: Optional[str] = None, session_id: Optional[str] = None):
+    async def list_tasks(request: Request, status: Optional[str] = None, owner: Optional[str] = None, session_id: Optional[str] = None):
         """List durable tasks."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         tasks = agent.tasks.list(status=status, owner=owner, session_id=session_id)
         return {"tasks": tasks, "count": len(tasks)}
 
     @app.post("/api/tasks")
-    async def create_task(request_data: dict):
+    async def create_task(request_data: dict, request: Request):
         """Create a durable task."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         task = agent.tasks.create(
             title=request_data.get("title", ""),
@@ -482,8 +521,11 @@ def create_gateway_app() -> FastAPI:
         return task
 
     @app.patch("/api/tasks/{task_id}")
-    async def update_task(task_id: str, request_data: dict):
+    async def update_task(task_id: str, request_data: dict, request: Request):
         """Update a durable task."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         try:
             return agent.tasks.update(task_id, **request_data)
@@ -491,22 +533,31 @@ def create_gateway_app() -> FastAPI:
             return JSONResponse(status_code=404, content={"message": str(exc)})
 
     @app.get("/api/audit")
-    async def list_audit(limit: int = 200, session_id: Optional[str] = None):
+    async def list_audit(request: Request, limit: int = 200, session_id: Optional[str] = None):
         """List tool permission and execution audit records."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         records = agent.store.read("audit", limit=limit, session_id=session_id)
         return {"audit": records, "count": len(records)}
 
     @app.get("/api/traces")
-    async def list_traces(limit: int = 200, session_id: Optional[str] = None):
+    async def list_traces(request: Request, limit: int = 200, session_id: Optional[str] = None):
         """List runtime timing traces."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         records = agent.store.read("traces", limit=limit, session_id=session_id)
         return {"traces": records, "count": len(records)}
 
     @app.post("/api/control/tool-approval")
-    async def tool_approval(request_data: dict):
+    async def tool_approval(request_data: dict, request: Request):
         """Resolve a pending tool approval request."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         request_id = request_data.get("request_id", "")
         approved = bool(request_data.get("approved"))
@@ -518,15 +569,21 @@ def create_gateway_app() -> FastAPI:
         return {"ok": ok, "request_id": request_id, "approved": approved}
 
     @app.get("/api/control/pending-approvals")
-    async def pending_approvals():
+    async def pending_approvals(request: Request):
         """List pending and recently resolved tool approval requests."""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         agent = get_gateway_agent()
         approvals = agent.tool_executor.list_approvals()
         return {"approvals": approvals, "count": len(approvals)}
 
     @app.get("/api/config")
-    async def get_config():
+    async def get_config(request: Request):
         """Get current configuration (hide sensitive fields)"""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         from fastreact.core.config import Config
 
         config = Config.load()
@@ -568,8 +625,11 @@ def create_gateway_app() -> FastAPI:
         }
 
     @app.put("/api/config")
-    async def update_config(request_data: dict):
+    async def update_config(request_data: dict, request: Request):
         """Update configuration"""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         from fastreact.core.config import Config
         from pathlib import Path as LibPath
         import json
@@ -693,8 +753,11 @@ def create_gateway_app() -> FastAPI:
         }
 
     @app.get("/api/tools")
-    async def list_tools():
+    async def list_tools(request: Request):
         """List all available tools (including MCP tools)"""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         # ✅ Use shared agent from global agent cache
         agent = get_gateway_agent()
 
@@ -718,8 +781,11 @@ def create_gateway_app() -> FastAPI:
         }
 
     @app.get("/api/mcp/servers")
-    async def list_mcp_servers():
+    async def list_mcp_servers(request: Request):
         """List all MCP servers from configuration"""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         from fastreact.core.config import Config
 
         config = Config.load()
@@ -739,8 +805,11 @@ def create_gateway_app() -> FastAPI:
         return {"servers": servers, "count": len(servers)}
 
     @app.get("/api/metrics")
-    async def get_metrics():
+    async def get_metrics(request: Request):
         """Get system metrics"""
+        denied = require_admin_api(request)
+        if denied:
+            return denied
         global _total_events_counter
 
         # Calculate uptime in seconds

@@ -13,8 +13,8 @@ import {
 } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Save, RotateCcw, Download, Upload } from "lucide-react"
-import { gatewayApi } from "@/lib/gateway"
+import { Save, RotateCcw, Download } from "lucide-react"
+import { adminFetch, getAdminKey, setAdminKey } from "@/lib/gateway"
 
 interface LLMConfig {
   provider: string
@@ -50,20 +50,30 @@ export function ConfigEditor() {
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [adminKey, setAdminKeyState] = useState("")
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
 
   useEffect(() => {
+    setAdminKeyState(getAdminKey())
     fetchConfig()
   }, [])
 
   const fetchConfig = async () => {
+    setError("")
     try {
-      const response = await fetch(gatewayApi("/api/config"))
+      const response = await adminFetch("/api/config")
       if (response.ok) {
         const data = await response.json()
         setConfig(data)
+      } else if (response.status === 401) {
+        setError("Admin key required or invalid")
+      } else {
+        setError("Failed to load configuration")
       }
     } catch (error) {
       console.error("Failed to fetch config:", error)
+      setError("Gateway is unavailable")
     } finally {
       setLoading(false)
     }
@@ -71,27 +81,39 @@ export function ConfigEditor() {
 
   const saveConfig = async () => {
     setSaving(true)
+    setMessage("")
+    setError("")
     try {
-      const response = await fetch(gatewayApi("/api/config"), {
+      const response = await adminFetch("/api/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       })
       if (response.ok) {
-        alert("Configuration saved successfully")
+        setMessage("Configuration saved")
+      } else if (response.status === 401) {
+        setError("Admin key required or invalid")
+      } else {
+        setError("Failed to save configuration")
       }
     } catch (error) {
       console.error("Failed to save config:", error)
-      alert("Failed to save configuration")
+      setError("Gateway is unavailable")
     } finally {
       setSaving(false)
     }
   }
 
   const resetConfig = () => {
-    if (confirm("Reset to default configuration?")) {
-      fetchConfig()
-    }
+    fetchConfig()
+    setMessage("Configuration reloaded")
+  }
+
+  const saveAdminKey = () => {
+    setAdminKey(adminKey)
+    setMessage(adminKey.trim() ? "Admin key saved locally" : "Admin key cleared")
+    setError("")
+    fetchConfig()
   }
 
   const exportConfig = () => {
@@ -124,6 +146,8 @@ export function ConfigEditor() {
           Export
         </Button>
       </div>
+      {message && <div className="rounded-md border border-green-500/30 px-3 py-2 text-sm text-green-700">{message}</div>}
+      {error && <div className="rounded-md border border-destructive/50 px-3 py-2 text-sm text-destructive">{error}</div>}
 
       {/* Configuration Tabs */}
       <Tabs defaultValue="llm" className="space-y-4">
@@ -267,10 +291,24 @@ export function ConfigEditor() {
             <CardHeader>
               <CardTitle>Advanced Settings</CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Advanced configuration options coming soon.
-              </p>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Admin API Key</Label>
+                <div className="flex flex-col gap-2 md:flex-row">
+                  <Input
+                    type="password"
+                    value={adminKey}
+                    onChange={(event) => setAdminKeyState(event.target.value)}
+                    placeholder="X-Admin-Key"
+                  />
+                  <Button type="button" variant="outline" onClick={saveAdminKey}>
+                    Save locally
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Used only as an X-Admin-Key request header for protected control-plane APIs.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

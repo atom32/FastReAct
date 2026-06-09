@@ -139,6 +139,28 @@ def test_gateway_control_plane_apis(monkeypatch):
     assert tools["mcp_servers"][0]["alive"] is True
 
 
+def test_gateway_control_plane_optional_admin_auth(monkeypatch):
+    fake = FakeAgent()
+    monkeypatch.setattr(gateway, "get_gateway_agent", lambda config=None: fake)
+    monkeypatch.setenv("FASTREACT_ADMIN_API_AUTH", "true")
+    monkeypatch.setenv("GATEWAY_ADMIN_KEY", "test-admin-key")
+    gateway.ADMIN_API_KEY = None
+
+    app = gateway.create_gateway_app()
+    client = TestClient(app)
+
+    assert client.get("/api/sessions").status_code == 401
+    assert client.get("/api/sessions", headers={"X-Admin-Key": "wrong"}).status_code == 401
+    assert client.get("/api/sessions", headers={"X-Admin-Key": "test-admin-key"}).json()["count"] == 1
+    assert client.post(
+        "/api/tasks",
+        json={"title": "secured task"},
+        headers={"X-Admin-Key": "test-admin-key"},
+    ).json()["title"] == "secured task"
+
+    gateway.ADMIN_API_KEY = None
+
+
 def test_gateway_websocket_disconnect_is_graceful(monkeypatch):
     fake = FakeAgent()
     monkeypatch.setattr(gateway, "get_gateway_agent", lambda config=None: fake)

@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select"
 import { Search, RefreshCw } from "lucide-react"
 import { MCPMarketplace } from "@/components/mcp/mcp-marketplace"
-import { gatewayApi } from "@/lib/gateway"
+import { adminFetch } from "@/lib/gateway"
 
 interface MCPServer {
   name: string
@@ -40,7 +40,7 @@ export default function MarketplacePage() {
   // Fetch installed MCP servers from Gateway
   const fetchServers = async () => {
     try {
-      const response = await fetch(gatewayApi("/api/mcp/servers"))
+      const response = await adminFetch("/api/mcp/servers")
       if (response.ok) {
         const data: MCPServerResponse = await response.json()
         setInstalledServers(data.servers)

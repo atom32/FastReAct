@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { RefreshCw, Plus } from "lucide-react"
-import { gatewayApi } from "@/lib/gateway"
+import { adminFetch } from "@/lib/gateway"
 
 interface Task {
   task_id: string
@@ -31,7 +31,7 @@ export function TaskBoard() {
     setError("")
     try {
       const params = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : ""
-      const res = await fetch(gatewayApi(`/api/tasks${params}`))
+      const res = await adminFetch(`/api/tasks${params}`)
       if (res.ok) {
         const data = await res.json()
         setTasks(data.tasks || [])
@@ -52,7 +52,7 @@ export function TaskBoard() {
   const create = async () => {
     if (!title.trim()) return
     setError("")
-    const res = await fetch(gatewayApi("/api/tasks"), {
+    const res = await adminFetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, priority: "normal" }),
@@ -66,7 +66,7 @@ export function TaskBoard() {
   }
 
   const setStatus = async (taskId: string, status: string) => {
-    const res = await fetch(gatewayApi(`/api/tasks/${taskId}`), {
+    const res = await adminFetch(`/api/tasks/${taskId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),

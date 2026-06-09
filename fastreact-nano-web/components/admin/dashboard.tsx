@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Activity, Users, Zap, Clock } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { gatewayApi } from "@/lib/gateway"
+import { adminFetch } from "@/lib/gateway"
 
 interface Metrics {
   activeSessions: number
@@ -30,8 +30,8 @@ export function Dashboard() {
     const fetchMetrics = async () => {
       try {
         const [metricsRes, statusRes] = await Promise.all([
-          fetch(gatewayApi("/api/metrics")),
-          fetch(gatewayApi("/api/status"))
+          adminFetch("/api/metrics"),
+          adminFetch("/api/status")
         ])
 
         if (metricsRes.ok) {
