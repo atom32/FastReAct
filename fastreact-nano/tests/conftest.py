@@ -39,6 +39,8 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "api: marks tests that require real API key")
     config.addinivalue_line("markers", "e2e: marks end-to-end tests")
     config.addinivalue_line("markers", "integration: marks integration tests")
+    config.addinivalue_line("markers", "unit: marks unit tests")
+    config.addinivalue_line("markers", "release_llm: marks release-only real LLM efficiency tests")
 
 
 # ============================================================================

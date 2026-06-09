@@ -23,6 +23,7 @@ export function ChatInterface() {
     isOpen: boolean
     title: string
     description: string
+    requestId?: string
   }>({ isOpen: false, title: "", description: "" })
   const [userInterventionCount, setUserInterventionCount] = useState(0)
 
@@ -92,6 +93,7 @@ export function ChatInterface() {
         isOpen: true,
         title: "Confirmation Required",
         description: event.content,
+        requestId: event.metadata?.request_id,
       })
     }
 
@@ -141,11 +143,13 @@ export function ChatInterface() {
     reason: string
     tool_name: string
     tool_args: Record<string, any>
+    request_id?: string
   }) => {
     setConfirmModalRef.current({
       isOpen: true,
       title: "Confirmation Required",
       description: `${data.reason}\n\nTool: ${data.tool_name}`,
+      requestId: data.request_id,
     })
   }, [])
 
@@ -166,7 +170,7 @@ export function ChatInterface() {
     setMessagesRef.current((prev) => [...prev, errorMessage])
   }, [])
 
-  const { sendMessage, stopAgent, status } = useFastReActWS({
+  const { sendMessage, stopAgent, approveTool, denyTool, status } = useFastReActWS({
     onEvent: onEventCallback,
     onUserMessage: onUserMessageCallback,
     onConfirmationRequired: onConfirmationRequiredCallback,
@@ -218,12 +222,18 @@ export function ChatInterface() {
   }, [stopAgent])
 
   const handleConfirmApprove = useCallback(() => {
+    if (confirmModal.requestId) {
+      approveTool(confirmModal.requestId)
+    }
     setConfirmModal({ isOpen: false, title: "", description: "" })
-  }, [])
+  }, [approveTool, confirmModal.requestId])
 
   const handleConfirmDeny = useCallback(() => {
+    if (confirmModal.requestId) {
+      denyTool(confirmModal.requestId)
+    }
     setConfirmModal({ isOpen: false, title: "", description: "" })
-  }, [])
+  }, [denyTool, confirmModal.requestId])
 
   return (
     <div
@@ -281,4 +291,3 @@ export function ChatInterface() {
     </div>
   )
 }
-

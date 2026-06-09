@@ -139,7 +139,7 @@ class REPLAdapter:
         # Use provided agent or create new one
         if agent:
             self.agent = agent
-            self.config = agent._config
+            self.config = agent.config
         else:
             self.config = config or Config.load()
             self.agent = Agent(config=self.config)

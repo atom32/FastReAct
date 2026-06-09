@@ -6,6 +6,10 @@ import { Navigation } from "@/components/navigation"
 import { Dashboard } from "@/components/admin/dashboard"
 import { ConfigEditor } from "@/components/admin/config-editor"
 import { SessionManager } from "@/components/admin/session-manager"
+import { TaskBoard } from "@/components/admin/task-board"
+import { ToolsPanel } from "@/components/admin/tools-panel"
+import { AuditLog } from "@/components/admin/audit-log"
+import { TraceViewer } from "@/components/admin/trace-viewer"
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState("dashboard")
@@ -30,9 +34,13 @@ export default function AdminPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-[600px]">
+          <TabsList className="grid w-full min-w-[760px] grid-cols-7 lg:w-[980px]">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
+            <TabsTrigger value="tasks">Tasks</TabsTrigger>
+            <TabsTrigger value="tools">Tools/MCP</TabsTrigger>
+            <TabsTrigger value="audit">Audit</TabsTrigger>
+            <TabsTrigger value="traces">Traces</TabsTrigger>
             <TabsTrigger value="config">Configuration</TabsTrigger>
           </TabsList>
 
@@ -42,6 +50,22 @@ export default function AdminPage() {
 
           <TabsContent value="sessions" className="space-y-6">
             <SessionManager />
+          </TabsContent>
+
+          <TabsContent value="tasks" className="space-y-6">
+            <TaskBoard />
+          </TabsContent>
+
+          <TabsContent value="tools" className="space-y-6">
+            <ToolsPanel />
+          </TabsContent>
+
+          <TabsContent value="audit" className="space-y-6">
+            <AuditLog />
+          </TabsContent>
+
+          <TabsContent value="traces" className="space-y-6">
+            <TraceViewer />
           </TabsContent>
 
           <TabsContent value="config" className="space-y-6">

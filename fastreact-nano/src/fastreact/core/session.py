@@ -339,6 +339,27 @@ class AgentSession:
                     "type": "info",
                     "content": "Execution interrupted",
                 })
+            elif action in ("approve_tool", "deny_tool"):
+                request_id = message.get("request_id", "")
+                approved = action == "approve_tool"
+                ok = False
+                if hasattr(self._agent, "tool_executor"):
+                    ok = self._agent.tool_executor.resolve_approval(
+                        request_id,
+                        approved,
+                        reason=message.get("reason", ""),
+                    )
+                await on_event({
+                    "type": "tool_approval",
+                    "request_id": request_id,
+                    "approved": approved,
+                    "ok": ok,
+                })
+            elif action == "resume_session":
+                await on_event({
+                    "type": "info",
+                    "content": f"Session resume requested: {message.get('session_id') or self.session_id}",
+                })
 
         elif msg_type == "query":
             await self._handle_query(message, on_event)

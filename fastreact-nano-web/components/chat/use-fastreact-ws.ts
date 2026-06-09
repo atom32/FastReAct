@@ -90,6 +90,7 @@ interface UseFastReActWSOptions {
     reason: string
     tool_name: string
     tool_args?: Record<string, any>
+    request_id?: string
   }) => void
   onStatusChange?: (status: ConnectionStatus) => void
   onError?: (error: string) => void
@@ -287,6 +288,7 @@ export function useFastReActWS({
           reason: message.reason || "",
           tool_name: message.tool_name || "",
           tool_args: message.tool_args || {},
+          request_id: message.metadata?.request_id,
         })
       } else if (message.type === "error" && onErrorRef.current) {
         onErrorRef.current(message.content || "Unknown error")
@@ -327,6 +329,16 @@ export function useFastReActWS({
     })
   }, [])
 
+  const approveTool = useCallback((requestId: string) => {
+    const manager = WebSocketManager.getInstance()
+    manager.send({ type: "control", action: "approve_tool", request_id: requestId })
+  }, [])
+
+  const denyTool = useCallback((requestId: string, reason = "Denied by user") => {
+    const manager = WebSocketManager.getInstance()
+    manager.send({ type: "control", action: "deny_tool", request_id: requestId, reason })
+  }, [])
+
   const login = useCallback((email: string) => {
     const userKey = generateUserKey(email)
     const userInfo: UserInfo = {
@@ -363,6 +375,8 @@ export function useFastReActWS({
     status,
     sendMessage,
     stopAgent,
+    approveTool,
+    denyTool,
     currentUser,
     login,
     logout,

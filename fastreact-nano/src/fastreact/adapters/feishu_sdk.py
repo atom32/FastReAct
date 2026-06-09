@@ -30,7 +30,7 @@ try:
     import httpx
 
     LARK_SDK_AVAILABLE = True
-except ImportError:
+except Exception:
     LARK_SDK_AVAILABLE = False
 
     # Type stubs for when SDK is not available
@@ -116,12 +116,6 @@ class FeishuSDKAdapter:
             agent: FastReAct agent instance
             config: Feishu configuration
         """
-        if not LARK_SDK_AVAILABLE:
-            raise RuntimeError(
-                "lark-oapi SDK is required for Feishu SDK adapter. "
-                "Install with: pip install lark-oapi>=1.5.0"
-            )
-
         if not config.app_id or not config.app_secret:
             raise ValueError(
                 "FEISHU_APP_ID and FEISHU_APP_SECRET are required for SDK mode"
@@ -134,11 +128,12 @@ class FeishuSDKAdapter:
         self._multitenant: Optional[MultiTenantManager] = None
         if config.enable_multitenant:
             # Use Feishu-specific workspace from config or paths config
-            workspace = config.base_workspace or agent._config.paths.feishu_workspace_base
+            workspace = config.base_workspace or agent.config.paths.feishu_workspace_base
             self._multitenant = MultiTenantManager(workspace)
 
-        # Build event handler with builder pattern
-        self._event_handler = self._build_event_handler()
+        # Build event handler only when SDK is available. Unit tests exercise
+        # local adapter logic without requiring the optional native SDK stack.
+        self._event_handler = self._build_event_handler() if LARK_SDK_AVAILABLE else None
 
         # API client for sending messages
         self._api_client: Optional[LarkClient] = None
@@ -492,29 +487,22 @@ class FeishuSDKAdapter:
 
         try:
             # Check MCP manager status before processing
-            print(f"[DEBUG] MCP Manager status: {type(self.agent._mcp_manager)}")
-            if self.agent._mcp_manager:
-                # MultiTenantMCPManager has different interface
-                mcp_tools = self.agent._mcp_manager.list_mcp_tools()
+            mcp_tools = self.agent.list_mcp_tools()
+            print(f"[DEBUG] MCP tools currently loaded: {len(mcp_tools)}")
+            if mcp_tools:
                 print(f"[DEBUG] MCP Tools loaded: {len(mcp_tools)} tools")
-                if mcp_tools:
-                    print(f"[DEBUG] MCP Tool names: {mcp_tools[:10]}")
-                else:
-                    print(f"[WARNING] No MCP tools loaded! Checking server status...")
-                    # Try to get shared managers
-                    if hasattr(self.agent._mcp_manager, '_shared_managers'):
-                        print(f"[DEBUG] Shared managers: {list(self.agent._mcp_manager._shared_managers.keys())}")
+                print(f"[DEBUG] MCP Tool names: {mcp_tools[:10]}")
             else:
-                print(f"[DEBUG] MCP Manager is None (will load on first run)")
+                print(f"[DEBUG] No MCP tools loaded yet (will load on first run)")
 
             # Check total tool count
-            all_tools = self.agent._tools.list_all()
+            all_tools = self.agent.list_tools()
             print(f"[DEBUG] Total tools available: {len(all_tools)}")
             print(f"[DEBUG] Tool names: {all_tools[:10]}")
 
             # Check MCP servers config
-            print(f"[DEBUG] MCP servers configured: {len(self.agent._config.mcp.servers)}")
-            for i, server in enumerate(self.agent._config.mcp.servers):
+            print(f"[DEBUG] MCP servers configured: {len(self.agent.config.mcp.servers)}")
+            for i, server in enumerate(self.agent.config.mcp.servers):
                 server_name = server.name if hasattr(server, 'name') else server.get("name", "unknown")
                 command = server.command if hasattr(server, 'command') else server.get("command", "unknown")
                 args = server.args if hasattr(server, 'args') else server.get("args", [])
@@ -631,13 +619,11 @@ class FeishuSDKAdapter:
             # Trigger MCP server loading (creates manager and loads servers)
             # For multi-tenant mode: loads shared servers only
             # For single-tenant mode: loads all servers
-            await self.agent._load_mcp_servers()
+            await self.agent.ensure_mcp_loaded()
 
             # Check loaded tools
-            all_tools = self.agent._tools.list_all()
-            mcp_tools = []
-            if self.agent._mcp_manager:
-                mcp_tools = self.agent._mcp_manager.list_mcp_tools()
+            all_tools = self.agent.list_tools()
+            mcp_tools = self.agent.list_mcp_tools()
 
             print(f"[OK] MCP preload completed")
             print(f"[INFO] Total tools available: {len(all_tools)}")
@@ -657,6 +643,12 @@ class FeishuSDKAdapter:
         Runs the WebSocket client to listen for events from Feishu.
         This is a blocking call that runs forever.
         """
+        if not LARK_SDK_AVAILABLE:
+            raise RuntimeError(
+                "lark-oapi SDK is required for Feishu SDK adapter. "
+                "Install with: pip install lark-oapi>=1.5.0"
+            )
+
         # Map log level string to LogLevel enum
         log_level_map = {
             "debug": LogLevel.DEBUG,
@@ -689,19 +681,17 @@ class FeishuSDKAdapter:
         print(f"[INFO] Auto-reconnect: {self.config.auto_reconnect}")
 
         # Log MCP configuration
-        if self.agent._mcp_manager:
+        if self.agent.list_mcp_tools():
             print(f"[INFO] MCP Manager initialized")
         else:
             print(f"[INFO] MCP Manager: Will load on first request (lazy initialization)")
 
         # Log Skills configuration
-        if hasattr(self.agent, '_skills'):
-            skills = self.agent._skills.list_skills()
-            print(f"[INFO] Loaded {len(skills)} skills")
-            if skills:
-                # skills is a list, not a dict
-                skill_names = list(skills) if isinstance(skills, dict) else skills[:5]
-                print(f"[INFO] Available skills: {', '.join(skill_names)}")
+        skills = self.agent.list_skills()
+        print(f"[INFO] Loaded {len(skills)} skills")
+        if skills:
+            skill_names = list(skills) if isinstance(skills, dict) else skills[:5]
+            print(f"[INFO] Available skills: {', '.join(skill_names)}")
 
         # Log message deduplication cache
         print(f"[INFO] Message deduplication cache: {len(self._processed_messages)} messages")

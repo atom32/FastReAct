@@ -33,6 +33,19 @@ from fastreact.mcp.multitenant_manager import MultiTenantMCPManager
 from fastreact.mcp.discovery import MCPToolDiscovery
 
 from fastreact.tools import ReadFileTool, WriteFileTool, ExecTool, EditFileTool
+from fastreact.runtime import (
+    AgentRuntime,
+    SessionService,
+    ToolExecutionService,
+    SkillResolver,
+    MCPBootstrapper,
+    StoreService,
+    TaskService,
+    TaskCreateTool,
+    TaskUpdateTool,
+    TaskListTool,
+    TaskGetTool,
+)
 
 
 class Agent:
@@ -207,6 +220,17 @@ class Agent:
 
         # Session management (NEW: AgentSession lifecycle)
         self._sessions: dict[str, "AgentSession"] = {}
+
+        # Runtime service boundaries. These keep adapters and public methods
+        # away from Agent private state.
+        self.store = StoreService.from_agent(self)
+        self.tasks = TaskService(self.store)
+        self._register_task_tools()
+        self.sessions = SessionService(self)
+        self.runtime = AgentRuntime(self)
+        self.tool_executor = ToolExecutionService(self)
+        self.skill_resolver = SkillResolver(self)
+        self.mcp_bootstrapper = MCPBootstrapper(self)
 
     def _select_skills_auto(
         self,
@@ -538,6 +562,17 @@ class Agent:
         # Note: MCP servers are loaded lazily in _load_mcp_servers()
         # to avoid async operations in __init__
 
+    def _register_task_tools(self):
+        """Register durable task board tools after StoreService is ready."""
+        for tool in (
+            TaskCreateTool(self.tasks),
+            TaskUpdateTool(self.tasks),
+            TaskListTool(self.tasks),
+            TaskGetTool(self.tasks),
+        ):
+            if not self._tools.get(tool.name):
+                self._tools.register(tool)
+
     def _compress_context(
         self,
         messages: list[dict],
@@ -774,7 +809,7 @@ class Agent:
 
     # === Session Management (NEW) ===
 
-    def create_session(
+    def _create_session_impl(
         self,
         session_id: str,
         user_key: Optional[str] = None,
@@ -845,7 +880,7 @@ class Agent:
 
         return session
 
-    def get_session(self, session_id: str) -> Optional["AgentSession"]:
+    def _get_session_impl(self, session_id: str) -> Optional["AgentSession"]:
         """
         Get existing session
 
@@ -857,7 +892,7 @@ class Agent:
         """
         return self._sessions.get(session_id)
 
-    def close_session(self, session_id: str):
+    def _close_session_impl(self, session_id: str):
         """
         Close and cleanup session
 
@@ -872,7 +907,7 @@ class Agent:
         if session_id in self._session_queues:
             del self._session_queues[session_id]
 
-    def find_active_session(self, user_key: str) -> Optional["AgentSession"]:
+    def _find_active_session_impl(self, user_key: str) -> Optional["AgentSession"]:
         """
         Find active session for user (non-closed status)
 
@@ -893,7 +928,7 @@ class Agent:
                 return session
         return None
 
-    def list_sessions(self, user_key: Optional[str] = None) -> list[dict]:
+    def _list_sessions_impl(self, user_key: Optional[str] = None) -> list[dict]:
         """
         List all sessions (optionally filtered by user)
 
@@ -915,7 +950,7 @@ class Agent:
                 sessions.append(session.get_metadata())
         return sessions
 
-    def get_session_status(self, session_id: str) -> Optional[str]:
+    def _get_session_status_impl(self, session_id: str) -> Optional[str]:
         """
         Get session status
 
@@ -930,7 +965,7 @@ class Agent:
 
     # === End Session Management ===
 
-    def inject_message(self, session_id: str, message: Message):
+    def _inject_message_impl(self, session_id: str, message: Message):
         """
         Inject message into active session
 
@@ -945,6 +980,65 @@ class Agent:
             raise ValueError(f"Session not active: {session_id}")
 
         self._session_queues[session_id].push(message)
+
+    # === Public service-backed session facade ===
+
+    def create_session(
+        self,
+        session_id: str,
+        user_key: Optional[str] = None,
+        max_history: int = 50,
+        followup_window_seconds: int = 30,
+        max_queue_size: int = 5,
+    ) -> "AgentSession":
+        return self.sessions.create(
+            session_id=session_id,
+            user_key=user_key,
+            max_history=max_history,
+            followup_window_seconds=followup_window_seconds,
+            max_queue_size=max_queue_size,
+        )
+
+    def get_session(self, session_id: str) -> Optional["AgentSession"]:
+        return self.sessions.get(session_id)
+
+    def close_session(self, session_id: str):
+        self.sessions.close(session_id)
+
+    def find_active_session(self, user_key: str) -> Optional["AgentSession"]:
+        return self.sessions.find_active(user_key)
+
+    def list_sessions(self, user_key: Optional[str] = None) -> list[dict]:
+        return self.sessions.list(user_key=user_key)
+
+    def get_session_status(self, session_id: str) -> Optional[str]:
+        return self.sessions.status(session_id)
+
+    def inject_message(self, session_id: str, message: Message):
+        self.sessions.inject(session_id, message)
+
+    async def run_event_stream(
+        self,
+        query: str,
+        skills: Optional[list[str]] = None,
+        session_id: Optional[str] = None,
+        history: Optional[list[dict]] = None,
+        user_key: Optional[str] = None,
+    ) -> AsyncIterator["AgentEvent"]:
+        """
+        Public execution stream entrypoint.
+
+        Delegates to AgentRuntime so adapters and tests use a single runtime
+        boundary with timing metadata.
+        """
+        async for event in self.runtime.run_event_stream(
+            query=query,
+            skills=skills,
+            session_id=session_id,
+            history=history,
+            user_key=user_key,
+        ):
+            yield event
 
     async def run_or_inject(
         self,
@@ -1074,7 +1168,7 @@ class Agent:
         ):
             yield event
 
-    async def run_event_stream(
+    async def _run_event_stream_impl(
         self,
         query: str,
         skills: Optional[list[str]] = None,
@@ -1173,19 +1267,14 @@ class Agent:
 
         # Auto-select skills if not specified and enabled
         if skills is None and self._auto_select_skills:
-            skills = self._select_skills_auto(
+            skills = self.skill_resolver.auto_select(
                 query,
-                self._max_auto_skills,
                 user_context=user_context,
             )
 
         # Load MCP servers on first run (lazy initialization)
         # Pass selected skills to load only required MCP servers
-        await self._load_mcp_servers(required_skills=skills)
-
-        # Update Core's tool registry to include newly loaded MCP tools
-        # This ensures Core has access to all tools (builtin + MCP) when generating tool calls
-        self._core._tools = self._tools
+        await self.mcp_bootstrapper.ensure_loaded(required_skills=skills)
 
         # Generate session_id if not provided
         session_id = session_id or str(uuid.uuid4())
@@ -1221,7 +1310,7 @@ class Agent:
 
             # Build system prompt with skills (skills already selected above)
             # Returns (base_prompt, skills_content) for cache-friendly injection
-            base_prompt, skills_content = self._build_system_prompt_with_skills(skills)
+            base_prompt, skills_content = self.skill_resolver.build_prompt(skills)
 
             # Inject skills content as a separate system message at the START of messages
             # This keeps base_prompt constant (cacheable) while providing skills context
@@ -1400,25 +1489,6 @@ class Agent:
                             tool_params = tool_call.get("arguments", {})
                             call_id = tool_call.get("id", "")
 
-                            # TOOL_CALL already emitted by Core, no need to re-emit
-
-                            # Safety check
-                            if self._safety_policy:
-                                decision = self._safety_policy.check(
-                                    tool_name=tool_name,
-                                    args=tool_params,
-                                )
-                                # Block forbidden operations
-                                if decision.level == SafetyLevel.FORBIDDEN:
-                                    result = f"[SAFETY_BLOCKED] {decision.reason}"
-                                    yield AgentEvent.tool_result(tool_name, result, session_id)
-                                    messages.append(Message.tool(
-                                        name=tool_name,
-                                        result=result,
-                                        call_id=call_id,
-                                    ).to_llm_format())
-                                    continue
-
                             # User input checkpoint: check for pending messages before tool execution
                             pending = self._session_queues.get(session_id, MessageQueue())
                             if pending:
@@ -1462,23 +1532,30 @@ class Agent:
                                 if not has_more_tool_calls:
                                     break
 
-                            # Execute tool
-                            try:
-                                result = await self._tools.execute(
-                                    tool_name,
-                                    tool_params,
-                                    user_context=user_context
-                                )
+                            # Execute tool through the runtime boundary
+                            decision, approval_event = self.tool_executor.assess(
+                                tool_name=tool_name,
+                                tool_params=tool_params,
+                                session_id=session_id,
+                            )
+                            approved = None
+                            request_id = None
+                            if approval_event:
+                                request_id = approval_event.metadata.get("request_id")
+                                yield approval_event
+                                approved = await self.tool_executor.wait_for_approval(request_id)
 
-                                # Context truncate if needed
-                                if self._context_monitor:
-                                    result = self._context_monitor.truncate_tool_output(result)
-
-                            except Exception as e:
-                                result = f"[ERROR] {str(e)}"
-
-                            # Emit TOOL_RESULT event
-                            yield AgentEvent.tool_result(tool_name, result, session_id)
+                            execution, result_event = await self.tool_executor.execute(
+                                tool_name=tool_name,
+                                tool_params=tool_params,
+                                session_id=session_id,
+                                user_context=user_context,
+                                decision=decision,
+                                approved=approved,
+                                request_id=request_id,
+                            )
+                            result = execution.result
+                            yield result_event
 
                             # Add tool result to history
                             import sys
@@ -1657,7 +1734,55 @@ class Agent:
 
     def list_skills(self) -> list[str]:
         """Return list of available skill names"""
-        return self._skills.list_skills()
+        return self.skill_resolver.list_available()
+
+    def get_skill(self, skill_name: str):
+        """Return a skill by name for admin/read-only views."""
+        return self._skills.get(skill_name)
+
+    def list_tools(self) -> list[str]:
+        """Return registered tool names."""
+        return self._tools.list_all()
+
+    def list_mcp_tools(self) -> list[str]:
+        """Return registered MCP tool names."""
+        if self._mcp_manager:
+            return self._mcp_manager.list_mcp_tools()
+        return []
+
+    async def ensure_mcp_loaded(self, required_skills: Optional[list[str]] = None) -> dict:
+        """Public MCP bootstrap hook for admin/read-only endpoints."""
+        return await self.mcp_bootstrapper.ensure_loaded(required_skills=required_skills)
+
+    def list_mcp_server_status(self) -> list[dict]:
+        """Return MCP server health without exposing manager internals."""
+        if not self._mcp_manager or not hasattr(self._mcp_manager, "_servers"):
+            return []
+        statuses = []
+        for server_name in self._mcp_manager._servers.keys():
+            statuses.append({
+                "name": server_name,
+                "alive": self._mcp_manager.is_server_alive(server_name),
+            })
+        return statuses
+
+    def get_temp_user_stats(self) -> dict:
+        """Return temporary multi-tenant user stats when available."""
+        if self._multitenant:
+            return self._multitenant.get_temp_user_stats()
+        return {}
+
+    def register_temp_user_if_needed(self, user_key: str) -> bool:
+        """Register a temporary user in multi-tenant mode if applicable."""
+        if self._multitenant and self._multitenant.is_temp_user(user_key):
+            self._multitenant.register_temp_user(user_key)
+            return True
+        return False
+
+    @property
+    def config(self) -> Config:
+        """Expose loaded configuration for admin/read-only views."""
+        return self._config
 
     @property
     def llm(self):

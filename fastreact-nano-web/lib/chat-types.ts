@@ -19,4 +19,4 @@ export interface ChatMessage {
   skills?: string[]  // SKILLs used for this message
 }
 
-export type ConnectionStatus = "connected" | "connecting" | "disconnected"
+export type ConnectionStatus = "connected" | "connecting" | "disconnected" | "error"

@@ -84,6 +84,7 @@ class Session:
         self.websocket = websocket
         self.user_key = user_key
         self.multitenant_enabled = multitenant_enabled
+        self.max_queue_size = max_queue_size
         self.created_at = datetime.now(timezone.utc)
         self.last_activity = datetime.now(timezone.utc)
 
@@ -95,7 +96,7 @@ class Session:
 
         # Create AgentSession for business logic (all business logic here)
         # Pass user_key for multi-tenant session tracking
-        self.agent_session = self.agent.create_session(
+        self.agent_session = self.agent.sessions.create(
             session_id=session_id,
             user_key=user_key if multitenant_enabled else None,
             max_history=max_history,
@@ -397,18 +398,33 @@ def create_gateway_app() -> FastAPI:
     @app.get("/api/sessions")
     async def list_sessions_api():
         """List all active sessions (REST API)"""
-        sessions = []
-        for session_id in _session_manager.list_all():
-            session = _session_manager.get(session_id)
-            if session:
-                sessions.append({
-                    "session_id": session.session_id,
-                    "user_key": getattr(session, 'user_key', 'unknown'),  # NEW: Include user_key
-                    "created_at": session.created_at.isoformat(),
-                    "last_active": session.last_activity.isoformat(),
-                    "status": "active",
-                })
+        agent = get_gateway_agent()
+        sessions = agent.sessions.list()
         return {"sessions": sessions, "count": len(sessions)}
+
+    @app.get("/api/sessions/{session_id}")
+    async def get_session_api(session_id: str):
+        """Get live or persisted session detail with event replay."""
+        agent = get_gateway_agent()
+        detail = agent.sessions.detail(session_id)
+        if not detail:
+            return JSONResponse(status_code=404, content={"message": f"Session {session_id} not found"})
+        return detail
+
+    @app.post("/api/sessions/{session_id}/resume")
+    async def resume_session_api(session_id: str):
+        """Mark a persisted session as resumable for clients."""
+        agent = get_gateway_agent()
+        detail = agent.sessions.detail(session_id)
+        if not detail:
+            return JSONResponse(status_code=404, content={"message": f"Session {session_id} not found"})
+        agent.store.append("sessions", {
+            "session_id": session_id,
+            "status": "idle",
+            "resume_requested": True,
+            "user_key": detail.get("user_key"),
+        })
+        return {"message": "Session ready to resume", "session_id": session_id}
 
     @app.delete("/api/sessions/{session_id}")
     async def terminate_session(session_id: str):
@@ -429,6 +445,63 @@ def create_gateway_app() -> FastAPI:
                 status_code=404,
                 content={"message": f"Session {session_id} not found"}
             )
+
+    @app.get("/api/tasks")
+    async def list_tasks(status: Optional[str] = None, owner: Optional[str] = None, session_id: Optional[str] = None):
+        """List durable tasks."""
+        agent = get_gateway_agent()
+        tasks = agent.tasks.list(status=status, owner=owner, session_id=session_id)
+        return {"tasks": tasks, "count": len(tasks)}
+
+    @app.post("/api/tasks")
+    async def create_task(request_data: dict):
+        """Create a durable task."""
+        agent = get_gateway_agent()
+        task = agent.tasks.create(
+            title=request_data.get("title", ""),
+            description=request_data.get("description", ""),
+            priority=request_data.get("priority", "normal"),
+            owner=request_data.get("owner", ""),
+            dependencies=request_data.get("dependencies") or [],
+            session_id=request_data.get("session_id", ""),
+        )
+        return task
+
+    @app.patch("/api/tasks/{task_id}")
+    async def update_task(task_id: str, request_data: dict):
+        """Update a durable task."""
+        agent = get_gateway_agent()
+        try:
+            return agent.tasks.update(task_id, **request_data)
+        except ValueError as exc:
+            return JSONResponse(status_code=404, content={"message": str(exc)})
+
+    @app.get("/api/audit")
+    async def list_audit(limit: int = 200, session_id: Optional[str] = None):
+        """List tool permission and execution audit records."""
+        agent = get_gateway_agent()
+        records = agent.store.read("audit", limit=limit, session_id=session_id)
+        return {"audit": records, "count": len(records)}
+
+    @app.get("/api/traces")
+    async def list_traces(limit: int = 200, session_id: Optional[str] = None):
+        """List runtime timing traces."""
+        agent = get_gateway_agent()
+        records = agent.store.read("traces", limit=limit, session_id=session_id)
+        return {"traces": records, "count": len(records)}
+
+    @app.post("/api/control/tool-approval")
+    async def tool_approval(request_data: dict):
+        """Resolve a pending tool approval request."""
+        agent = get_gateway_agent()
+        request_id = request_data.get("request_id", "")
+        approved = bool(request_data.get("approved"))
+        ok = agent.tool_executor.resolve_approval(
+            request_id,
+            approved,
+            reason=request_data.get("reason", ""),
+        )
+        return {"ok": ok, "request_id": request_id, "approved": approved}
 
     @app.get("/api/config")
     async def get_config():
@@ -509,12 +582,12 @@ def create_gateway_app() -> FastAPI:
         # ✅ Use shared agent from global agent cache
         agent = get_gateway_agent()
 
-        # Get all available skills
-        skill_names = agent._skills.list_available()
+        # Get all available skills through the runtime boundary
+        skill_names = agent.skill_resolver.list_available()
 
         skills = []
         for skill_name in skill_names:
-            skill = agent._skills.get(skill_name)
+            skill = agent.get_skill(skill_name)
             if skill:
                 skill_info = {
                     "name": skill.name,
@@ -527,7 +600,7 @@ def create_gateway_app() -> FastAPI:
 
         return {
             "skills": skills,
-            "global_skills_dir": str(agent._config.paths.global_skills_dir),
+            "global_skills_dir": str(agent.config.paths.global_skills_dir),
             "total_count": len(skills)
         }
 
@@ -538,7 +611,7 @@ def create_gateway_app() -> FastAPI:
 
         # ✅ Use shared agent from global agent cache
         agent = get_gateway_agent()
-        config = agent._config
+        config = agent.config
 
         # Determine multi-tenant mode from configuration
         multitenant_enabled = config.gateway.enable_multitenant
@@ -549,36 +622,30 @@ def create_gateway_app() -> FastAPI:
 
         try:
             asyncio.get_event_loop()
-            await agent._load_mcp_servers()
+            await agent.ensure_mcp_loaded()
             mcp_loaded = True
 
             # Get MCP server status
-            if agent._mcp_manager:
-                for server_name in agent._mcp_manager._servers.keys():
-                    is_alive = agent._mcp_manager.is_server_alive(server_name)
-
-                    # Get isolation mode from config
-                    isolation = "unknown"
-                    for server_config in config.mcp.servers:
-                        if server_config.name == server_name:
-                            isolation = server_config.isolation if hasattr(server_config, 'isolation') else server_config.get("isolation", "shared")
-                            break
-
-                    mcp_servers_info.append({
-                        "name": server_name,
-                        "status": "running" if is_alive else "stopped",
-                        "isolation": isolation
-                    })
+            for server_status in agent.list_mcp_server_status():
+                server_name = server_status["name"]
+                isolation = "unknown"
+                for server_config in config.mcp.servers:
+                    if server_config.name == server_name:
+                        isolation = server_config.isolation if hasattr(server_config, 'isolation') else server_config.get("isolation", "shared")
+                        break
+                mcp_servers_info.append({
+                    "name": server_name,
+                    "status": "running" if server_status["alive"] else "stopped",
+                    "isolation": isolation
+                })
         except RuntimeError:
             pass
 
         # Get skills
-        skill_names = agent._skills.list_available()
+        skill_names = agent.list_skills()
 
         # Get temp user stats if multi-tenant
-        temp_user_stats = {}
-        if multitenant_enabled and agent._multitenant:
-            temp_user_stats = agent._multitenant.get_temp_user_stats()
+        temp_user_stats = agent.get_temp_user_stats() if multitenant_enabled else {}
 
         return {
             "status": "healthy",
@@ -615,17 +682,17 @@ def create_gateway_app() -> FastAPI:
         try:
             asyncio.get_event_loop()
             # If we're in an async context, load MCP servers
-            await agent._load_mcp_servers()
+            await agent.ensure_mcp_loaded()
         except RuntimeError:
             # No event loop, skip MCP loading
             pass
 
         # Get all registered tools
-        tools = agent._tools.list_all()
+        tools = agent.list_tools()
 
         return {
             "tools": tools,
-            "mcp_tools": agent._mcp_manager.list_mcp_tools() if agent._mcp_manager else [],
+            "mcp_tools": agent.list_mcp_tools(),
         }
 
     @app.get("/api/mcp/servers")
@@ -702,17 +769,8 @@ def create_gateway_app() -> FastAPI:
                 content={"error": "Unauthorized. Valid admin API key required."}
             )
 
-        sessions = []
-        for session_id in _session_manager.list_all():
-            session = _session_manager.get(session_id)
-            if session:
-                sessions.append({
-                    "session_id": session.session_id,
-                    "user_key": getattr(session, 'user_key', 'unknown'),
-                    "created_at": session.created_at.isoformat(),
-                    "last_activity": session.last_activity.isoformat(),
-                    "status": "active",
-                })
+        agent = get_gateway_agent()
+        sessions = agent.sessions.list()
 
         return {
             "total": len(sessions),
@@ -732,20 +790,19 @@ def create_gateway_app() -> FastAPI:
                 content={"error": "Unauthorized. Valid admin API key required."}
             )
 
-        # Aggregate sessions by user
+        # Aggregate sessions by user from Agent session state
+        agent = get_gateway_agent()
         users = {}
-        for session_id in _session_manager.list_all():
-            session = _session_manager.get(session_id)
-            if session:
-                user_key = getattr(session, 'user_key', 'unknown')
-                if user_key not in users:
-                    users[user_key] = {
-                        "user_key": user_key,
-                        "active_sessions": 0,
-                        "total_sessions": 0,
-                    }
-                users[user_key]["active_sessions"] += 1
-                users[user_key]["total_sessions"] += 1
+        for session in agent.sessions.list():
+            user_key = session.get("user_key") or "unknown"
+            if user_key not in users:
+                users[user_key] = {
+                    "user_key": user_key,
+                    "active_sessions": 0,
+                    "total_sessions": 0,
+                }
+            users[user_key]["active_sessions"] += 1
+            users[user_key]["total_sessions"] += 1
 
         return {
             "total_users": len(users),
@@ -1099,8 +1156,7 @@ def create_gateway_app() -> FastAPI:
                     return
 
             # ✅ Register temporary user if applicable
-            if shared_agent._multitenant and shared_agent._multitenant.is_temp_user(user_key):
-                shared_agent._multitenant.register_temp_user(user_key)
+            shared_agent.register_temp_user_if_needed(user_key)
         else:
             # Single-tenant mode: use default user_key
             if not user_key:
