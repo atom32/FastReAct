@@ -91,11 +91,10 @@ def main():
         return run_command(pytest_cmd, "Unit Tests")
 
     elif args.suite == "integration":
-        # Curated integration suite. Legacy Streamlit-web and stale structure
-        # assertions are intentionally left out of the default integration gate.
         pytest_cmd.extend([
-            str(project_root / "tests" / "integration" / "test_concurrent_users.py"),
-            str(project_root / "tests" / "integration" / "test_multitenant_mcp.py"),
+            str(project_root / "tests" / "integration" / "gateway"),
+            str(project_root / "tests" / "integration" / "mcp"),
+            str(project_root / "tests" / "integration" / "multitenant"),
             "-v",
             "-k", "not graphrag_user_isolation",
             "--tb=short"
@@ -106,8 +105,11 @@ def main():
         # Quick validation - run only fast tests
         quick_targets = []
         contracts_dir = project_root / "tests" / "contracts"
+        runtime_dir = project_root / "tests" / "integration" / "agent_runtime"
         if contracts_dir.exists():
             quick_targets.append(str(contracts_dir))
+        if runtime_dir.exists():
+            quick_targets.append(str(runtime_dir))
         quick_targets.extend([
             str(project_root / "tests" / "unit" / "test_events.py"),
             str(project_root / "tests" / "unit" / "test_tools.py"),
@@ -122,8 +124,10 @@ def main():
         pytest_cmd.extend([
             str(project_root / "tests" / "contracts"),
             str(project_root / "tests" / "unit"),
-            str(project_root / "tests" / "integration" / "test_concurrent_users.py"),
-            str(project_root / "tests" / "integration" / "test_multitenant_mcp.py"),
+            str(project_root / "tests" / "integration" / "agent_runtime"),
+            str(project_root / "tests" / "integration" / "gateway"),
+            str(project_root / "tests" / "integration" / "mcp"),
+            str(project_root / "tests" / "integration" / "multitenant"),
             "-v",
             "-m", "not release_llm",
             "-k", "not graphrag_user_isolation",

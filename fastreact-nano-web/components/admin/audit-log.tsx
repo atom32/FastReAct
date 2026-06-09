@@ -18,14 +18,30 @@ interface AuditRecord {
   duration_ms?: number
 }
 
+interface ApprovalRecord {
+  request_id: string
+  session_id?: string
+  tool_name: string
+  reason?: string
+  status: string
+}
+
 export function AuditLog() {
   const [records, setRecords] = useState<AuditRecord[]>([])
+  const [approvals, setApprovals] = useState<ApprovalRecord[]>([])
 
   const load = async () => {
-    const res = await fetch("http://localhost:9000/api/audit")
-    if (res.ok) {
-      const data = await res.json()
+    const [auditRes, approvalRes] = await Promise.all([
+      fetch("http://localhost:9000/api/audit"),
+      fetch("http://localhost:9000/api/control/pending-approvals"),
+    ])
+    if (auditRes.ok) {
+      const data = await auditRes.json()
       setRecords(data.audit || [])
+    }
+    if (approvalRes.ok) {
+      const data = await approvalRes.json()
+      setApprovals(data.approvals || [])
     }
   }
 
@@ -39,8 +55,35 @@ export function AuditLog() {
         <CardTitle>Audit</CardTitle>
         <Button variant="outline" size="sm" onClick={load}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <div className="rounded-md border">
+          <div className="border-b px-4 py-2 text-sm font-medium">Tool Approvals</div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Request</TableHead>
+                <TableHead>Tool</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Reason</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {approvals.map((approval) => (
+                <TableRow key={approval.request_id}>
+                  <TableCell className="font-mono text-xs">{approval.request_id}</TableCell>
+                  <TableCell className="font-mono text-sm">{approval.tool_name}</TableCell>
+                  <TableCell><Badge variant="outline">{approval.status}</Badge></TableCell>
+                  <TableCell className="max-w-md truncate">{approval.reason || "-"}</TableCell>
+                </TableRow>
+              ))}
+              {!approvals.length && (
+                <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">No approval requests</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="rounded-md border">
+          <div className="border-b px-4 py-2 text-sm font-medium">Audit Records</div>
           <Table>
             <TableHeader>
               <TableRow>

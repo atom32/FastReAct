@@ -47,6 +47,7 @@ ENV/
 
 # FastReAct Nano specific
 .fastreact/
+runtime_baseline.json
 session_data/
 memory.json
 *.log

@@ -3,6 +3,7 @@
 import asyncio
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -30,6 +31,7 @@ class ToolExecutionService:
     def __init__(self, agent: "Agent"):
         self._agent = agent
         self._pending_approvals: dict[str, asyncio.Future] = {}
+        self._approval_records: dict[str, dict[str, Any]] = {}
 
     def assess(
         self,
@@ -47,6 +49,19 @@ class ToolExecutionService:
         request_id = f"approval-{uuid.uuid4().hex[:10]}"
         future = asyncio.get_running_loop().create_future()
         self._pending_approvals[request_id] = future
+        self._approval_records[request_id] = {
+            "request_id": request_id,
+            "session_id": session_id,
+            "tool_name": tool_name,
+            "tool_args": tool_params,
+            "reason": decision.reason,
+            "decision_level": decision.level.value,
+            "status": "pending",
+            "approved": None,
+            "expired": False,
+            "created_at": self._now_iso(),
+            "resolved_at": None,
+        }
         event = AgentEvent.ask_user(
             decision.reason,
             tool_name,
@@ -71,6 +86,11 @@ class ToolExecutionService:
                 return bool(result.get("approved"))
             return bool(result)
         except asyncio.TimeoutError:
+            if request_id in self._approval_records:
+                self._approval_records[request_id]["status"] = "expired"
+                self._approval_records[request_id]["approved"] = False
+                self._approval_records[request_id]["expired"] = True
+                self._approval_records[request_id]["resolved_at"] = self._now_iso()
             return False
         finally:
             self._pending_approvals.pop(request_id, None)
@@ -80,7 +100,19 @@ class ToolExecutionService:
         if not future or future.done():
             return False
         future.set_result({"approved": approved, "reason": reason})
+        if request_id in self._approval_records:
+            self._approval_records[request_id]["status"] = "approved" if approved else "denied"
+            self._approval_records[request_id]["approved"] = approved
+            self._approval_records[request_id]["expired"] = False
+            self._approval_records[request_id]["resolved_at"] = self._now_iso()
+            self._approval_records[request_id]["resolution_reason"] = reason
         return True
+
+    def list_approvals(self) -> list[dict[str, Any]]:
+        return list(self._approval_records.values())
+
+    def _now_iso(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
 
     async def execute(
         self,

@@ -9,6 +9,8 @@ import { RefreshCw } from "lucide-react"
 export function ToolsPanel() {
   const [tools, setTools] = useState<string[]>([])
   const [mcpTools, setMcpTools] = useState<string[]>([])
+  const [schemas, setSchemas] = useState<Array<{ name: string; description: string; parameters: string[] }>>([])
+  const [servers, setServers] = useState<Array<{ name: string; alive: boolean }>>([])
 
   const load = async () => {
     const res = await fetch("http://localhost:9000/api/tools")
@@ -16,6 +18,8 @@ export function ToolsPanel() {
       const data = await res.json()
       setTools(data.tools || [])
       setMcpTools(data.mcp_tools || [])
+      setSchemas(data.schemas || [])
+      setServers(data.mcp_servers || [])
     }
   }
 
@@ -42,6 +46,32 @@ export function ToolsPanel() {
         <CardContent className="flex flex-wrap gap-2">
           {mcpTools.map((tool) => <Badge key={tool} variant="secondary">{tool}</Badge>)}
           {!mcpTools.length && <span className="text-sm text-muted-foreground">No MCP tools loaded</span>}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>MCP Servers</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          {servers.map((server) => (
+            <Badge key={server.name} variant={server.alive ? "outline" : "destructive"}>
+              {server.name}: {server.alive ? "running" : "stopped"}
+            </Badge>
+          ))}
+          {!servers.length && <span className="text-sm text-muted-foreground">No MCP servers loaded</span>}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Tool Schemas</CardTitle></CardHeader>
+        <CardContent className="max-h-96 space-y-3 overflow-y-auto">
+          {schemas.map((schema) => (
+            <div key={schema.name} className="rounded-md border p-3">
+              <div className="font-mono text-sm font-medium">{schema.name}</div>
+              <div className="mt-1 text-sm text-muted-foreground">{schema.description}</div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {schema.parameters.map((param) => <Badge key={param} variant="outline">{param}</Badge>)}
+              </div>
+            </div>
+          ))}
+          {!schemas.length && <span className="text-sm text-muted-foreground">No schema data</span>}
         </CardContent>
       </Card>
     </div>

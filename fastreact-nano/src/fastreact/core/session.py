@@ -16,6 +16,7 @@ This class is CHANNEL-AGNOSTIC - it works with WebSocket, HTTP, CLI, etc.
 """
 
 import asyncio
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional, TYPE_CHECKING
@@ -23,6 +24,8 @@ from typing import Callable, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from fastreact import Agent
     from fastreact.core.events import AgentEvent
+
+logger = logging.getLogger(__name__)
 
 
 class AgentSession:
@@ -106,11 +109,7 @@ class AgentSession:
                     agent=agent,
                     consolidation_threshold=max_history,
                 )
-                import sys
-                print(
-                    f"[MEMORY] MemoryManager initialized for session {session_id}",
-                    file=sys.stderr
-                )
+                logger.debug("[MEMORY] MemoryManager initialized for session %s", session_id)
 
     def _detect_workspace_path(self) -> Optional[Path]:
         """
@@ -148,11 +147,7 @@ class AgentSession:
             return default_workspace
 
         except Exception as e:
-            import sys
-            print(
-                f"[WARNING] Failed to detect workspace path: {e}",
-                file=sys.stderr
-            )
+            logger.warning("Failed to detect workspace path: %s", e)
             return None
 
     # === History Management ===
@@ -175,11 +170,10 @@ class AgentSession:
 
         # Check if consolidation is needed (only when EXCEEDING threshold)
         if len(self._history) > self._max_history and self._memory_manager:
-            import sys
-            print(
-                f"[MEMORY] History threshold exceeded ({len(self._history)} > {self._max_history}), "
-                f"triggering consolidation",
-                file=sys.stderr
+            logger.debug(
+                "[MEMORY] History threshold exceeded (%s > %s), triggering consolidation",
+                len(self._history),
+                self._max_history,
             )
 
             # Try to consolidate to long-term memory
@@ -195,19 +189,12 @@ class AgentSession:
                 self._history = new_history
             else:
                 # Failure: fallback to FIFO pruning
-                print(
-                    f"[WARNING] Memory consolidation failed, falling back to FIFO pruning",
-                    file=sys.stderr
-                )
+                logger.warning("Memory consolidation failed, falling back to FIFO pruning")
                 self._history = self._history[-self._max_history:]
 
         # Fallback: prune history if consolidation is disabled or not triggered
         elif len(self._history) > self._max_history:
-            import sys
-            print(
-                f"[INFO] Pruning history from {len(self._history)} to {self._max_history} messages",
-                file=sys.stderr
-            )
+            logger.info("Pruning history from %s to %s messages", len(self._history), self._max_history)
             self._history = self._history[-self._max_history:]
 
     def get_history(self) -> list[dict]:

@@ -31,6 +31,9 @@ interface SessionDetail extends Session {
     created_at?: string
     timestamp?: number
   }>
+  traces?: Array<{ time_to_first_event_ms?: number; time_to_final_ms?: number; event_count?: number }>
+  audit?: Array<{ tool_name: string; decision_level: string }>
+  tasks?: Array<{ task_id: string; title: string; status: string }>
 }
 
 export function SessionManager() {
@@ -79,6 +82,11 @@ export function SessionManager() {
     if (response.ok) {
       setSelected(await response.json())
     }
+  }
+
+  const resumeSession = async (sessionId: string) => {
+    await fetch(`http://localhost:9000/api/sessions/${sessionId}/resume`, { method: "POST" })
+    await viewSession(sessionId)
   }
 
   const filteredSessions = sessions.filter(
@@ -182,12 +190,34 @@ export function SessionManager() {
               <div className="font-semibold">Session Detail</div>
               <div className="font-mono text-xs text-muted-foreground">{selected.session_id}</div>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setSelected(null)}>Close</Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => resumeSession(selected.session_id)}>Resume</Button>
+              <Button variant="outline" size="sm" onClick={() => setSelected(null)}>Close</Button>
+            </div>
           </div>
-          <div className="mb-3 grid gap-2 text-sm md:grid-cols-3">
+          <div className="mb-3 grid gap-2 text-sm md:grid-cols-4">
             <div>Status: <Badge variant="outline">{selected.status}</Badge></div>
             <div>User: {selected.user_key || "-"}</div>
             <div>Events: {selected.events?.length || 0}</div>
+            <div>Tasks: {selected.tasks?.length || 0}</div>
+          </div>
+          <div className="mb-3 grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border p-3 text-sm">
+              <div className="font-medium">Latest Trace</div>
+              <div className="text-muted-foreground">
+                {selected.traces?.length
+                  ? `${selected.traces[selected.traces.length - 1].time_to_first_event_ms ?? "-"}ms first / ${selected.traces[selected.traces.length - 1].time_to_final_ms ?? "-"}ms final`
+                  : "No traces"}
+              </div>
+            </div>
+            <div className="rounded-md border p-3 text-sm">
+              <div className="font-medium">Audit Records</div>
+              <div className="text-muted-foreground">{selected.audit?.length || 0}</div>
+            </div>
+            <div className="rounded-md border p-3 text-sm">
+              <div className="font-medium">Linked Tasks</div>
+              <div className="text-muted-foreground">{(selected.tasks || []).map((task) => task.title).join(", ") || "None"}</div>
+            </div>
           </div>
           <div className="max-h-80 space-y-2 overflow-y-auto rounded-md bg-muted/30 p-3">
             {(selected.events || []).slice(-50).map((event, index) => (

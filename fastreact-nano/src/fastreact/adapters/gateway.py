@@ -8,7 +8,6 @@ Install with: pip install fastreact-nano[gateway]
 import asyncio
 import json
 import os
-import psutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -409,6 +408,9 @@ def create_gateway_app() -> FastAPI:
         detail = agent.sessions.detail(session_id)
         if not detail:
             return JSONResponse(status_code=404, content={"message": f"Session {session_id} not found"})
+        detail["traces"] = agent.store.read("traces", limit=50, session_id=session_id)
+        detail["audit"] = agent.store.read("audit", limit=50, session_id=session_id)
+        detail["tasks"] = agent.tasks.list(session_id=session_id)
         return detail
 
     @app.post("/api/sessions/{session_id}/resume")
@@ -502,6 +504,13 @@ def create_gateway_app() -> FastAPI:
             reason=request_data.get("reason", ""),
         )
         return {"ok": ok, "request_id": request_id, "approved": approved}
+
+    @app.get("/api/control/pending-approvals")
+    async def pending_approvals():
+        """List pending and recently resolved tool approval requests."""
+        agent = get_gateway_agent()
+        approvals = agent.tool_executor.list_approvals()
+        return {"approvals": approvals, "count": len(approvals)}
 
     @app.get("/api/config")
     async def get_config():
@@ -689,10 +698,11 @@ def create_gateway_app() -> FastAPI:
 
         # Get all registered tools
         tools = agent.list_tools()
-
         return {
             "tools": tools,
             "mcp_tools": agent.list_mcp_tools(),
+            "schemas": agent.list_tool_schema_summary(),
+            "mcp_servers": agent.list_mcp_server_status(),
         }
 
     @app.get("/api/mcp/servers")
@@ -1205,6 +1215,10 @@ def create_gateway_app() -> FastAPI:
                     })
 
         except WebSocketDisconnect:
+            _session_manager.disconnect(session_id)
+        except RuntimeError as exc:
+            if "WebSocket is not connected" not in str(exc):
+                raise
             _session_manager.disconnect(session_id)
 
         finally:
