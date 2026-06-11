@@ -733,6 +733,7 @@ class Agent:
                     # MCPServerConfig object
                     command = server_config.command
                     args = server_config.args
+                    env = server_config.env
                     description = server_config.description
                     associated_skill = server_config.associated_skill
                     isolation = server_config.isolation
@@ -740,6 +741,7 @@ class Agent:
                     # Dict format (backward compatibility)
                     command = server_config.get("command", "")
                     args = server_config.get("args", [])
+                    env = server_config.get("env")
                     description = server_config.get("description")
                     associated_skill = server_config.get("associated_skill")
                     isolation = server_config.get("isolation", "shared")
@@ -782,6 +784,7 @@ class Agent:
                         name=server_name,
                         server_command=command,
                         server_args=args,
+                        env=env,
                     )
 
                     # Index tools for discovery

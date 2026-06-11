@@ -257,6 +257,7 @@ class MCPToolManager:
         transport: str = "stdio",
         server_command: str = "",
         server_args: list[str] = None,
+        env: Optional[dict[str, str]] = None,
         url: Optional[str] = None,
         auth_token_ref: Optional[str] = None,
     ) -> None:
@@ -289,6 +290,7 @@ class MCPToolManager:
                 client = SimpleMCPClient(
                     server_command=server_command,
                     server_args=resolved_args,
+                    env=env,
                 )
                 await client.connect()
 
@@ -326,11 +328,12 @@ class MCPToolManager:
 
             # Save server config for resurrection
             self._server_configs[name] = {
-                "transport": transport,
-                "server_command": server_command,
-                "server_args": server_args or [],
-                "url": url,
-                "auth_token_ref": auth_token_ref,
+                    "transport": transport,
+                    "server_command": server_command,
+                    "server_args": server_args or [],
+                    "env": env,
+                    "url": url,
+                    "auth_token_ref": auth_token_ref,
                 "isolation_mode": self._isolation_mode,
             }
             logger.info("MCP server '%s' (%s) registered and ready", name, transport)
@@ -467,6 +470,7 @@ class MCPToolManager:
                 client = SimpleMCPClient(
                     server_command=config["server_command"],
                     server_args=resolved_args,
+                    env=config.get("env"),
                 )
                 await client.connect()
 

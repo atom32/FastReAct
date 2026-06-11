@@ -166,10 +166,11 @@ class MultiTenantMCPManager:
                 isolation_mode="shared"
             )
             await manager.add_server(
-                server_config.name,
-                server_config.transport,
-                server_config.command,
-                server_config.args
+                name=server_config.name,
+                transport=server_config.transport,
+                server_command=server_config.command,
+                server_args=server_config.args,
+                env=server_config.env,
             )
             self._shared_managers[server_name] = manager
 
@@ -199,9 +200,11 @@ class MultiTenantMCPManager:
                 isolation_mode="per_user"
             )
             await manager.add_server(
-                server_config.name,
-                server_config.command,
-                args
+                name=server_config.name,
+                transport=server_config.transport,
+                server_command=server_config.command,
+                server_args=args,
+                env=server_config.env,
             )
 
             # Wrap in lazy instance (no timeout for per_user mode)
@@ -260,9 +263,11 @@ class MultiTenantMCPManager:
             isolation_mode="lazy_per_user"
         )
         await manager.add_server(
-            server_config.name,
-            server_config.command,
-            args
+            name=server_config.name,
+            transport=server_config.transport,
+            server_command=server_config.command,
+            server_args=args,
+            env=server_config.env,
         )
 
         idle_timeout = server_config.idle_timeout or 300

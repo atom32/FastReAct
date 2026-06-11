@@ -7,6 +7,7 @@ Uses JSON-RPC protocol with isolated subprocess communication.
 
 import asyncio
 import json
+import os
 import sys
 from typing import Any, Optional, Dict
 from pathlib import Path
@@ -32,6 +33,7 @@ class SimpleMCPClient:
         self,
         server_command: str,
         server_args: list[str] = None,
+        env: Optional[dict[str, str]] = None,
         timeout: float = 30.0,
     ):
         """
@@ -44,6 +46,7 @@ class SimpleMCPClient:
         """
         self._server_command = server_command
         self._server_args = server_args or []
+        self._env = env
         self._timeout = timeout
         self._process: Optional[asyncio.subprocess.Process] = None
         self._request_id = 0
@@ -62,6 +65,7 @@ class SimpleMCPClient:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, **self._env} if self._env else None,
             )
 
             # Initialize session

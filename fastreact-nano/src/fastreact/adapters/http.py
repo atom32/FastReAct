@@ -8,10 +8,12 @@ SSE AgentEvent streaming or a summarized non-streaming response.
 
 from __future__ import annotations
 
+import argparse
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import time
 from typing import Any, AsyncIterator, Optional
 import uuid
@@ -45,6 +47,7 @@ SERVICE_EVENT_SCHEMA_VERSION = "fastreact.agent_event.v1"
 SERVICE_AUTH_ENV = "FASTREACT_SERVICE_TOKEN"
 
 _agent: Optional[Agent] = None
+_service_config = None
 
 
 class ChatRequest(BaseModel):
@@ -75,7 +78,9 @@ def utc_now() -> str:
 def get_agent() -> Agent:
     global _agent
     if _agent is None:
-        _agent = Agent(Config.load())
+        config = Config.load()
+        set_service_config(config.service)
+        _agent = Agent(config)
     return _agent
 
 
@@ -84,9 +89,17 @@ def set_agent_for_testing(agent: Optional[Agent]) -> None:
     _agent = agent
 
 
+def set_service_config(config: Any) -> None:
+    global _service_config
+    _service_config = config
+
+
 def configured_service_token() -> str | None:
     token = os.getenv(SERVICE_AUTH_ENV)
-    return token.strip() if token and token.strip() else None
+    if token and token.strip():
+        return token.strip()
+    config_token = getattr(_service_config, "service_token", None)
+    return config_token.strip() if isinstance(config_token, str) and config_token.strip() else None
 
 
 def require_service_auth(request: Request) -> None:  # type: ignore[valid-type]
@@ -438,15 +451,44 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     return app
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8000, log_level: str = "info") -> None:
+def run_server(
+    host: str | None = None,
+    port: int | None = None,
+    log_level: str | None = None,
+    config_path: str | None = None,
+) -> None:
     if not FASTAPI_AVAILABLE:
         print("[ERROR] FastAPI not available")
         print("Install with: pip install fastreact-nano[http]")
         return
 
+    config = Config.load(Path(config_path).expanduser() if config_path else None)
+    set_service_config(config.service)
+    set_agent_for_testing(Agent(config))
     app = create_app()
-    uvicorn.run(app, host=host, port=port, log_level=log_level)
+    service = config.service
+    uvicorn.run(
+        app,
+        host=host or service.host,
+        port=port if port is not None else service.port,
+        log_level=log_level or service.log_level,
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run FastReAct HTTP service")
+    parser.add_argument("--config", help="Path to FastReAct JSON config")
+    parser.add_argument("--host", help="Override service.host from config")
+    parser.add_argument("--port", type=int, help="Override service.port from config")
+    parser.add_argument("--log-level", help="Override service.log_level from config")
+    args = parser.parse_args()
+    run_server(
+        host=args.host,
+        port=args.port,
+        log_level=args.log_level,
+        config_path=args.config,
+    )
 
 
 if __name__ == "__main__":
-    run_server()
+    main()

@@ -40,19 +40,63 @@ class LLMConfig:
     model: str = "gpt-4o-mini"
     api_base: Optional[str] = None
     api_key: Optional[str] = None
+    api_key_file: Optional[Path] = None
     temperature: float = 0.7
     max_tokens: int = 4096
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
         """Create from environment variables"""
-        return cls(
+        config = cls(
             model=os.getenv("FASTRACT_MODEL", "gpt-4o-mini"),
             api_base=os.getenv("FASTRACT_API_BASE"),
             api_key=os.getenv("FASTRACT_API_KEY") or os.getenv("OPENAI_API_KEY"),
+            api_key_file=_expand_path(os.getenv("FASTRACT_API_KEY_FILE")) if os.getenv("FASTRACT_API_KEY_FILE") else None,
             temperature=float(os.getenv("FASTRACT_TEMPERATURE", "0.7")),
             max_tokens=int(os.getenv("FASTRACT_MAX_TOKENS", "4096")),
         )
+        return _apply_api_key_file(config)
+
+
+def _read_api_key_file(path: Path) -> dict[str, str]:
+    """Read JSON or legacy line-based OpenAI-compatible API key files."""
+    import json
+
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return {}
+    if text.startswith("{"):
+        data = json.loads(text)
+        return {str(key): str(value) for key, value in data.items() if value is not None}
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    data: dict[str, str] = {}
+    if len(lines) > 0:
+        data["api_key"] = lines[0]
+    if len(lines) > 1:
+        data["model"] = lines[1]
+    if len(lines) > 2:
+        data["base_url"] = lines[2]
+    if len(lines) > 3:
+        data["service_token"] = lines[3]
+    return data
+
+
+def _apply_api_key_file(config: LLMConfig) -> LLMConfig:
+    if not config.api_key_file:
+        return config
+    data = _read_api_key_file(config.api_key_file)
+    config.api_key = config.api_key or data.get("api_key") or data.get("key")
+    config.model = config.model if config.model != "gpt-4o-mini" else data.get("model", config.model)
+    config.api_base = config.api_base or data.get("base_url") or data.get("api_base")
+    return config
+
+
+def _service_token_from_api_key_file(path: Optional[Path]) -> Optional[str]:
+    if not path:
+        return None
+    data = _read_api_key_file(path)
+    return data.get("service_token") or data.get("fastreact_service_token")
 
 
 @dataclass
@@ -273,6 +317,36 @@ class GatewayConfig:
 
 
 @dataclass
+class ServiceConfig:
+    """Headless HTTP service configuration."""
+
+    host: str = "0.0.0.0"
+    port: int = 8000
+    log_level: str = "info"
+    service_token: Optional[str] = None
+
+    @classmethod
+    def from_env(cls, api_key_file: Optional[Path] = None) -> "ServiceConfig":
+        token = os.getenv("FASTREACT_SERVICE_TOKEN") or _service_token_from_api_key_file(api_key_file)
+        return cls(
+            host=os.getenv("FASTREACT_HOST", "0.0.0.0"),
+            port=int(os.getenv("FASTREACT_PORT", "8000")),
+            log_level=os.getenv("FASTREACT_LOG_LEVEL", "info"),
+            service_token=token,
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], api_key_file: Optional[Path] = None) -> "ServiceConfig":
+        token = data.get("service_token") or data.get("token") or _service_token_from_api_key_file(api_key_file)
+        return cls(
+            host=data.get("host", "0.0.0.0"),
+            port=int(data.get("port", 8000)),
+            log_level=data.get("log_level", "info"),
+            service_token=token,
+        )
+
+
+@dataclass
 class FeishuConfig:
     """Feishu (Lark) channel configuration"""
 
@@ -382,17 +456,20 @@ class Config:
     mcp: MCPConfig = field(default_factory=MCPConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
     gateway: GatewayConfig = field(default_factory=GatewayConfig)
+    service: ServiceConfig = field(default_factory=ServiceConfig)
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
 
     @classmethod
     def from_env(cls) -> "Config":
         """Create configuration from environment variables"""
+        llm_config = LLMConfig.from_env()
         return cls(
-            llm=LLMConfig.from_env(),
+            llm=llm_config,
             tools=ToolConfig.from_env(),
             react=ReactConfig.from_env(),
             mcp=MCPConfig.from_env(),
             paths=PathsConfig.from_env(),
+            service=ServiceConfig.from_env(llm_config.api_key_file),
         )
 
     @classmethod
@@ -483,13 +560,16 @@ class Config:
                             break
                 else:
                     # Simple format (direct config)
+                    api_key_file = llm_data.get("api_key_file") or llm_data.get("key_file")
                     llm_config = LLMConfig(
                         model=llm_data.get("model", "gpt-4o-mini"),
-                        api_base=llm_data.get("api_base"),
+                        api_base=llm_data.get("api_base") or llm_data.get("base_url"),
                         api_key=llm_data.get("api_key"),
+                        api_key_file=_expand_path(api_key_file) if api_key_file else None,
                         temperature=llm_data.get("temperature", 0.7),
                         max_tokens=llm_data.get("max_tokens", 4096),
                     )
+                    llm_config = _apply_api_key_file(llm_config)
 
             # Extract tools configuration
             if "tools" in data:
@@ -540,6 +620,13 @@ class Config:
                 gateway_data = data["gateway"]
                 gateway_config = GatewayConfig.from_dict(gateway_data)
 
+            # Extract headless HTTP service configuration
+            service_config = ServiceConfig()
+            if "service" in data:
+                service_config = ServiceConfig.from_dict(data["service"], llm_config.api_key_file)
+            else:
+                service_config = ServiceConfig.from_env(llm_config.api_key_file)
+
             return cls(
                 llm=llm_config,
                 tools=tools_config,
@@ -547,6 +634,7 @@ class Config:
                 mcp=mcp_config,
                 paths=paths_config,
                 gateway=gateway_config,
+                service=service_config,
                 feishu=feishu_config,
             )
 

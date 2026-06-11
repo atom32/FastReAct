@@ -10,6 +10,7 @@ from pathlib import Path
 from fastreact.core.config import (
     Config,
     LLMConfig,
+    ServiceConfig,
     ToolConfig,
     ReactConfig,
     default_config,
@@ -25,6 +26,7 @@ class TestLLMConfig:
         assert config.model == "gpt-4o-mini"
         assert config.api_base is None
         assert config.api_key is None
+        assert config.api_key_file is None
         assert config.temperature == 0.7
         assert config.max_tokens == 4096
 
@@ -62,6 +64,17 @@ class TestLLMConfig:
         assert config.model == "gpt-4o-mini"
         assert config.temperature == 0.7
         assert config.max_tokens == 4096
+
+
+class TestServiceConfig:
+    """Test ServiceConfig"""
+
+    def test_default_values(self):
+        config = ServiceConfig()
+        assert config.host == "0.0.0.0"
+        assert config.port == 8000
+        assert config.log_level == "info"
+        assert config.service_token is None
 
 
 class TestToolConfig:
@@ -132,6 +145,30 @@ class TestConfig:
         assert isinstance(config.llm, LLMConfig)
         assert isinstance(config.tools, ToolConfig)
         assert isinstance(config.react, ReactConfig)
+        assert isinstance(config.service, ServiceConfig)
+
+    def test_load_json_api_key_file_and_service_token(self, tmp_path):
+        key_file = tmp_path / "api_key.json"
+        key_file.write_text(
+            '{"api_key":"sk-test","model":"deepseek-v4-flash","base_url":"https://api.deepseek.com","service_token":"local-token"}',
+            encoding="utf-8",
+        )
+        config_file = tmp_path / "fastreact.json"
+        config_file.write_text(
+            '{"llm":{"api_key_file":"%s"},"service":{"host":"127.0.0.1","port":8010},"mcp":{"servers":[{"name":"pska","command":"pska","args":["mcp-server"],"env":{"PSKA_DATABASE_URL":"postgresql:///pska"}}]}}'
+            % str(key_file),
+            encoding="utf-8",
+        )
+
+        config = Config.load(config_file)
+
+        assert config.llm.api_key == "sk-test"
+        assert config.llm.model == "deepseek-v4-flash"
+        assert config.llm.api_base == "https://api.deepseek.com"
+        assert config.service.host == "127.0.0.1"
+        assert config.service.port == 8010
+        assert config.service.service_token == "local-token"
+        assert config.mcp.servers[0].env == {"PSKA_DATABASE_URL": "postgresql:///pska"}
 
     def test_from_env(self):
         """Test creating full config from environment"""

@@ -30,6 +30,7 @@
 ## Platform (docs/PLATFORM/)
 
 ### Extension Systems
+- **[HEADLESS_SERVICE.md](HEADLESS_SERVICE.md)** - HTTP/SSE service entry point, runtime config, and service manual
 - **[PSKA_FASTREACT_PROTOCOL.md](PSKA_FASTREACT_PROTOCOL.md)** - Headless FastReAct service contract for PSKA integration
 - **[SKILLS_AND_MCP.md](../SKILLS_AND_MCP.md)** - Skills and MCP extension mechanisms
 - **[TOOLS_AND_EXTENSIONS.md](TOOLS_AND_EXTENSIONS.md)** - Tool system comparison and best practices

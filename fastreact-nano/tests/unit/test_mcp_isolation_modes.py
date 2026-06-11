@@ -237,7 +237,7 @@ class TestPerUserIsolationMode:
             # Verify substitution was called
             mock_manager_instance.add_server.assert_called_once()
             call_args = mock_manager_instance.add_server.call_args
-            args = call_args[0][2]  # Third argument is args list
+            args = call_args.kwargs["server_args"]
 
             # Check that user_key was substituted
             assert any("feishu:user123" in str(arg) for arg in args)
