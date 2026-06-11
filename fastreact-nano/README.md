@@ -1,19 +1,212 @@
 # FastReAct Nano
 
-FastReAct Nano 是一个单智能体工作台：保留稳定的事件流 API，提供 WebSocket Gateway、JSONL 控制面存储、任务工具、工具权限审批、运行时 traces 和 Admin 控制台。
+FastReAct Nano 是 FastReAct 当前主线实现。当前版本的首要形态是 headless agentic service：以 HTTP/SSE 对外提供单智能体循环、工具编排、MCP 调用和事件流服务。Web Gateway 和 Admin 控制台是可选控制面，不是运行 PSKA 集成的必要条件。
 
-当前阶段的产品边界很明确：只做单智能体，不引入数据库，不做 OS 级沙箱，也不进入多智能体 worker 平台。危险工具通过“用户确认 + 审计记录”控制。
-
-## 快速开始
+## 快速启动无头服务
 
 ```bash
-cd fastreact-nano
+cd /Users/xudawei/FastReAct/fastreact-nano
+python3 -m fastreact.adapters.http
+```
+
+默认服务地址：
+
+```text
+http://127.0.0.1:8000
+```
+
+基础请求：
+
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "Say hello from FastReAct."}
+    ],
+    "stream": false
+  }'
+```
+
+如果配置了 service token：
+
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "Say hello from FastReAct."}
+    ],
+    "stream": false
+  }'
+```
+
+完整服务手册见 [`docs/HEADLESS_SERVICE.md`](docs/HEADLESS_SERVICE.md)。
+
+## 服务端点
+
+- `POST /v1/chat/completions`：主 agent loop endpoint，支持 SSE streaming 和 non-streaming summary。
+- `GET /health`：基础存活检查。
+- `GET /ready`：部署就绪检查，包含 agent、MCP server 和 MCP tool 状态；启用 service token 时需要认证。
+- `GET /v1/tools`：工具列表。
+- `GET /v1/skills`：技能列表。
+
+Streaming event schema：
+
+```text
+fastreact.agent_event.v1
+```
+
+常见事件：
+
+```text
+session_start
+think
+tool_call
+tool_result
+session_end
+error
+ask_user
+```
+
+## 正式配置
+
+推荐长期运行使用：
+
+```text
+~/.fastreact/config.json
+```
+
+也可以通过 `--config` 指定：
+
+```bash
+python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
+```
+
+最小配置：
+
+```json
+{
+  "llm": {
+    "model": "deepseek-v4-flash",
+    "api_base": "https://api.deepseek.com",
+    "api_key": "replace-with-real-key"
+  },
+  "service": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "log_level": "info",
+    "service_token": "replace-with-local-service-token"
+  },
+  "mcp": {
+    "servers": []
+  }
+}
+```
+
+PSKA MCP 示例：
+
+```json
+{
+  "llm": {
+    "model": "deepseek-v4-flash",
+    "api_base": "https://api.deepseek.com",
+    "api_key": "replace-with-real-key"
+  },
+  "service": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "service_token": "replace-with-local-service-token"
+  },
+  "mcp": {
+    "servers": [
+      {
+        "name": "pska",
+        "command": "/Users/xudawei/Documents/personal archive/scripts/pska",
+        "args": ["mcp-server"],
+        "isolation": "shared",
+        "description": "PSKA personal knowledge store tools."
+      }
+    ]
+  }
+}
+```
+
+`~/api_key.txt` 支持 JSON：
+
+```json
+{
+  "api_key": "replace-with-real-key",
+  "model": "deepseek-v4-flash",
+  "base_url": "https://api.deepseek.com",
+  "service_token": "optional-local-service-token"
+}
+```
+
+这个文件主要服务于本地真实 LLM smoke gate；长期运行服务建议使用正式 config。
+
+## PSKA 集成边界
+
+FastReAct 是 PSKA 的 agentic service layer，而不是 PSKA 内部模块。
+
+PSKA 负责：
+
+- knowledge storage
+- ACL / tenant policy
+- review / jobs
+- citations
+- PSKA MCP tools
+
+FastReAct 负责：
+
+- agent planning
+- LLM calls
+- tool orchestration
+- session/runtime control
+- event streaming
+- service authentication
+- MCP server lifecycle
+
+FastReAct 不直接访问 PSKA DB，不绕过 PSKA MCP tools，也不替 PSKA 做知识 ACL 决策。
+
+协议文档见 [`docs/PSKA_FASTREACT_PROTOCOL.md`](docs/PSKA_FASTREACT_PROTOCOL.md)。
+
+## 当前能力边界
+
+当前版本可以作为单 agent headless service 使用，具备：
+
+- OpenAI-compatible chat style service endpoint。
+- SSE streaming agent events。
+- non-streaming summarized response。
+- ReAct loop、工具调用、工具结果回传和最终回答。
+- MCP stdio server 集成。
+- per-server MCP `env` 透传。
+- skills 加载和工具列表。
+- session、task、TODO、trace、context window 相关基础设施。
+- context compression / sliding window 配置能力。
+- service token 认证。
+- release smoke test 读取真实 LLM API。
+
+当前版本的明确边界：
+
+- 仍是单 agent，不是多 agent 协作平台。
+- Web UI 不是核心服务依赖。
+- MCP server 主要是部署级绑定；request/session-scoped MCP binding 仍待定。
+- run trace 持久化和 replay 的公共服务 API 还未完整产品化。
+- PSKA/FastReAct 跨 repo E2E 还没有变成通用 CI 必跑项。
+- 生产级公网暴露还需要外层 TLS、网络隔离、token rotation、租户隔离和审计策略。
+
+## 可选 Web/Gateway 控制面
+
+需要 Admin 控制台或 Gateway 调试时：
+
+```bash
+cd /Users/xudawei/FastReAct/fastreact-nano
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[all]"
-
 cp .env.example .env
-# 编辑 .env，设置 FASTRACT_API_KEY 或 OPENAI_API_KEY。
 
 cd ../fastreact-nano-web
 npm install
@@ -29,58 +222,19 @@ cd ..
 - Gateway 健康检查：http://localhost:9000/health
 - Gateway 状态：http://localhost:9000/api/status
 
-## 配置
+控制面鉴权：
 
-后端配置优先从环境变量读取；部分配置也会从 `~/.fastreact/config.json`、`./.fastreact/config.json` 或 `./config.json` 读取。
-
-后端配置模板见 [`.env.example`](.env.example)，重点字段：
-
-- `FASTRACT_MODEL`、`FASTRACT_API_BASE`、`FASTRACT_API_KEY`
-- `FASTRACT_GATEWAY_WORKSPACE`
-- `GATEWAY_HOST`、`GATEWAY_PORT`、`GATEWAY_ADMIN_KEY`
-- `FASTREACT_ADMIN_API_AUTH`
-- `FASTREACT_CORS_ORIGINS`
-- `FASTRACT_MCP_SERVERS`
-
-前端配置模板见 [`../fastreact-nano-web/.env.example`](../fastreact-nano-web/.env.example)，重点字段：
-
-- `NEXT_PUBLIC_FASTREACT_GATEWAY_HTTP_URL`
-- `NEXT_PUBLIC_FASTREACT_GATEWAY_WS_URL`
-- `NEXT_PUBLIC_FASTREACT_ADMIN_KEY`
-
-不要把真实 LLM key、GitHub PAT 或私有 token 放进前端环境变量。
-
-## 运行时接口
-
-稳定 Python 入口：
-
-```python
-async for event in agent.run_event_stream(
-    query,
-    skills=None,
-    session_id=None,
-    history=None,
-    user_key=None,
-):
-    ...
+```bash
+FASTREACT_ADMIN_API_AUTH=true
+GATEWAY_ADMIN_KEY=replace-me
 ```
 
-稳定 WebSocket 控制消息：
-
-- `query`
-- `control interrupt`
-- `list_skills`
-- `approve_tool`
-- `deny_tool`
-- `resume_session`
-
-Admin HTTP API 覆盖 sessions、tasks、audit、traces、tools、config、metrics 和 dependency health。设置 `FASTREACT_ADMIN_API_AUTH=true` 后，控制面 API 需要 `X-Admin-Key`。
+启用后，Admin HTTP API 需要 `X-Admin-Key`。
 
 ## 测试与发布门槛
 
 ```bash
-cd fastreact-nano
-
+cd /Users/xudawei/FastReAct/fastreact-nano
 python3 -m compileall -q src/fastreact scripts run_tests.py
 python3 run_tests.py quick
 python3 run_tests.py integration
@@ -89,9 +243,7 @@ python3 run_tests.py release-llm
 python3 run_tests.py release-full
 ```
 
-`release-llm` 会读取 `~/api_key.txt`，记录首个事件耗时和最终完成耗时，并通过 LLM Judge 判断回答是否有效。`release-full` 会串起后端测试、前端构建、生产依赖审计、浏览器 E2E 和真实 LLM gate。
-
-`~/Github_PAT.txt` 只在 release gate 通过后、确实需要 push 时读取。
+默认测试不会访问真实 LLM。`release-llm` 会读取 `~/api_key.txt`，记录首个事件耗时和最终完成耗时，并通过 LLM Judge 判断回答是否有效。
 
 ## JSONL 存储维护
 
@@ -112,8 +264,11 @@ python3 scripts/store_maintenance.py compact --keep-last 5000
 
 `compact` 默认会先创建备份，然后保留最新 session/task 快照，并裁剪 append-only stream。
 
-## 运维文档
+## 文档
 
-- [部署说明](docs/deployment.md)
-- [架构说明](docs/architecture.md)
-- [安全模型](docs/security.md)
+- [`docs/HEADLESS_SERVICE.md`](docs/HEADLESS_SERVICE.md)
+- [`docs/PSKA_FASTREACT_PROTOCOL.md`](docs/PSKA_FASTREACT_PROTOCOL.md)
+- [`docs/DOCS_INDEX.md`](docs/DOCS_INDEX.md)
+- [`docs/deployment.md`](docs/deployment.md)
+- [`docs/architecture.md`](docs/architecture.md)
+- [`docs/security.md`](docs/security.md)
