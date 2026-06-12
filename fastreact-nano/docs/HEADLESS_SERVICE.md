@@ -41,6 +41,12 @@ Skill list:
 GET /v1/skills
 ```
 
+Approval list:
+
+```http
+GET /v1/approvals
+```
+
 ## Service Authentication
 
 If `FASTREACT_SERVICE_TOKEN` or `service.service_token` is configured, clients
@@ -140,7 +146,7 @@ ask_user
 
 Each event includes stable protocol fields such as `run_id`, `session_id`,
 `event_id`, `parent_event_id`, `tool_call_id`, `tool_name`, `tool_args`,
-`cited_source_ids`, and `metadata`.
+`approval_request_id`, `cited_source_ids`, and `metadata`.
 
 The stream ends with:
 
@@ -151,6 +157,47 @@ data: [DONE]
 
 See [PSKA_FASTREACT_PROTOCOL.md](PSKA_FASTREACT_PROTOCOL.md) for the full
 interop protocol.
+
+## Headless Tool Approvals
+
+When a tool is dangerous, FastReAct emits an `ask_user` event and stores a
+pending approval request. Headless clients can resolve it through HTTP.
+
+List pending and historical approval requests:
+
+```bash
+curl http://127.0.0.1:8000/v1/approvals \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
+Inspect one approval request:
+
+```bash
+curl http://127.0.0.1:8000/v1/approvals/approval-123 \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
+Approve:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/approvals/approval-123/approve \
+  -H 'Content-Type: application/json' \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -d '{"reason":"operator approved"}'
+```
+
+Deny:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/approvals/approval-123/deny \
+  -H 'Content-Type: application/json' \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -d '{"reason":"unsafe command"}'
+```
+
+If a headless client cannot safely decide, it should deny the request or let it
+expire. Production deployments should avoid exposing broad shell/file tools to
+untrusted callers.
 
 ## Formal Runtime Configuration
 

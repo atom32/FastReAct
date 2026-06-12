@@ -71,6 +71,10 @@ class ChatCompletionResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ApprovalDecisionRequest(BaseModel):
+    reason: Optional[str] = None
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -139,6 +143,7 @@ def service_event_payload(
     parent_event_id: str | None = None,
 ) -> dict[str, Any]:
     metadata = dict(event.metadata or {})
+    approval_request_id = metadata.get("approval_request_id") or metadata.get("request_id")
     event_id = f"{run_id}:{sequence}"
     payload = {
         "schema": SERVICE_EVENT_SCHEMA_VERSION,
@@ -154,6 +159,7 @@ def service_event_payload(
         "tool_call_id": metadata.get("call_id") or metadata.get("tool_call_id"),
         "duration_ms": metadata.get("duration_ms"),
         "cited_source_ids": metadata.get("cited_source_ids") or metadata.get("source_ids") or [],
+        "approval_request_id": approval_request_id,
         "metadata": metadata,
     }
     return payload
@@ -275,6 +281,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "health": "GET /health",
                 "skills": "GET /v1/skills",
                 "tools": "GET /v1/tools",
+                "approvals": "GET /v1/approvals",
             },
         }
 
@@ -447,6 +454,61 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             "tools": agent.list_tools(),
             "mcp_tools": agent.list_mcp_tools() if hasattr(agent, "list_mcp_tools") else [],
         }
+
+    @app.get("/v1/approvals")
+    async def list_approvals(request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        executor = getattr(agent, "tool_executor", None)
+        approvals = executor.list_approvals() if executor and hasattr(executor, "list_approvals") else []
+        return {
+            "approvals": approvals,
+            "count": len(approvals),
+            "pending_count": len([item for item in approvals if item.get("status") == "pending"]),
+        }
+
+    @app.get("/v1/approvals/{request_id}")
+    async def get_approval(request_id: str, request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        executor = getattr(agent, "tool_executor", None)
+        approvals = executor.list_approvals() if executor and hasattr(executor, "list_approvals") else []
+        for approval in approvals:
+            if approval.get("request_id") == request_id:
+                return {"approval": approval}
+        raise HTTPException(status_code=404, detail="Approval request not found")
+
+    @app.post("/v1/approvals/{request_id}/approve")
+    async def approve_tool_request(
+        request_id: str,
+        request: Request,
+        decision: ApprovalDecisionRequest | None = None,
+    ) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        executor = getattr(agent, "tool_executor", None)
+        if not executor or not hasattr(executor, "resolve_approval"):
+            raise HTTPException(status_code=404, detail="Approval request not found")
+        resolved = executor.resolve_approval(request_id, approved=True, reason=(decision.reason if decision else "") or "")
+        if not resolved:
+            raise HTTPException(status_code=404, detail="Approval request not found or already resolved")
+        return {"request_id": request_id, "status": "approved", "approved": True}
+
+    @app.post("/v1/approvals/{request_id}/deny")
+    async def deny_tool_request(
+        request_id: str,
+        request: Request,
+        decision: ApprovalDecisionRequest | None = None,
+    ) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        executor = getattr(agent, "tool_executor", None)
+        if not executor or not hasattr(executor, "resolve_approval"):
+            raise HTTPException(status_code=404, detail="Approval request not found")
+        resolved = executor.resolve_approval(request_id, approved=False, reason=(decision.reason if decision else "") or "")
+        if not resolved:
+            raise HTTPException(status_code=404, detail="Approval request not found or already resolved")
+        return {"request_id": request_id, "status": "denied", "approved": False}
 
     return app
 

@@ -171,6 +171,65 @@ When `stream=false`, FastReAct returns:
 
 Errors use the same shape with `type="error"` and an `error` field.
 
+## Headless Approval Round Trip
+
+Dangerous tools must not rely on an interactive terminal in headless mode. When a
+tool requires human or caller approval, FastReAct emits an `ask_user` event and
+keeps a pending approval request in the service runtime.
+
+Approval request event:
+
+```json
+{
+  "schema": "fastreact.agent_event.v1",
+  "type": "ask_user",
+  "event_id": "run-id:3",
+  "run_id": "run-id",
+  "session_id": "session-id",
+  "timestamp": "2026-06-12T00:00:00+00:00",
+  "content": "Dangerous command requires confirmation",
+  "approval_request_id": "approval-123",
+  "tool_name": "exec",
+  "tool_args": {
+    "command": "rm test.txt"
+  },
+  "metadata": {
+    "request_id": "approval-123",
+    "decision_level": "danger"
+  }
+}
+```
+
+Clients should use `approval_request_id` as the canonical ID. `metadata.request_id`
+is retained for backward compatibility.
+
+Approval APIs:
+
+```http
+GET /v1/approvals
+GET /v1/approvals/{approval_request_id}
+POST /v1/approvals/{approval_request_id}/approve
+POST /v1/approvals/{approval_request_id}/deny
+```
+
+Approve or deny body:
+
+```json
+{
+  "reason": "operator approved in PSKA review UI"
+}
+```
+
+All approval APIs use the same service token as `/ready` and
+`/v1/chat/completions` when service auth is enabled.
+
+Client rules:
+
+- Treat unknown approval statuses as non-approved.
+- Do not auto-approve shell, write, edit, or external side-effect tools unless the caller has an explicit policy for that tool and user.
+- If the client cannot safely present or decide an approval request, call `deny` or let it expire.
+- PSKA remains responsible for knowledge ACL; FastReAct approval only governs tool execution inside the agent runtime.
+
 ## PSKA Tool Binding
 
 FastReAct loads PSKA through deployment configuration, usually MCP:

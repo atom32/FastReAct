@@ -13,6 +13,7 @@ FastReAct is intended to serve as a reusable headless agentic service layer. PSK
 - Readiness endpoint: `GET /ready`, including model config state, MCP readiness, MCP server status, and loaded MCP tool names.
 - Config-based service wrapping: `python3 -m fastreact.adapters.http --config <path>` or default `~/.fastreact/config.json`.
 - MCP stdio server env can be declared per server in `mcp.servers[].env`.
+- Headless approval round trip: `ask_user` events include `approval_request_id`, and clients can call `GET /v1/approvals`, `GET /v1/approvals/{id}`, `POST /v1/approvals/{id}/approve`, or `POST /v1/approvals/{id}/deny`.
 
 ## Validation
 
@@ -30,6 +31,7 @@ python3 scripts/fastreact_http_sse_e2e.py --python ../.pska/venvs/pska-py312/bin
 - Persist and replay completed run traces through a public service API.
 - Add production examples for service token rotation and tenant isolation.
 - Add CI wiring for PSKA/FastReAct cross-repo E2E.
+- Add PSKA-side approval UI or policy client that consumes `ask_user` and resolves `/v1/approvals/*`.
 
 ## Ownership Boundary
 

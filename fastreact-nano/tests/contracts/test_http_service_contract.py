@@ -41,6 +41,40 @@ class FakeAgent:
         return {"loaded": True, "required_skills": required_skills}
 
 
+class FakeApprovalExecutor:
+    def __init__(self):
+        self.records = {
+            "approval-123": {
+                "request_id": "approval-123",
+                "session_id": "session-123",
+                "tool_name": "exec",
+                "tool_args": {"command": "rm test.txt"},
+                "reason": "Dangerous command requires confirmation",
+                "decision_level": "danger",
+                "status": "pending",
+                "approved": None,
+                "expired": False,
+            }
+        }
+
+    def list_approvals(self):
+        return list(self.records.values())
+
+    def resolve_approval(self, request_id, approved, reason=""):
+        record = self.records.get(request_id)
+        if not record or record["status"] != "pending":
+            return False
+        record["status"] = "approved" if approved else "denied"
+        record["approved"] = approved
+        record["resolution_reason"] = reason
+        return True
+
+
+class FakeApprovalAgent(FakeAgent):
+    def __init__(self):
+        self.tool_executor = FakeApprovalExecutor()
+
+
 def test_extract_query_uses_last_user_message():
     messages = [
         {"role": "system", "content": "Use PSKA tools."},
@@ -73,6 +107,30 @@ def test_service_event_payload_has_stable_contract_fields():
     assert payload["tool_call_id"] == "call-123"
     assert payload["cited_source_ids"] == []
     assert "metadata" in payload
+
+
+def test_service_event_payload_exposes_headless_approval_id():
+    event = AgentEvent.ask_user(
+        "Dangerous command requires confirmation",
+        "exec",
+        {"command": "rm test.txt"},
+        "session-123",
+    )
+    event.metadata.update(
+        {
+            "request_id": "approval-123",
+            "decision_level": "danger",
+        }
+    )
+
+    payload = service_event_payload(event, run_id="run-123", sequence=3)
+
+    assert payload["type"] == "ask_user"
+    assert payload["approval_request_id"] == "approval-123"
+    assert payload["tool_name"] == "exec"
+    assert payload["tool_args"] == {"command": "rm test.txt"}
+    assert payload["metadata"]["request_id"] == "approval-123"
+    assert payload["metadata"]["decision_level"] == "danger"
 
 
 def test_sse_frame_names_event_and_serializes_data():
@@ -228,5 +286,52 @@ def test_service_auth_blocks_chat_and_readiness_when_configured(monkeypatch):
         )
         assert response.status_code == 200
         assert response.json()["run_id"] == "run-auth"
+    finally:
+        set_agent_for_testing(None)
+
+
+def test_headless_approval_endpoints_list_get_and_resolve(monkeypatch):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_agent_for_testing(FakeApprovalAgent())
+    headers = {"X-FastReAct-Service-Token": "service-secret"}
+    try:
+        client = testclient.TestClient(create_app())
+        assert client.get("/v1/approvals").status_code == 401
+
+        listed = client.get("/v1/approvals", headers=headers)
+        assert listed.status_code == 200
+        listed_payload = listed.json()
+        assert listed_payload["count"] == 1
+        assert listed_payload["pending_count"] == 1
+        assert listed_payload["approvals"][0]["request_id"] == "approval-123"
+
+        fetched = client.get("/v1/approvals/approval-123", headers=headers)
+        assert fetched.status_code == 200
+        assert fetched.json()["approval"]["tool_name"] == "exec"
+
+        approved = client.post(
+            "/v1/approvals/approval-123/approve",
+            headers=headers,
+            json={"reason": "operator approved"},
+        )
+        assert approved.status_code == 200
+        assert approved.json() == {
+            "request_id": "approval-123",
+            "status": "approved",
+            "approved": True,
+        }
+
+        fetched_after = client.get("/v1/approvals/approval-123", headers=headers)
+        assert fetched_after.json()["approval"]["status"] == "approved"
+        assert fetched_after.json()["approval"]["resolution_reason"] == "operator approved"
+
+        second_resolution = client.post(
+            "/v1/approvals/approval-123/deny",
+            headers=headers,
+            json={"reason": "too late"},
+        )
+        assert second_resolution.status_code == 404
     finally:
         set_agent_for_testing(None)
