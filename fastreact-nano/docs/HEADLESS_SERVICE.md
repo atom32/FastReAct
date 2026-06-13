@@ -55,6 +55,9 @@ GET /v1/runs
 GET /v1/runs/{run_id}
 GET /v1/runs/{run_id}/events
 POST /v1/runs/{run_id}/cancel
+GET /v1/traces
+GET /v1/traces/{run_id}
+GET /v1/traces/{run_id}/events
 ```
 
 ## Service Authentication
@@ -246,6 +249,13 @@ curl http://127.0.0.1:8000/v1/runs/optional-run-id/events \
   -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
 ```
 
+Fetch trace summary:
+
+```bash
+curl http://127.0.0.1:8000/v1/traces/optional-run-id \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
 Cancel:
 
 ```bash
@@ -254,8 +264,9 @@ curl -X POST http://127.0.0.1:8000/v1/runs/optional-run-id/cancel \
 ```
 
 The first implementation uses an in-process registry. It establishes the API
-contract, but durable queue persistence, retry/backoff, crash recovery, and
-replay from storage are still product-polish items before daemon 1.0.
+contract and writes a trace summary when a run finishes. Durable queue
+persistence, retry/backoff, crash recovery, persisted event replay, retention,
+and pagination are still product-polish items before daemon 1.0.
 
 ## Formal Runtime Configuration
 

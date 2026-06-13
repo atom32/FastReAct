@@ -337,13 +337,17 @@ def test_headless_approval_endpoints_list_get_and_resolve(monkeypatch):
         set_agent_for_testing(None)
 
 
-def test_background_run_endpoints_create_query_events_and_cancel(monkeypatch):
+def test_background_run_endpoints_create_query_events_cancel_and_trace(monkeypatch, tmp_path):
     import time
 
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
+    from fastreact.runtime.store_service import StoreService
+
     monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
-    set_agent_for_testing(FakeAgent())
+    fake_agent = FakeAgent()
+    fake_agent.store = StoreService(tmp_path / "store")
+    set_agent_for_testing(fake_agent)
     headers = {"X-FastReAct-Service-Token": "service-secret"}
     run_id = f"run-background-contract-{time.time_ns()}"
     try:
@@ -388,6 +392,19 @@ def test_background_run_endpoints_create_query_events_and_cancel(monkeypatch):
         listed = client.get("/v1/runs", headers=headers)
         assert listed.status_code == 200
         assert any(run["run_id"] == run_id for run in listed.json()["runs"])
+
+        traces = client.get("/v1/traces", headers=headers)
+        assert traces.status_code == 200
+        assert any(trace["run_id"] == run_id for trace in traces.json()["traces"])
+
+        trace = client.get(f"/v1/traces/{run_id}", headers=headers)
+        assert trace.status_code == 200
+        assert trace.json()["trace"]["status"] == "completed"
+        assert trace.json()["trace"]["event_count"] == 4
+
+        trace_events = client.get(f"/v1/traces/{run_id}/events", headers=headers)
+        assert trace_events.status_code == 200
+        assert trace_events.json()["event_count"] == 4
 
         cancelled_completed = client.post(
             f"/v1/runs/{run_id}/cancel",

@@ -265,6 +265,9 @@ GET /v1/runs
 GET /v1/runs/{run_id}
 GET /v1/runs/{run_id}/events
 POST /v1/runs/{run_id}/cancel
+GET /v1/traces
+GET /v1/traces/{run_id}
+GET /v1/traces/{run_id}/events
 ```
 
 Run status values:
@@ -278,9 +281,18 @@ cancelled
 ```
 
 The first implementation is an in-process run registry. It establishes the
-service contract but is not yet a durable job queue. Release-quality daemon work
-still needs persistence, retry/backoff, crash recovery, leases, and event replay
-from durable storage.
+service contract and writes a trace summary when a background run finishes, but
+it is not yet a durable job queue. Release-quality daemon work still needs
+persistence, retry/backoff, crash recovery, leases, and event replay from
+durable storage.
+
+Formalization requirements for this first version:
+
+- Persist run snapshots and event streams durably, not only in process memory.
+- Define event replay ordering and pagination.
+- Define retention, compaction, and redaction behavior for traces.
+- Add retry/backoff and lease semantics before introducing external workers.
+- Preserve this HTTP contract when the storage/worker implementation changes.
 
 ## PSKA Tool Binding
 

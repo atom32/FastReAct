@@ -236,6 +236,34 @@ def run_snapshot(record: dict[str, Any], include_events: bool = False) -> dict[s
     return snapshot
 
 
+def persist_run_trace(record: dict[str, Any]) -> None:
+    agent = get_agent()
+    store = getattr(agent, "store", None)
+    if not store:
+        return
+    events = list(record.get("events", []))
+    final_event = next((event for event in reversed(events) if event.get("type") == "session_end"), None)
+    tool_calls = [event for event in events if event.get("type") == "tool_call"]
+    store.append(
+        "traces",
+        {
+            "trace_type": "background_run",
+            "run_id": record["run_id"],
+            "session_id": record["session_id"],
+            "status": record["status"],
+            "created_at": record["created_at"],
+            "started_at": record.get("started_at"),
+            "completed_at": record.get("completed_at"),
+            "duration_ms": record.get("duration_ms"),
+            "event_count": len(events),
+            "tool_call_count": len(tool_calls),
+            "final_content": final_event.get("content") if final_event else "",
+            "error": record.get("error"),
+            "metadata": record.get("metadata", {}),
+        },
+    )
+
+
 async def execute_background_run(run_id: str) -> None:
     record = _runs[run_id]
     agent = get_agent()
@@ -311,6 +339,7 @@ async def execute_background_run(run_id: str) -> None:
     finally:
         record["completed_at"] = utc_now()
         record["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
+        persist_run_trace(record)
         record.pop("task", None)
 
 
@@ -382,6 +411,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "tools": "GET /v1/tools",
                 "approvals": "GET /v1/approvals",
                 "runs": "POST /v1/runs",
+                "traces": "GET /v1/traces",
             },
         }
 
@@ -602,6 +632,43 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         if task and not task.done():
             task.cancel()
         return {"type": "run", **run_snapshot(record)}
+
+    @app.get("/v1/traces")
+    async def list_traces(request: Request, limit: int = 200, session_id: Optional[str] = None) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        store = getattr(agent, "store", None)
+        records = store.read("traces", limit=limit, session_id=session_id) if store else []
+        return {"traces": records, "count": len(records)}
+
+    @app.get("/v1/traces/{run_id}")
+    async def get_trace(run_id: str, request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        store = getattr(agent, "store", None)
+        records = store.read("traces", limit=0, run_id=run_id) if store else []
+        if records:
+            return {"trace": records[-1]}
+        record = _runs.get(run_id)
+        if record:
+            return {"trace": run_snapshot(record, include_events=False)}
+        raise HTTPException(status_code=404, detail="Trace not found")
+
+    @app.get("/v1/traces/{run_id}/events")
+    async def get_trace_events(run_id: str, request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        store = getattr(agent, "store", None)
+        record = _runs.get(run_id)
+        if record:
+            events = list(record.get("events", []))
+        elif store:
+            events = store.read("events", limit=0, run_id=run_id)
+        else:
+            events = []
+        if not events:
+            raise HTTPException(status_code=404, detail="Trace events not found")
+        return {"run_id": run_id, "events": events, "event_count": len(events)}
 
     @app.post("/run")
     async def run_legacy(request: dict[str, Any]) -> dict[str, str]:
