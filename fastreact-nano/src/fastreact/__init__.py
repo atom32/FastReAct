@@ -20,7 +20,7 @@ __author__ = "FastReAct Team"
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.react import ReActCore
 from fastreact.core.tools import Tool, ToolRegistry
-from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig, MCPConfig, FeishuConfig
+from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig, MCPConfig, PolicyConfig, FeishuConfig
 from fastreact.core.context import ContextMonitor, ContextStats, FilesystemMemory, FilesystemNode
 from fastreact.core.safety import (
     SafetyLevel,
@@ -84,6 +84,7 @@ __all__ = [
     "ToolConfig",
     "ReactConfig",
     "MCPConfig",
+    "PolicyConfig",
     "FeishuConfig",
     # Context (Cortex)
     "ContextMonitor",

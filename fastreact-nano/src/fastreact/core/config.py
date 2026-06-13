@@ -347,6 +347,42 @@ class ServiceConfig:
 
 
 @dataclass
+class PolicyConfig:
+    """Tool execution policy for headless service deployments."""
+
+    default_action: Optional[str] = None
+    tool_rules: dict[str, Any] = field(default_factory=dict)
+    user_rules: dict[str, Any] = field(default_factory=dict)
+    tenant_rules: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_env(cls) -> "PolicyConfig":
+        policy_json = os.getenv("FASTRACT_POLICY")
+        if policy_json:
+            import json
+
+            return cls.from_dict(json.loads(policy_json))
+        return cls()
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PolicyConfig":
+        return cls(
+            default_action=data.get("default_action"),
+            tool_rules=data.get("tool_rules", {}),
+            user_rules=data.get("user_rules", {}),
+            tenant_rules=data.get("tenant_rules", {}),
+        )
+
+    def to_safety_policy(self) -> dict[str, Any]:
+        return {
+            "default_action": self.default_action,
+            "tool_rules": self.tool_rules,
+            "user_rules": self.user_rules,
+            "tenant_rules": self.tenant_rules,
+        }
+
+
+@dataclass
 class FeishuConfig:
     """Feishu (Lark) channel configuration"""
 
@@ -457,6 +493,7 @@ class Config:
     paths: PathsConfig = field(default_factory=PathsConfig)
     gateway: GatewayConfig = field(default_factory=GatewayConfig)
     service: ServiceConfig = field(default_factory=ServiceConfig)
+    policy: PolicyConfig = field(default_factory=PolicyConfig)
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
 
     @classmethod
@@ -470,6 +507,7 @@ class Config:
             mcp=MCPConfig.from_env(),
             paths=PathsConfig.from_env(),
             service=ServiceConfig.from_env(llm_config.api_key_file),
+            policy=PolicyConfig.from_env(),
         )
 
     @classmethod
@@ -627,6 +665,12 @@ class Config:
             else:
                 service_config = ServiceConfig.from_env(llm_config.api_key_file)
 
+            policy_config = PolicyConfig()
+            if "policy" in data:
+                policy_config = PolicyConfig.from_dict(data["policy"])
+            else:
+                policy_config = PolicyConfig.from_env()
+
             return cls(
                 llm=llm_config,
                 tools=tools_config,
@@ -635,6 +679,7 @@ class Config:
                 paths=paths_config,
                 gateway=gateway_config,
                 service=service_config,
+                policy=policy_config,
                 feishu=feishu_config,
             )
 

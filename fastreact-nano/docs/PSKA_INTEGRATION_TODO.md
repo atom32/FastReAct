@@ -59,6 +59,9 @@ can remain the reference implementation until those boundaries are clear.
 - Trace summary API: clients can call `GET /v1/traces`, `GET /v1/traces/{id}`,
   and `GET /v1/traces/{id}/events`. The current implementation persists run
   summaries and service event payloads, but still needs replay formalization.
+- Tool policy config: `policy.tool_rules`, `policy.user_rules`, and
+  `policy.tenant_rules` can map tools to `allow`, `caution`,
+  `require_approval`, or `deny`.
 
 ## Validation
 
@@ -104,9 +107,10 @@ just feature-rich.
   deny-by-default, timeout, and operator-approved modes.
 
 - Add per-tool, per-user, and per-tenant policy controls.
-  Current safety is mainly rule based. A production service layer needs explicit
-  policy configuration for shell tools, write/edit tools, MCP tools, PSKA tools,
-  and tenant/user contexts.
+  The first config contract exists. Productize it with validation errors,
+  runtime inspection, policy dry-run, policy audit fields, and PSKA-side policy
+  client behavior for shell tools, write/edit tools, MCP tools, PSKA tools, and
+  tenant/user contexts.
 
 - Strengthen task/TODO as durable single-agent workflow state.
   TaskService is enough for multi-step planning, but release-quality behavior

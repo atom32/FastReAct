@@ -131,6 +131,7 @@ class SafetyPolicy:
         strict_mode: bool = False,
         allow_all: bool = False,
         custom_patterns: Optional[Dict[str, List[str]]] = None,
+        policy_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize safety policy
@@ -143,6 +144,7 @@ class SafetyPolicy:
         self._strict_mode = strict_mode
         self._allow_all = allow_all
         self._custom_patterns = custom_patterns or {}
+        self._policy_config = policy_config or {}
         self._audit_log: List[AuditLog] = []
 
         # Compile regex patterns
@@ -154,6 +156,8 @@ class SafetyPolicy:
         self,
         tool_name: str,
         args: Dict[str, Any],
+        user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
     ) -> SafetyDecision:
         """
         Check if tool execution is safe
@@ -182,6 +186,14 @@ class SafetyPolicy:
                         reason="Command matches forbidden pattern",
                         pattern_matched=pattern.pattern,
                     )
+
+        policy_decision = self._check_config_policy(
+            tool_name,
+            user_key=user_key,
+            tenant_key=tenant_key,
+        )
+        if policy_decision:
+            return policy_decision
 
         # Check strict mode
         if self._strict_mode:
@@ -240,6 +252,71 @@ class SafetyPolicy:
             level=SafetyLevel.CAUTION,
             reason="Unclassified tool (logged but allowed)",
         )
+
+    def _check_config_policy(
+        self,
+        tool_name: str,
+        user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
+    ) -> Optional[SafetyDecision]:
+        tenant = tenant_key or (user_key.split(":", 1)[0] if user_key and ":" in user_key else None)
+        candidates: list[tuple[str, Any]] = []
+        user_rules = self._policy_config.get("user_rules") or {}
+        tenant_rules = self._policy_config.get("tenant_rules") or {}
+        tool_rules = self._policy_config.get("tool_rules") or {}
+
+        if user_key and user_key in user_rules:
+            candidates.append((f"user:{user_key}", user_rules[user_key]))
+        if tenant and tenant in tenant_rules:
+            candidates.append((f"tenant:{tenant}", tenant_rules[tenant]))
+        if tool_name in tool_rules:
+            candidates.append((f"tool:{tool_name}", tool_rules[tool_name]))
+        if "*" in tool_rules:
+            candidates.append(("tool:*", tool_rules["*"]))
+
+        for scope, rule in candidates:
+            action = self._rule_action(rule, tool_name)
+            if action:
+                return self._decision_from_action(action, scope)
+
+        default_action = self._policy_config.get("default_action")
+        if isinstance(default_action, str) and default_action.strip():
+            return self._decision_from_action(default_action, "default")
+        return None
+
+    @staticmethod
+    def _rule_action(rule: Any, tool_name: str) -> Optional[str]:
+        if isinstance(rule, str):
+            return rule
+        if not isinstance(rule, dict):
+            return None
+        tools = rule.get("tools") or rule.get("tool_rules") or {}
+        if isinstance(tools, dict):
+            value = tools.get(tool_name) or tools.get("*")
+            if isinstance(value, str):
+                return value
+            if isinstance(value, dict):
+                action = value.get("action")
+                return action if isinstance(action, str) else None
+        action = rule.get("action") or rule.get("default_action")
+        return action if isinstance(action, str) else None
+
+    @staticmethod
+    def _decision_from_action(action: str, scope: str) -> SafetyDecision:
+        normalized = action.strip().lower().replace("-", "_")
+        if normalized in {"allow", "safe"}:
+            return SafetyDecision(level=SafetyLevel.SAFE, reason=f"Policy {scope} allows tool")
+        if normalized in {"caution", "log"}:
+            return SafetyDecision(level=SafetyLevel.CAUTION, reason=f"Policy {scope} allows with caution")
+        if normalized in {"require_approval", "approval", "danger"}:
+            return SafetyDecision(
+                level=SafetyLevel.DANGER,
+                reason=f"Policy {scope} requires approval",
+                requires_confirmation=True,
+            )
+        if normalized in {"deny", "forbid", "forbidden", "block"}:
+            return SafetyDecision(level=SafetyLevel.FORBIDDEN, reason=f"Policy {scope} denies tool")
+        return SafetyDecision(level=SafetyLevel.CAUTION, reason=f"Policy {scope} has unknown action")
 
     def log(
         self,

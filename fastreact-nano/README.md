@@ -183,6 +183,7 @@ FastReAct 不直接访问 PSKA DB，不绕过 PSKA MCP tools，也不替 PSKA �
 - headless approval round trip：`ask_user` 事件和 `/v1/approvals/*` approve/deny API。
 - background run 初版协议：`/v1/runs/*` 创建、查询、事件和取消。
 - trace summary 初版协议：`/v1/traces/*` 查询 run trace。
+- policy 初版配置：per-tool / per-user / per-tenant allow/caution/approval/deny。
 - MCP stdio server 集成。
 - per-server MCP `env` 透传。
 - skills 加载和工具列表。
@@ -202,6 +203,7 @@ FastReAct 不直接访问 PSKA DB，不绕过 PSKA MCP tools，也不替 PSKA �
 - PSKA/FastReAct 跨 repo E2E 还没有变成通用 CI 必跑项。
 - 生产级公网暴露还需要外层 TLS、网络隔离、token rotation、租户隔离和审计策略。
 - 危险工具的业务级自动审批策略应由调用方显式实现，不能默认放行。
+- policy 管理 API、dry-run、审计字段和配置校验还需要产品化。
 
 ## 长期方向
 

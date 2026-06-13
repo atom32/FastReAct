@@ -487,6 +487,7 @@ class AgentRuntime:
                                 tool_name=tool_name,
                                 tool_params=tool_params,
                                 session_id=session_id,
+                                user_key=user_key,
                             )
                             approved = None
                             request_id = None

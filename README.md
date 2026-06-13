@@ -101,6 +101,7 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 - headless approval round trip：`ask_user`、`/v1/approvals/*` approve/deny。
 - background run 初版协议：`/v1/runs/*` 创建、查询、事件和取消。
 - trace summary 初版协议：`/v1/traces/*` 查询 run trace。
+- policy 初版配置：per-tool / per-user / per-tenant allow/caution/approval/deny。
 - MCP stdio server 接入。
 - per-server MCP `env` 透传。
 - service token 保护。
@@ -118,6 +119,7 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 - 跨 repo CI 中强制启动 PSKA + FastReAct 的完整流水线。
 - 面向公众互联网的托管 SaaS 安全边界。
 - 危险工具的业务级自动审批策略；默认应由调用方或操作员显式 approve/deny。
+- policy 管理 API、dry-run、审计字段和配置校验的完整产品化版本。
 
 ## 长期方向
 

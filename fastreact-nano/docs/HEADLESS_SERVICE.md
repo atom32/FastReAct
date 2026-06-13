@@ -212,6 +212,50 @@ If a headless client cannot safely decide, it should deny the request or let it
 expire. Production deployments should avoid exposing broad shell/file tools to
 untrusted callers.
 
+## Service Policy Configuration
+
+Use `policy` in `~/.fastreact/config.json` to define explicit tool execution
+policy. Rules are checked before the default safety heuristics.
+
+```json
+{
+  "policy": {
+    "tool_rules": {
+      "exec": "require_approval",
+      "write_file": "deny"
+    },
+    "tenant_rules": {
+      "pska": {
+        "tools": {
+          "pska_search": "allow",
+          "exec": "deny"
+        }
+      }
+    },
+    "user_rules": {
+      "pska:operator": {
+        "tools": {
+          "exec": "require_approval"
+        }
+      }
+    }
+  }
+}
+```
+
+Supported actions:
+
+```text
+allow
+caution
+require_approval
+deny
+```
+
+Rule priority is `user_rules`, then `tenant_rules`, then `tool_rules`, then
+`default_action`. Tenant defaults to the prefix before `:` in `user_key`, such
+as `pska` in `pska:user_primary`.
+
 ## Background Runs
 
 Use background runs for long-lived daemon-style work where the caller should not

@@ -208,6 +208,7 @@ class Agent:
         if self._config.react.enable_safety:
             self._safety_policy = SafetyPolicy(
                 strict_mode=self._config.react.strict_mode,
+                policy_config=self._config.policy.to_safety_policy(),
             )
             self._confirmation_callback = CLIConfirmationCallback()
 

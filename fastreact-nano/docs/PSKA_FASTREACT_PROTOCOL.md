@@ -230,6 +230,59 @@ Client rules:
 - If the client cannot safely present or decide an approval request, call `deny` or let it expire.
 - PSKA remains responsible for knowledge ACL; FastReAct approval only governs tool execution inside the agent runtime.
 
+## Tool Policy Contract
+
+FastReAct service policy controls whether a tool call is allowed, logged with
+caution, routed through approval, or denied. It does not replace PSKA knowledge
+ACLs; PSKA still owns source visibility and knowledge-level decisions.
+
+Policy config shape:
+
+```json
+{
+  "policy": {
+    "default_action": "caution",
+    "tool_rules": {
+      "exec": "require_approval",
+      "write_file": "deny"
+    },
+    "tenant_rules": {
+      "pska": {
+        "tools": {
+          "pska_search": "allow",
+          "exec": "deny"
+        }
+      }
+    },
+    "user_rules": {
+      "pska:operator": {
+        "tools": {
+          "exec": "require_approval"
+        }
+      }
+    }
+  }
+}
+```
+
+Supported actions:
+
+```text
+allow
+caution
+require_approval
+deny
+```
+
+Rule priority is:
+
+```text
+user_rules -> tenant_rules -> tool_rules -> default_action -> built-in safety heuristics
+```
+
+Tenant is inferred from the prefix before `:` in `user_key`, such as `pska` in
+`pska:user_primary`, unless a future transport provides an explicit tenant key.
+
 ## Background Run Contract
 
 `POST /v1/chat/completions` remains the direct request/response endpoint. For
