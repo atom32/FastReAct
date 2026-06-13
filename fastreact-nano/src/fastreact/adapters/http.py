@@ -9,6 +9,7 @@ SSE AgentEvent streaming or a summarized non-streaming response.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import json
@@ -48,6 +49,7 @@ SERVICE_AUTH_ENV = "FASTREACT_SERVICE_TOKEN"
 
 _agent: Optional[Agent] = None
 _service_config = None
+_runs: dict[str, dict[str, Any]] = {}
 
 
 class ChatRequest(BaseModel):
@@ -215,6 +217,103 @@ def summarize_events(
     return response
 
 
+def run_snapshot(record: dict[str, Any], include_events: bool = False) -> dict[str, Any]:
+    snapshot = {
+        "run_id": record["run_id"],
+        "session_id": record["session_id"],
+        "status": record["status"],
+        "created_at": record["created_at"],
+        "started_at": record.get("started_at"),
+        "completed_at": record.get("completed_at"),
+        "cancelled_at": record.get("cancelled_at"),
+        "duration_ms": record.get("duration_ms"),
+        "event_count": len(record.get("events", [])),
+        "error": record.get("error"),
+        "metadata": record.get("metadata", {}),
+    }
+    if include_events:
+        snapshot["events"] = list(record.get("events", []))
+    return snapshot
+
+
+async def execute_background_run(run_id: str) -> None:
+    record = _runs[run_id]
+    agent = get_agent()
+    record["status"] = "running"
+    record["started_at"] = utc_now()
+    started_at = time.perf_counter()
+    parent_event_id = None
+    sequence = 0
+    try:
+        async for event in agent.run_event_stream(
+            record["query"],
+            skills=record.get("skills"),
+            session_id=record["session_id"],
+            history=record.get("history"),
+            user_key=record.get("user_key"),
+        ):
+            payload = service_event_payload(
+                event,
+                run_id=run_id,
+                sequence=sequence,
+                parent_event_id=parent_event_id,
+            )
+            sequence += 1
+            parent_event_id = payload["event_id"]
+            record["events"].append(payload)
+        if record["status"] != "cancelled":
+            record["status"] = "completed"
+    except asyncio.CancelledError:
+        record["status"] = "cancelled"
+        record["cancelled_at"] = utc_now()
+        record["events"].append(
+            {
+                "schema": SERVICE_EVENT_SCHEMA_VERSION,
+                "type": "error",
+                "event_id": f"{run_id}:{sequence}",
+                "parent_event_id": parent_event_id,
+                "run_id": run_id,
+                "session_id": record["session_id"],
+                "timestamp": utc_now(),
+                "content": "Run cancelled",
+                "tool_name": None,
+                "tool_args": None,
+                "tool_call_id": None,
+                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                "approval_request_id": None,
+                "cited_source_ids": [],
+                "metadata": {"error_type": "CancelledError"},
+            }
+        )
+        raise
+    except Exception as exc:  # noqa: BLE001 - background run should record errors.
+        record["status"] = "failed"
+        record["error"] = str(exc)
+        record["events"].append(
+            {
+                "schema": SERVICE_EVENT_SCHEMA_VERSION,
+                "type": "error",
+                "event_id": f"{run_id}:{sequence}",
+                "parent_event_id": parent_event_id,
+                "run_id": run_id,
+                "session_id": record["session_id"],
+                "timestamp": utc_now(),
+                "content": str(exc),
+                "tool_name": None,
+                "tool_args": None,
+                "tool_call_id": None,
+                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                "approval_request_id": None,
+                "cited_source_ids": [],
+                "metadata": {"error_type": type(exc).__name__},
+            }
+        )
+    finally:
+        record["completed_at"] = utc_now()
+        record["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
+        record.pop("task", None)
+
+
 def readiness_payload(agent: Agent) -> dict[str, Any]:
     config = getattr(agent, "_config", None)
     mcp_servers = []
@@ -282,6 +381,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "skills": "GET /v1/skills",
                 "tools": "GET /v1/tools",
                 "approvals": "GET /v1/approvals",
+                "runs": "POST /v1/runs",
             },
         }
 
@@ -422,6 +522,86 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             events=events,
             started_at=started_at,
         )
+
+    @app.post("/v1/runs")
+    async def create_run(request: Request, chat_request: ChatRequest) -> dict[str, Any]:
+        require_service_auth(request)
+        if not chat_request.messages:
+            raise HTTPException(status_code=400, detail="No messages provided")
+        try:
+            query = extract_query(chat_request.messages)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        run_id = str(chat_request.metadata.get("run_id") or uuid.uuid4())
+        if run_id in _runs:
+            raise HTTPException(status_code=409, detail="Run already exists")
+        session_id = chat_request.session_id or str(uuid.uuid4())
+        record = {
+            "run_id": run_id,
+            "session_id": session_id,
+            "status": "queued",
+            "created_at": utc_now(),
+            "started_at": None,
+            "completed_at": None,
+            "cancelled_at": None,
+            "duration_ms": None,
+            "query": query,
+            "skills": chat_request.skills,
+            "history": extract_history(chat_request.messages),
+            "user_key": chat_request.user_key,
+            "metadata": dict(chat_request.metadata or {}),
+            "events": [],
+            "error": None,
+        }
+        _runs[run_id] = record
+        task = asyncio.create_task(execute_background_run(run_id))
+        record["task"] = task
+        return {"type": "run", **run_snapshot(record)}
+
+    @app.get("/v1/runs")
+    async def list_runs(request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        runs = [run_snapshot(record) for record in _runs.values()]
+        runs.sort(key=lambda item: item["created_at"], reverse=True)
+        return {"runs": runs, "count": len(runs)}
+
+    @app.get("/v1/runs/{run_id}")
+    async def get_run(run_id: str, request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        record = _runs.get(run_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Run not found")
+        return {"type": "run", **run_snapshot(record)}
+
+    @app.get("/v1/runs/{run_id}/events")
+    async def get_run_events(run_id: str, request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        record = _runs.get(run_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Run not found")
+        return {
+            "run_id": run_id,
+            "session_id": record["session_id"],
+            "status": record["status"],
+            "events": list(record["events"]),
+            "event_count": len(record["events"]),
+        }
+
+    @app.post("/v1/runs/{run_id}/cancel")
+    async def cancel_run(run_id: str, request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        record = _runs.get(run_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if record["status"] in {"completed", "failed", "cancelled"}:
+            return {"type": "run", **run_snapshot(record)}
+        record["status"] = "cancelled"
+        record["cancelled_at"] = utc_now()
+        task = record.get("task")
+        if task and not task.done():
+            task.cancel()
+        return {"type": "run", **run_snapshot(record)}
 
     @app.post("/run")
     async def run_legacy(request: dict[str, Any]) -> dict[str, str]:

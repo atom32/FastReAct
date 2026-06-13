@@ -230,6 +230,58 @@ Client rules:
 - If the client cannot safely present or decide an approval request, call `deny` or let it expire.
 - PSKA remains responsible for knowledge ACL; FastReAct approval only governs tool execution inside the agent runtime.
 
+## Background Run Contract
+
+`POST /v1/chat/completions` remains the direct request/response endpoint. For
+longer work, clients can create a background run and poll its status and events.
+
+Create run:
+
+```http
+POST /v1/runs
+```
+
+The request body is the same shape as `/v1/chat/completions`.
+
+```json
+{
+  "messages": [
+    {"role": "user", "content": "Generate the report."}
+  ],
+  "session_id": "optional-session-id",
+  "user_key": "pska:user_primary",
+  "metadata": {
+    "run_id": "optional-run-id",
+    "caller": "pska",
+    "purpose": "report"
+  }
+}
+```
+
+Run status APIs:
+
+```http
+GET /v1/runs
+GET /v1/runs/{run_id}
+GET /v1/runs/{run_id}/events
+POST /v1/runs/{run_id}/cancel
+```
+
+Run status values:
+
+```text
+queued
+running
+completed
+failed
+cancelled
+```
+
+The first implementation is an in-process run registry. It establishes the
+service contract but is not yet a durable job queue. Release-quality daemon work
+still needs persistence, retry/backoff, crash recovery, leases, and event replay
+from durable storage.
+
 ## PSKA Tool Binding
 
 FastReAct loads PSKA through deployment configuration, usually MCP:

@@ -52,6 +52,10 @@ can remain the reference implementation until those boundaries are clear.
   `approval_request_id`, and clients can call `GET /v1/approvals`,
   `GET /v1/approvals/{id}`, `POST /v1/approvals/{id}/approve`, or
   `POST /v1/approvals/{id}/deny`.
+- Background run contract: clients can call `POST /v1/runs`,
+  `GET /v1/runs`, `GET /v1/runs/{id}`, `GET /v1/runs/{id}/events`, and
+  `POST /v1/runs/{id}/cancel`. The first implementation is in-process and not
+  yet a durable worker queue.
 
 ## Validation
 
@@ -69,11 +73,10 @@ These items are more important than shipping another release. They determine
 whether FastReAct Nano feels complete as a single-agent framework rather than
 just feature-rich.
 
-- Define run/job contracts for background execution.
-  Long-running agent work should have stable run/job APIs for create, inspect,
-  stream events, cancel, retry, and recover. This is required before FastReAct
-  can honestly present itself as a long-running daemon rather than only a chat
-  completion service.
+- Productize run/job contracts for durable background execution.
+  The first background run API exists, but release-quality daemon behavior still
+  needs durable persistence, retry/backoff, leases, crash recovery, event replay
+  from storage, and clear concurrency limits.
 
 - Make context compression verifiable and replayable.
   Current context window and truncation support are useful, but compression

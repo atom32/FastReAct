@@ -99,6 +99,7 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 - streaming agent event contract：`fastreact.agent_event.v1`。
 - tool call / tool result / session end 等事件流。
 - headless approval round trip：`ask_user`、`/v1/approvals/*` approve/deny。
+- background run 初版协议：`/v1/runs/*` 创建、查询、事件和取消。
 - MCP stdio server 接入。
 - per-server MCP `env` 透传。
 - service token 保护。
@@ -111,6 +112,7 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 - PSKA 知识库本体。
 - PSKA ACL/权限决策层。
 - 长期 run trace 公共回放 API 的完整产品化版本。
+- durable worker queue / retry / crash recovery。
 - 跨 repo CI 中强制启动 PSKA + FastReAct 的完整流水线。
 - 面向公众互联网的托管 SaaS 安全边界。
 - 危险工具的业务级自动审批策略；默认应由调用方或操作员显式 approve/deny。

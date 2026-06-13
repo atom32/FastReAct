@@ -335,3 +335,65 @@ def test_headless_approval_endpoints_list_get_and_resolve(monkeypatch):
         assert second_resolution.status_code == 404
     finally:
         set_agent_for_testing(None)
+
+
+def test_background_run_endpoints_create_query_events_and_cancel(monkeypatch):
+    import time
+
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_agent_for_testing(FakeAgent())
+    headers = {"X-FastReAct-Service-Token": "service-secret"}
+    run_id = f"run-background-contract-{time.time_ns()}"
+    try:
+        client = testclient.TestClient(create_app())
+        created = client.post(
+            "/v1/runs",
+            headers=headers,
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "metadata": {"run_id": run_id},
+            },
+        )
+        assert created.status_code == 200
+        created_payload = created.json()
+        assert created_payload["type"] == "run"
+        assert created_payload["run_id"] == run_id
+        assert created_payload["status"] in {"queued", "running", "completed"}
+
+        final_payload = None
+        for _ in range(20):
+            response = client.get(f"/v1/runs/{run_id}", headers=headers)
+            assert response.status_code == 200
+            final_payload = response.json()
+            if final_payload["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert final_payload is not None
+        assert final_payload["status"] == "completed"
+        assert final_payload["event_count"] == 4
+
+        events = client.get(f"/v1/runs/{run_id}/events", headers=headers)
+        assert events.status_code == 200
+        events_payload = events.json()
+        assert events_payload["run_id"] == run_id
+        assert [event["type"] for event in events_payload["events"]] == [
+            "session_start",
+            "tool_call",
+            "tool_result",
+            "session_end",
+        ]
+
+        listed = client.get("/v1/runs", headers=headers)
+        assert listed.status_code == 200
+        assert any(run["run_id"] == run_id for run in listed.json()["runs"])
+
+        cancelled_completed = client.post(
+            f"/v1/runs/{run_id}/cancel",
+            headers=headers,
+        )
+        assert cancelled_completed.status_code == 200
+        assert cancelled_completed.json()["status"] == "completed"
+    finally:
+        set_agent_for_testing(None)

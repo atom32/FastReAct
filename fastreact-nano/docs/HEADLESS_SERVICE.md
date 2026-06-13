@@ -47,6 +47,16 @@ Approval list:
 GET /v1/approvals
 ```
 
+Background runs:
+
+```http
+POST /v1/runs
+GET /v1/runs
+GET /v1/runs/{run_id}
+GET /v1/runs/{run_id}/events
+POST /v1/runs/{run_id}/cancel
+```
+
 ## Service Authentication
 
 If `FASTREACT_SERVICE_TOKEN` or `service.service_token` is configured, clients
@@ -198,6 +208,54 @@ curl -X POST http://127.0.0.1:8000/v1/approvals/approval-123/deny \
 If a headless client cannot safely decide, it should deny the request or let it
 expire. Production deployments should avoid exposing broad shell/file tools to
 untrusted callers.
+
+## Background Runs
+
+Use background runs for long-lived daemon-style work where the caller should not
+hold one request open.
+
+Create a run:
+
+```bash
+curl http://127.0.0.1:8000/v1/runs \
+  -H 'Content-Type: application/json' \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "Generate the PSKA report."}
+    ],
+    "metadata": {
+      "run_id": "optional-run-id",
+      "caller": "pska",
+      "purpose": "report"
+    }
+  }'
+```
+
+Inspect status:
+
+```bash
+curl http://127.0.0.1:8000/v1/runs/optional-run-id \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
+Fetch collected events:
+
+```bash
+curl http://127.0.0.1:8000/v1/runs/optional-run-id/events \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
+Cancel:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/runs/optional-run-id/cancel \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
+The first implementation uses an in-process registry. It establishes the API
+contract, but durable queue persistence, retry/backoff, crash recovery, and
+replay from storage are still product-polish items before daemon 1.0.
 
 ## Formal Runtime Configuration
 
