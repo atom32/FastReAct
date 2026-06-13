@@ -199,6 +199,18 @@ FastReAct 不直接访问 PSKA DB，不绕过 PSKA MCP tools，也不替 PSKA �
 - 生产级公网暴露还需要外层 TLS、网络隔离、token rotation、租户隔离和审计策略。
 - 危险工具的业务级自动审批策略应由调用方显式实现，不能默认放行。
 
+## 长期方向
+
+FastReAct 的最终目标是长期稳定、高并发的 agentic service daemon。Nano
+阶段先坚持单 agent，是为了把服务协议和产品边界打磨稳：run/job、trace
+replay、approval policy、tenant/user/tool policy、observability、PSKA
+互联互通都应该先稳定。
+
+等这些边界稳定后，再逐步考虑局部使用 Rust 或其他更高效实现。优先候选
+不是 agent 思考逻辑本身，而是事件 fanout、durable run/job queue、trace
+index/replay、policy hot path、MCP transport supervision 等高并发或高
+可靠性基础设施。
+
 ## 可选 Web/Gateway 控制面
 
 需要 Admin 控制台或 Gateway 调试时：

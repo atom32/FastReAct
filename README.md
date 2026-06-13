@@ -115,6 +115,12 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 - 面向公众互联网的托管 SaaS 安全边界。
 - 危险工具的业务级自动审批策略；默认应由调用方或操作员显式 approve/deny。
 
+## 长期方向
+
+最终目标是长期稳定、高并发的 agentic service daemon。当前 Nano 阶段先保持单 agent，是为了把 headless 协议、run/job/trace/policy、approval 和 PSKA 边界打磨稳定。
+
+在这些服务契约稳定前，不急于重写或扩大架构。等 run、job、trace、policy 和并发 daemon 边界清楚后，可以逐步把事件分发、任务队列、trace replay、policy hot path、MCP transport supervision 等局部组件迁移到 Rust 或其他更高效的实现。
+
 ## 开发与验证
 
 ```bash

@@ -12,6 +12,25 @@ Before treating FastReAct Nano as a 1.0-quality single-agent service layer, the
 items in "Product Polish Before Release" should be handled ahead of release
 packaging, version bumps, or new surface area.
 
+## Long-Term Direction
+
+The long-term target is a stable, high-concurrency agentic service daemon.
+The current single-agent Nano version is a deliberate staging point, not the
+final architecture.
+
+The order matters:
+
+1. Stabilize the single-agent headless protocol and product boundary.
+2. Productize run, job, trace, approval, and policy contracts.
+3. Make the daemon observable, resumable, and safe under concurrent clients.
+4. Only then consider implementation-level optimization and partial rewrites.
+
+Rust or other lower-level, higher-efficiency components should be introduced
+only after the service contracts are stable. Good future candidates include
+SSE/event fanout, durable run/job queues, trace indexing/replay, policy
+evaluation hot paths, and MCP transport supervision. The Python agent runtime
+can remain the reference implementation until those boundaries are clear.
+
 ## Current Contract
 
 - Stable HTTP/SSE endpoint: `POST /v1/chat/completions`.
@@ -49,6 +68,12 @@ python3 scripts/fastreact_http_sse_e2e.py --python ../.pska/venvs/pska-py312/bin
 These items are more important than shipping another release. They determine
 whether FastReAct Nano feels complete as a single-agent framework rather than
 just feature-rich.
+
+- Define run/job contracts for background execution.
+  Long-running agent work should have stable run/job APIs for create, inspect,
+  stream events, cancel, retry, and recover. This is required before FastReAct
+  can honestly present itself as a long-running daemon rather than only a chat
+  completion service.
 
 - Make context compression verifiable and replayable.
   Current context window and truncation support are useful, but compression
