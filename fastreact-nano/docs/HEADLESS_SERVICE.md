@@ -263,10 +263,11 @@ curl -X POST http://127.0.0.1:8000/v1/runs/optional-run-id/cancel \
   -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
 ```
 
-The first implementation uses an in-process registry. It establishes the API
-contract and writes a trace summary when a run finishes. Durable queue
-persistence, retry/backoff, crash recovery, persisted event replay, retention,
-and pagination are still product-polish items before daemon 1.0.
+The current implementation uses an in-process run registry and writes trace
+summaries plus service event payloads to the JSONL store. It establishes the API
+contract and replay shape. Retry/backoff, crash recovery, leases, retention,
+pagination, and migration rules are still product-polish items before daemon
+1.0.
 
 ## Formal Runtime Configuration
 

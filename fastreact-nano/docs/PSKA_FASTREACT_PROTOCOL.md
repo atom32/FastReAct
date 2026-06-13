@@ -280,15 +280,14 @@ failed
 cancelled
 ```
 
-The first implementation is an in-process run registry. It establishes the
-service contract and writes a trace summary when a background run finishes, but
-it is not yet a durable job queue. Release-quality daemon work still needs
-persistence, retry/backoff, crash recovery, leases, and event replay from
-durable storage.
+The current implementation uses an in-process run registry and writes background
+run trace summaries plus service event payloads to the JSONL store. It
+establishes the HTTP contract and a replayable event shape, but it is not yet a
+durable job queue. Release-quality daemon work still needs retry/backoff, crash
+recovery, leases, pagination, retention, and migration rules.
 
 Formalization requirements for this first version:
 
-- Persist run snapshots and event streams durably, not only in process memory.
 - Define event replay ordering and pagination.
 - Define retention, compaction, and redaction behavior for traces.
 - Add retry/backoff and lease semantics before introducing external workers.

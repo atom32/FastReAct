@@ -405,6 +405,7 @@ def test_background_run_endpoints_create_query_events_cancel_and_trace(monkeypat
         trace_events = client.get(f"/v1/traces/{run_id}/events", headers=headers)
         assert trace_events.status_code == 200
         assert trace_events.json()["event_count"] == 4
+        assert len(fake_agent.store.read("events", limit=0, run_id=run_id)) == 4
 
         cancelled_completed = client.post(
             f"/v1/runs/{run_id}/cancel",

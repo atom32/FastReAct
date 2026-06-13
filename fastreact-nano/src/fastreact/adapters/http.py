@@ -264,6 +264,22 @@ def persist_run_trace(record: dict[str, Any]) -> None:
     )
 
 
+def persist_run_event(record: dict[str, Any], event: dict[str, Any]) -> None:
+    agent = get_agent()
+    store = getattr(agent, "store", None)
+    if not store:
+        return
+    store.append(
+        "events",
+        {
+            **event,
+            "trace_type": "background_run",
+            "run_id": record["run_id"],
+            "session_id": record["session_id"],
+        },
+    )
+
+
 async def execute_background_run(run_id: str) -> None:
     record = _runs[run_id]
     agent = get_agent()
@@ -289,53 +305,54 @@ async def execute_background_run(run_id: str) -> None:
             sequence += 1
             parent_event_id = payload["event_id"]
             record["events"].append(payload)
+            persist_run_event(record, payload)
         if record["status"] != "cancelled":
             record["status"] = "completed"
     except asyncio.CancelledError:
         record["status"] = "cancelled"
         record["cancelled_at"] = utc_now()
-        record["events"].append(
-            {
-                "schema": SERVICE_EVENT_SCHEMA_VERSION,
-                "type": "error",
-                "event_id": f"{run_id}:{sequence}",
-                "parent_event_id": parent_event_id,
-                "run_id": run_id,
-                "session_id": record["session_id"],
-                "timestamp": utc_now(),
-                "content": "Run cancelled",
-                "tool_name": None,
-                "tool_args": None,
-                "tool_call_id": None,
-                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
-                "approval_request_id": None,
-                "cited_source_ids": [],
-                "metadata": {"error_type": "CancelledError"},
-            }
-        )
+        payload = {
+            "schema": SERVICE_EVENT_SCHEMA_VERSION,
+            "type": "error",
+            "event_id": f"{run_id}:{sequence}",
+            "parent_event_id": parent_event_id,
+            "run_id": run_id,
+            "session_id": record["session_id"],
+            "timestamp": utc_now(),
+            "content": "Run cancelled",
+            "tool_name": None,
+            "tool_args": None,
+            "tool_call_id": None,
+            "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "approval_request_id": None,
+            "cited_source_ids": [],
+            "metadata": {"error_type": "CancelledError"},
+        }
+        record["events"].append(payload)
+        persist_run_event(record, payload)
         raise
     except Exception as exc:  # noqa: BLE001 - background run should record errors.
         record["status"] = "failed"
         record["error"] = str(exc)
-        record["events"].append(
-            {
-                "schema": SERVICE_EVENT_SCHEMA_VERSION,
-                "type": "error",
-                "event_id": f"{run_id}:{sequence}",
-                "parent_event_id": parent_event_id,
-                "run_id": run_id,
-                "session_id": record["session_id"],
-                "timestamp": utc_now(),
-                "content": str(exc),
-                "tool_name": None,
-                "tool_args": None,
-                "tool_call_id": None,
-                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
-                "approval_request_id": None,
-                "cited_source_ids": [],
-                "metadata": {"error_type": type(exc).__name__},
-            }
-        )
+        payload = {
+            "schema": SERVICE_EVENT_SCHEMA_VERSION,
+            "type": "error",
+            "event_id": f"{run_id}:{sequence}",
+            "parent_event_id": parent_event_id,
+            "run_id": run_id,
+            "session_id": record["session_id"],
+            "timestamp": utc_now(),
+            "content": str(exc),
+            "tool_name": None,
+            "tool_args": None,
+            "tool_call_id": None,
+            "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "approval_request_id": None,
+            "cited_source_ids": [],
+            "metadata": {"error_type": type(exc).__name__},
+        }
+        record["events"].append(payload)
+        persist_run_event(record, payload)
     finally:
         record["completed_at"] = utc_now()
         record["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
@@ -660,12 +677,9 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         agent = get_agent()
         store = getattr(agent, "store", None)
         record = _runs.get(run_id)
-        if record:
+        events = store.read("events", limit=0, run_id=run_id) if store else []
+        if not events and record:
             events = list(record.get("events", []))
-        elif store:
-            events = store.read("events", limit=0, run_id=run_id)
-        else:
-            events = []
         if not events:
             raise HTTPException(status_code=404, detail="Trace events not found")
         return {"run_id": run_id, "events": events, "event_count": len(events)}

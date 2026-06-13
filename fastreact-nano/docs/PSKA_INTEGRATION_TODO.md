@@ -57,8 +57,8 @@ can remain the reference implementation until those boundaries are clear.
   `POST /v1/runs/{id}/cancel`. The first implementation is in-process and not
   yet a durable worker queue.
 - Trace summary API: clients can call `GET /v1/traces`, `GET /v1/traces/{id}`,
-  and `GET /v1/traces/{id}/events`. The first implementation persists run
-  summaries but still needs durable event replay formalization.
+  and `GET /v1/traces/{id}/events`. The current implementation persists run
+  summaries and service event payloads, but still needs replay formalization.
 
 ## Validation
 
@@ -83,9 +83,9 @@ just feature-rich.
 
 - Formalize the first run/trace implementation.
   Preserve the current `/v1/runs/*` and `/v1/traces/*` HTTP contract while
-  replacing in-process state with durable storage. Define pagination, ordering,
-  redaction, retention, compaction, replay consistency, and migration behavior
-  before treating the API as stable daemon infrastructure.
+  replacing in-process run state with a durable queue. Define pagination,
+  ordering, redaction, retention, compaction, replay consistency, and migration
+  behavior before treating the API as stable daemon infrastructure.
 
 - Make context compression verifiable and replayable.
   Current context window and truncation support are useful, but compression
