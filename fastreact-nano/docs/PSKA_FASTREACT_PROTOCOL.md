@@ -311,10 +311,18 @@ Dry-run response:
   "level": "danger",
   "reason": "Policy tool:exec requires approval",
   "pattern_matched": null,
+  "policy_scope": "tool:exec",
+  "policy_action": "require_approval",
+  "policy_matched": true,
   "requires_confirmation": true,
   "should_allow": true
 }
 ```
+
+Policy decisions also copy `policy_scope`, `policy_action`, and
+`policy_matched` into approval records, service event metadata, and audit JSONL
+records. Built-in forbidden exec patterns still override configured policy
+unless the runtime is explicitly started with `allow_all`.
 
 ## Background Run Contract
 

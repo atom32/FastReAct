@@ -350,6 +350,8 @@ class ServiceConfig:
 class PolicyConfig:
     """Tool execution policy for headless service deployments."""
 
+    ALLOWED_ACTIONS = {"allow", "caution", "require_approval", "deny"}
+
     default_action: Optional[str] = None
     tool_rules: dict[str, Any] = field(default_factory=dict)
     user_rules: dict[str, Any] = field(default_factory=dict)
@@ -366,11 +368,17 @@ class PolicyConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PolicyConfig":
+        if not isinstance(data, dict):
+            raise ValueError("policy must be an object")
+        cls._validate_action(data.get("default_action"), "policy.default_action", allow_none=True)
+        tool_rules = cls._validate_rules_map(data.get("tool_rules", {}), "policy.tool_rules")
+        user_rules = cls._validate_rules_map(data.get("user_rules", {}), "policy.user_rules")
+        tenant_rules = cls._validate_rules_map(data.get("tenant_rules", {}), "policy.tenant_rules")
         return cls(
             default_action=data.get("default_action"),
-            tool_rules=data.get("tool_rules", {}),
-            user_rules=data.get("user_rules", {}),
-            tenant_rules=data.get("tenant_rules", {}),
+            tool_rules=tool_rules,
+            user_rules=user_rules,
+            tenant_rules=tenant_rules,
         )
 
     def to_safety_policy(self) -> dict[str, Any]:
@@ -380,6 +388,55 @@ class PolicyConfig:
             "user_rules": self.user_rules,
             "tenant_rules": self.tenant_rules,
         }
+
+    @classmethod
+    def _validate_rules_map(cls, rules: Any, path: str) -> dict[str, Any]:
+        if rules is None:
+            return {}
+        if not isinstance(rules, dict):
+            raise ValueError(f"{path} must be an object")
+        for key, rule in rules.items():
+            if not isinstance(key, str) or not key:
+                raise ValueError(f"{path} keys must be non-empty strings")
+            cls._validate_rule(rule, f"{path}.{key}")
+        return rules
+
+    @classmethod
+    def _validate_rule(cls, rule: Any, path: str) -> None:
+        if isinstance(rule, str):
+            cls._validate_action(rule, path)
+            return
+        if not isinstance(rule, dict):
+            raise ValueError(f"{path} must be an action string or object")
+
+        has_action = False
+        for action_key in ("action", "default_action"):
+            if action_key in rule:
+                has_action = True
+                cls._validate_action(rule[action_key], f"{path}.{action_key}")
+
+        tools = rule.get("tools", rule.get("tool_rules"))
+        if tools is not None:
+            if not isinstance(tools, dict):
+                raise ValueError(f"{path}.tools must be an object")
+            for tool_name, tool_rule in tools.items():
+                if not isinstance(tool_name, str) or not tool_name:
+                    raise ValueError(f"{path}.tools keys must be non-empty strings")
+                cls._validate_rule(tool_rule, f"{path}.tools.{tool_name}")
+            has_action = True
+
+        if not has_action:
+            raise ValueError(f"{path} must define action, default_action, tools, or tool_rules")
+
+    @classmethod
+    def _validate_action(cls, action: Any, path: str, allow_none: bool = False) -> None:
+        if action is None and allow_none:
+            return
+        if not isinstance(action, str) or not action.strip():
+            raise ValueError(f"{path} must be one of {sorted(cls.ALLOWED_ACTIONS)}")
+        normalized = action.strip()
+        if normalized not in cls.ALLOWED_ACTIONS:
+            raise ValueError(f"{path} has invalid action {action!r}; expected one of {sorted(cls.ALLOWED_ACTIONS)}")
 
 
 @dataclass

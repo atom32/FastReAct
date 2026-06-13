@@ -61,9 +61,12 @@ can remain the reference implementation until those boundaries are clear.
   summaries and service event payloads, but still needs replay formalization.
 - Tool policy config: `policy.tool_rules`, `policy.user_rules`, and
   `policy.tenant_rules` can map tools to `allow`, `caution`,
-  `require_approval`, or `deny`.
+  `require_approval`, or `deny`. Formal config loading now validates policy
+  shape and action names.
 - Policy inspection and dry-run: clients can call `GET /v1/policy` and
-  `POST /v1/policy/check` before executing a tool.
+  `POST /v1/policy/check` before executing a tool. Dry-run, approval records,
+  service events, and audit entries include `policy_scope`, `policy_action`,
+  and `policy_matched` when a configured policy rule made the decision.
 
 ## Validation
 
@@ -109,10 +112,11 @@ just feature-rich.
   deny-by-default, timeout, and operator-approved modes.
 
 - Add per-tool, per-user, and per-tenant policy controls.
-  The config and dry-run contracts exist. Productize them with validation
-  errors, policy audit fields, update/reload workflow, and PSKA-side policy
-  client behavior for shell tools, write/edit tools, MCP tools, PSKA tools, and
-  tenant/user contexts.
+  The config, validation errors, dry-run contracts, and first policy audit
+  fields exist. Productize them further with an update/reload workflow,
+  versioned policy snapshots in traces, and PSKA-side policy client behavior
+  for shell tools, write/edit tools, MCP tools, PSKA tools, and tenant/user
+  contexts.
 
 - Strengthen task/TODO as durable single-agent workflow state.
   TaskService is enough for multi-step planning, but release-quality behavior

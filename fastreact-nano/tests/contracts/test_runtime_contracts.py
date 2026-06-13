@@ -1,6 +1,6 @@
 import pytest
 
-from fastreact import Agent, Config, LLMConfig, ReactConfig, ToolConfig
+from fastreact import Agent, Config, LLMConfig, PolicyConfig, ReactConfig, ToolConfig
 from fastreact.core.events import EventType
 from fastreact.runtime.store_service import StoreService
 
@@ -109,6 +109,39 @@ async def test_tool_approval_contract(tmp_path):
     assert event.type == EventType.ASK_USER
     request_id = event.metadata["request_id"]
     assert agent.tool_executor.resolve_approval(request_id, approved=True)
+
+
+@pytest.mark.asyncio
+async def test_tool_policy_approval_metadata_and_audit_contract(tmp_path):
+    config = make_test_config(tmp_path)
+    config.react.enable_safety = True
+    config.policy = PolicyConfig(tool_rules={"exec": "require_approval"})
+    agent = Agent(config=config, multitenant=False)
+
+    decision, event = agent.tool_executor.assess(
+        tool_name="exec",
+        tool_params={"command": "ls"},
+        session_id="policy-approval-session",
+    )
+
+    assert decision is not None
+    assert event is not None
+    assert event.metadata["policy_scope"] == "tool:exec"
+    assert event.metadata["policy_action"] == "require_approval"
+    assert event.metadata["policy_matched"] is True
+
+    request_id = event.metadata["request_id"]
+    approvals = agent.tool_executor.list_approvals()
+    assert approvals[0]["request_id"] == request_id
+    assert approvals[0]["policy_scope"] == "tool:exec"
+    assert approvals[0]["policy_action"] == "require_approval"
+    assert approvals[0]["policy_matched"] is True
+
+    audit = agent.store.read("audit", session_id="policy-approval-session")
+    assert audit[-1]["request_id"] == request_id
+    assert audit[-1]["policy_scope"] == "tool:exec"
+    assert audit[-1]["policy_action"] == "require_approval"
+    assert audit[-1]["policy_matched"] is True
 
 
 @pytest.mark.asyncio

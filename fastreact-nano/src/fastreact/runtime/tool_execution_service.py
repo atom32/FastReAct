@@ -57,6 +57,9 @@ class ToolExecutionService:
             "tool_args": tool_params,
             "reason": decision.reason,
             "decision_level": decision.level.value,
+            "policy_scope": decision.policy_scope,
+            "policy_action": decision.policy_action,
+            "policy_matched": decision.policy_matched,
             "status": "pending",
             "approved": None,
             "expired": False,
@@ -73,6 +76,9 @@ class ToolExecutionService:
             "request_id": request_id,
             "decision_level": decision.level.value,
             "pattern_matched": decision.pattern_matched,
+            "policy_scope": decision.policy_scope,
+            "policy_action": decision.policy_action,
+            "policy_matched": decision.policy_matched,
         })
         self._audit(tool_name, tool_params, decision, None, session_id, request_id=request_id)
         return decision, event
@@ -204,6 +210,9 @@ class ToolExecutionService:
                 "decision_level": decision.level.value if decision else "none",
                 "decision_reason": decision.reason if decision else "",
                 "pattern_matched": decision.pattern_matched if decision else None,
+                "policy_scope": decision.policy_scope if decision else None,
+                "policy_action": decision.policy_action if decision else None,
+                "policy_matched": decision.policy_matched if decision else False,
                 "approved": approved,
                 "duration_ms": duration_ms,
                 "result_summary": result[:500] if result else "",

@@ -68,6 +68,23 @@ def test_config_loads_policy_block(tmp_path):
     assert config.policy.to_safety_policy()["tool_rules"]["exec"] == "require_approval"
 
 
+def test_policy_config_rejects_invalid_action():
+    pytest = __import__("pytest")
+
+    with pytest.raises(ValueError, match="invalid action"):
+        PolicyConfig.from_dict({"tool_rules": {"exec": "approve_maybe"}})
+
+    with pytest.raises(ValueError, match="invalid action"):
+        PolicyConfig.from_dict({"tool_rules": {"exec": "require-approval"}})
+
+
+def test_policy_config_rejects_invalid_structure():
+    pytest = __import__("pytest")
+
+    with pytest.raises(ValueError, match="policy.tenant_rules.pska.tools must be an object"):
+        PolicyConfig.from_dict({"tenant_rules": {"pska": {"tools": "exec"}}})
+
+
 def test_policy_allow_does_not_override_builtin_forbidden_exec_patterns():
     policy = SafetyPolicy(policy_config={"tool_rules": {"exec": "allow"}})
 
@@ -75,6 +92,17 @@ def test_policy_allow_does_not_override_builtin_forbidden_exec_patterns():
 
     assert decision.level == SafetyLevel.FORBIDDEN
     assert "forbidden pattern" in decision.reason
+
+
+def test_safety_policy_decision_includes_policy_metadata():
+    policy = SafetyPolicy(policy_config={"tool_rules": {"exec": "require_approval"}})
+
+    decision = policy.check("exec", {"command": "ls"})
+
+    assert decision.level == SafetyLevel.DANGER
+    assert decision.policy_matched is True
+    assert decision.policy_scope == "tool:exec"
+    assert decision.policy_action == "require_approval"
 
 
 def test_headless_policy_inspection_and_dry_run_endpoints(monkeypatch):
@@ -109,6 +137,9 @@ def test_headless_policy_inspection_and_dry_run_endpoints(monkeypatch):
         assert denied.status_code == 200
         assert denied.json()["level"] == "forbidden"
         assert denied.json()["should_allow"] is False
+        assert denied.json()["policy_matched"] is True
+        assert denied.json()["policy_scope"] == "tenant:pska"
+        assert denied.json()["policy_action"] == "deny"
 
         operator = client.post(
             "/v1/policy/check",
@@ -118,5 +149,7 @@ def test_headless_policy_inspection_and_dry_run_endpoints(monkeypatch):
         assert operator.status_code == 200
         assert operator.json()["level"] == "danger"
         assert operator.json()["requires_confirmation"] is True
+        assert operator.json()["policy_scope"] == "user:pska:operator"
+        assert operator.json()["policy_action"] == "require_approval"
     finally:
         set_agent_for_testing(None)

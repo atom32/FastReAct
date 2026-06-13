@@ -33,6 +33,9 @@ class SafetyDecision:
     reason: str = ""
     pattern_matched: Optional[str] = None
     requires_confirmation: bool = False
+    policy_scope: Optional[str] = None
+    policy_action: Optional[str] = None
+    policy_matched: bool = False
 
     @property
     def should_allow(self) -> bool:
@@ -305,18 +308,45 @@ class SafetyPolicy:
     def _decision_from_action(action: str, scope: str) -> SafetyDecision:
         normalized = action.strip().lower().replace("-", "_")
         if normalized in {"allow", "safe"}:
-            return SafetyDecision(level=SafetyLevel.SAFE, reason=f"Policy {scope} allows tool")
+            return SafetyDecision(
+                level=SafetyLevel.SAFE,
+                reason=f"Policy {scope} allows tool",
+                policy_scope=scope,
+                policy_action="allow",
+                policy_matched=True,
+            )
         if normalized in {"caution", "log"}:
-            return SafetyDecision(level=SafetyLevel.CAUTION, reason=f"Policy {scope} allows with caution")
+            return SafetyDecision(
+                level=SafetyLevel.CAUTION,
+                reason=f"Policy {scope} allows with caution",
+                policy_scope=scope,
+                policy_action="caution",
+                policy_matched=True,
+            )
         if normalized in {"require_approval", "approval", "danger"}:
             return SafetyDecision(
                 level=SafetyLevel.DANGER,
                 reason=f"Policy {scope} requires approval",
                 requires_confirmation=True,
+                policy_scope=scope,
+                policy_action="require_approval",
+                policy_matched=True,
             )
         if normalized in {"deny", "forbid", "forbidden", "block"}:
-            return SafetyDecision(level=SafetyLevel.FORBIDDEN, reason=f"Policy {scope} denies tool")
-        return SafetyDecision(level=SafetyLevel.CAUTION, reason=f"Policy {scope} has unknown action")
+            return SafetyDecision(
+                level=SafetyLevel.FORBIDDEN,
+                reason=f"Policy {scope} denies tool",
+                policy_scope=scope,
+                policy_action="deny",
+                policy_matched=True,
+            )
+        return SafetyDecision(
+            level=SafetyLevel.CAUTION,
+            reason=f"Policy {scope} has unknown action",
+            policy_scope=scope,
+            policy_action=normalized,
+            policy_matched=True,
+        )
 
     def log(
         self,

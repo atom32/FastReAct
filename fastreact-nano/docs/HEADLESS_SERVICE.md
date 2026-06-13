@@ -254,7 +254,8 @@ deny
 
 Rule priority is `user_rules`, then `tenant_rules`, then `tool_rules`, then
 `default_action`. Tenant defaults to the prefix before `:` in `user_key`, such
-as `pska` in `pska:user_primary`.
+as `pska` in `pska:user_primary`. Formal config files validate policy actions
+and accept only `allow`, `caution`, `require_approval`, and `deny`.
 
 Inspect active policy:
 
@@ -275,6 +276,10 @@ curl http://127.0.0.1:8000/v1/policy/check \
     "user_key": "pska:user_primary"
   }'
 ```
+
+The dry-run response includes `policy_matched`, `policy_scope`, and
+`policy_action` when a configured policy rule made the decision. The same fields
+are written to approval records and audit JSONL entries.
 
 ## Background Runs
 

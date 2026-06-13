@@ -747,6 +747,9 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "tool_name": policy_request.tool_name,
                 "level": "safe",
                 "reason": "Safety policy disabled",
+                "policy_scope": None,
+                "policy_action": None,
+                "policy_matched": False,
                 "requires_confirmation": False,
                 "should_allow": True,
             }
@@ -763,6 +766,9 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             "level": decision.level.value,
             "reason": decision.reason,
             "pattern_matched": decision.pattern_matched,
+            "policy_scope": decision.policy_scope,
+            "policy_action": decision.policy_action,
+            "policy_matched": decision.policy_matched,
             "requires_confirmation": decision.requires_confirmation,
             "should_allow": decision.should_allow,
         }
