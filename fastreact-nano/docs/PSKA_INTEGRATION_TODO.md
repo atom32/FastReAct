@@ -62,6 +62,8 @@ can remain the reference implementation until those boundaries are clear.
 - Tool policy config: `policy.tool_rules`, `policy.user_rules`, and
   `policy.tenant_rules` can map tools to `allow`, `caution`,
   `require_approval`, or `deny`.
+- Policy inspection and dry-run: clients can call `GET /v1/policy` and
+  `POST /v1/policy/check` before executing a tool.
 
 ## Validation
 
@@ -107,8 +109,8 @@ just feature-rich.
   deny-by-default, timeout, and operator-approved modes.
 
 - Add per-tool, per-user, and per-tenant policy controls.
-  The first config contract exists. Productize it with validation errors,
-  runtime inspection, policy dry-run, policy audit fields, and PSKA-side policy
+  The config and dry-run contracts exist. Productize them with validation
+  errors, policy audit fields, update/reload workflow, and PSKA-side policy
   client behavior for shell tools, write/edit tools, MCP tools, PSKA tools, and
   tenant/user contexts.
 

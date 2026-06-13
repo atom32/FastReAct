@@ -77,6 +77,13 @@ class ApprovalDecisionRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class PolicyCheckRequest(BaseModel):
+    tool_name: str
+    tool_args: dict[str, Any] = Field(default_factory=dict)
+    user_key: Optional[str] = None
+    tenant_key: Optional[str] = None
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -426,6 +433,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "health": "GET /health",
                 "skills": "GET /v1/skills",
                 "tools": "GET /v1/tools",
+                "policy": "GET /v1/policy",
                 "approvals": "GET /v1/approvals",
                 "runs": "POST /v1/runs",
                 "traces": "GET /v1/traces",
@@ -714,6 +722,49 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         return {
             "tools": agent.list_tools(),
             "mcp_tools": agent.list_mcp_tools() if hasattr(agent, "list_mcp_tools") else [],
+        }
+
+    @app.get("/v1/policy")
+    async def get_policy(request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        config = getattr(agent, "_config", None)
+        policy = getattr(config, "policy", None)
+        return {
+            "policy": policy.to_safety_policy() if policy else {},
+            "actions": ["allow", "caution", "require_approval", "deny"],
+            "priority": ["user_rules", "tenant_rules", "tool_rules", "default_action", "built_in_safety"],
+            "tenant_inference": "prefix_before_colon_in_user_key",
+        }
+
+    @app.post("/v1/policy/check")
+    async def check_policy(request: Request, policy_request: PolicyCheckRequest) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        safety_policy = getattr(agent, "_safety_policy", None)
+        if not safety_policy:
+            return {
+                "tool_name": policy_request.tool_name,
+                "level": "safe",
+                "reason": "Safety policy disabled",
+                "requires_confirmation": False,
+                "should_allow": True,
+            }
+        decision = safety_policy.check(
+            tool_name=policy_request.tool_name,
+            args=policy_request.tool_args,
+            user_key=policy_request.user_key,
+            tenant_key=policy_request.tenant_key,
+        )
+        return {
+            "tool_name": policy_request.tool_name,
+            "user_key": policy_request.user_key,
+            "tenant_key": policy_request.tenant_key,
+            "level": decision.level.value,
+            "reason": decision.reason,
+            "pattern_matched": decision.pattern_matched,
+            "requires_confirmation": decision.requires_confirmation,
+            "should_allow": decision.should_allow,
         }
 
     @app.get("/v1/approvals")

@@ -283,6 +283,39 @@ user_rules -> tenant_rules -> tool_rules -> default_action -> built-in safety he
 Tenant is inferred from the prefix before `:` in `user_key`, such as `pska` in
 `pska:user_primary`, unless a future transport provides an explicit tenant key.
 
+Inspection APIs:
+
+```http
+GET /v1/policy
+POST /v1/policy/check
+```
+
+Dry-run request:
+
+```json
+{
+  "tool_name": "exec",
+  "tool_args": {"command": "ls"},
+  "user_key": "pska:user_primary",
+  "tenant_key": "pska"
+}
+```
+
+Dry-run response:
+
+```json
+{
+  "tool_name": "exec",
+  "user_key": "pska:user_primary",
+  "tenant_key": "pska",
+  "level": "danger",
+  "reason": "Policy tool:exec requires approval",
+  "pattern_matched": null,
+  "requires_confirmation": true,
+  "should_allow": true
+}
+```
+
 ## Background Run Contract
 
 `POST /v1/chat/completions` remains the direct request/response endpoint. For

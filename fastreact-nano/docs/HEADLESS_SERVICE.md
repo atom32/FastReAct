@@ -256,6 +256,26 @@ Rule priority is `user_rules`, then `tenant_rules`, then `tool_rules`, then
 `default_action`. Tenant defaults to the prefix before `:` in `user_key`, such
 as `pska` in `pska:user_primary`.
 
+Inspect active policy:
+
+```bash
+curl http://127.0.0.1:8000/v1/policy \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
+Dry-run a tool decision without executing the tool:
+
+```bash
+curl http://127.0.0.1:8000/v1/policy/check \
+  -H 'Content-Type: application/json' \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -d '{
+    "tool_name": "exec",
+    "tool_args": {"command": "ls"},
+    "user_key": "pska:user_primary"
+  }'
+```
+
 ## Background Runs
 
 Use background runs for long-lived daemon-style work where the caller should not

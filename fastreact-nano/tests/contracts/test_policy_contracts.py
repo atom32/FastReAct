@@ -1,4 +1,6 @@
-from fastreact.core.config import Config
+from fastreact import Agent
+from fastreact.adapters.http import create_app, set_agent_for_testing
+from fastreact.core.config import Config, LLMConfig, PolicyConfig
 from fastreact.core.safety import SafetyLevel, SafetyPolicy
 
 
@@ -73,3 +75,48 @@ def test_policy_allow_does_not_override_builtin_forbidden_exec_patterns():
 
     assert decision.level == SafetyLevel.FORBIDDEN
     assert "forbidden pattern" in decision.reason
+
+
+def test_headless_policy_inspection_and_dry_run_endpoints(monkeypatch):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    config = Config(
+        llm=LLMConfig(api_key="test-key", api_base="http://localhost:8000"),
+        policy=PolicyConfig(
+            tool_rules={"exec": "require_approval"},
+            tenant_rules={"pska": {"tools": {"exec": "deny", "pska_search": "allow"}}},
+            user_rules={"pska:operator": {"tools": {"exec": "require_approval"}}},
+        ),
+    )
+    set_agent_for_testing(Agent(config=config))
+    headers = {"X-FastReAct-Service-Token": "service-secret"}
+    try:
+        client = testclient.TestClient(create_app())
+        assert client.get("/v1/policy").status_code == 401
+
+        policy_response = client.get("/v1/policy", headers=headers)
+        assert policy_response.status_code == 200
+        policy_payload = policy_response.json()
+        assert policy_payload["policy"]["tool_rules"]["exec"] == "require_approval"
+        assert "require_approval" in policy_payload["actions"]
+
+        denied = client.post(
+            "/v1/policy/check",
+            headers=headers,
+            json={"tool_name": "exec", "tool_args": {"command": "ls"}, "user_key": "pska:user"},
+        )
+        assert denied.status_code == 200
+        assert denied.json()["level"] == "forbidden"
+        assert denied.json()["should_allow"] is False
+
+        operator = client.post(
+            "/v1/policy/check",
+            headers=headers,
+            json={"tool_name": "exec", "tool_args": {"command": "ls"}, "user_key": "pska:operator"},
+        )
+        assert operator.status_code == 200
+        assert operator.json()["level"] == "danger"
+        assert operator.json()["requires_confirmation"] is True
+    finally:
+        set_agent_for_testing(None)
