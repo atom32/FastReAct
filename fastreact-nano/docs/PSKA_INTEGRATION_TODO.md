@@ -91,8 +91,10 @@ just feature-rich.
 
 - Formalize the first run/trace implementation.
   Preserve the current `/v1/runs/*` and `/v1/traces/*` HTTP contract while
-  replacing in-process run state with a durable queue. Define pagination,
-  ordering, redaction, retention, compaction, replay consistency, and migration
+  replacing in-process run state with a durable queue. The first replay
+  pagination contract exists through ascending `sequence`, `limit`,
+  `after_sequence`, `next_after_sequence`, and `has_more`; continue formalizing
+  redaction, retention, compaction, durable replay consistency, and migration
   behavior before treating the API as stable daemon infrastructure.
 
 - Make context compression verifiable and replayable.

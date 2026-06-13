@@ -388,14 +388,46 @@ def test_background_run_endpoints_create_query_events_cancel_and_trace(monkeypat
             "tool_result",
             "session_end",
         ]
+        assert [event["sequence"] for event in events_payload["events"]] == [0, 1, 2, 3]
+        assert events_payload["count"] == 4
+        assert events_payload["total_event_count"] == 4
+        assert events_payload["next_after_sequence"] == 3
+        assert events_payload["has_more"] is False
+
+        first_page = client.get(f"/v1/runs/{run_id}/events?limit=2", headers=headers)
+        assert first_page.status_code == 200
+        first_page_payload = first_page.json()
+        assert [event["sequence"] for event in first_page_payload["events"]] == [0, 1]
+        assert first_page_payload["count"] == 2
+        assert first_page_payload["event_count"] == 4
+        assert first_page_payload["total_event_count"] == 4
+        assert first_page_payload["next_after_sequence"] == 1
+        assert first_page_payload["has_more"] is True
+
+        second_page = client.get(
+            f"/v1/runs/{run_id}/events?limit=2&after_sequence={first_page_payload['next_after_sequence']}",
+            headers=headers,
+        )
+        assert second_page.status_code == 200
+        second_page_payload = second_page.json()
+        assert [event["sequence"] for event in second_page_payload["events"]] == [2, 3]
+        assert second_page_payload["has_more"] is False
 
         listed = client.get("/v1/runs", headers=headers)
         assert listed.status_code == 200
         assert any(run["run_id"] == run_id for run in listed.json()["runs"])
+        listed_limited = client.get("/v1/runs?limit=1&status=completed", headers=headers)
+        assert listed_limited.status_code == 200
+        assert listed_limited.json()["count"] <= 1
+        assert listed_limited.json()["limit"] == 1
 
         traces = client.get("/v1/traces", headers=headers)
         assert traces.status_code == 200
         assert any(trace["run_id"] == run_id for trace in traces.json()["traces"])
+        traces_limited = client.get("/v1/traces?limit=1", headers=headers)
+        assert traces_limited.status_code == 200
+        assert traces_limited.json()["count"] <= 1
+        assert traces_limited.json()["limit"] == 1
 
         trace = client.get(f"/v1/traces/{run_id}", headers=headers)
         assert trace.status_code == 200
@@ -405,6 +437,9 @@ def test_background_run_endpoints_create_query_events_cancel_and_trace(monkeypat
         trace_events = client.get(f"/v1/traces/{run_id}/events", headers=headers)
         assert trace_events.status_code == 200
         assert trace_events.json()["event_count"] == 4
+        trace_events_page = client.get(f"/v1/traces/{run_id}/events?limit=2&after_sequence=1", headers=headers)
+        assert trace_events_page.status_code == 200
+        assert [event["sequence"] for event in trace_events_page.json()["events"]] == [2, 3]
         assert len(fake_agent.store.read("events", limit=0, run_id=run_id)) == 4
 
         cancelled_completed = client.post(

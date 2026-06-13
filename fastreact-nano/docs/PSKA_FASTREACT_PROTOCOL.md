@@ -364,6 +364,12 @@ GET /v1/traces/{run_id}
 GET /v1/traces/{run_id}/events
 ```
 
+List endpoints accept `limit` where supported. Event replay endpoints accept
+`limit` and `after_sequence` and return events ordered by ascending `sequence`.
+Replay responses include `count`, `total_event_count`, `next_after_sequence`,
+and `has_more`; clients should resume by passing the previous
+`next_after_sequence` as `after_sequence`.
+
 Run status values:
 
 ```text
@@ -376,13 +382,15 @@ cancelled
 
 The current implementation uses an in-process run registry and writes background
 run trace summaries plus service event payloads to the JSONL store. It
-establishes the HTTP contract and a replayable event shape, but it is not yet a
-durable job queue. Release-quality daemon work still needs retry/backoff, crash
-recovery, leases, pagination, retention, and migration rules.
+establishes the HTTP contract, stable event ordering, and first replay
+pagination shape, but it is not yet a durable job queue. Release-quality daemon
+work still needs retry/backoff, crash recovery, leases, durable replay from
+storage, retention, redaction, and migration rules.
 
 Formalization requirements for this first version:
 
-- Define event replay ordering and pagination.
+- Formalize event replay pagination beyond this first `sequence`/cursor contract
+  once storage and worker durability are introduced.
 - Define retention, compaction, and redaction behavior for traces.
 - Add retry/backoff and lease semantics before introducing external workers.
 - Preserve this HTTP contract when the storage/worker implementation changes.

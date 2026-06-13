@@ -46,6 +46,7 @@ from fastreact.core.events import AgentEvent
 
 SERVICE_EVENT_SCHEMA_VERSION = "fastreact.agent_event.v1"
 SERVICE_AUTH_ENV = "FASTREACT_SERVICE_TOKEN"
+MAX_PAGE_LIMIT = 1000
 
 _agent: Optional[Agent] = None
 _service_config = None
@@ -158,6 +159,7 @@ def service_event_payload(
         "schema": SERVICE_EVENT_SCHEMA_VERSION,
         "type": event.type.value,
         "event_id": event_id,
+        "sequence": sequence,
         "parent_event_id": parent_event_id,
         "run_id": run_id,
         "session_id": event.session_id,
@@ -172,6 +174,52 @@ def service_event_payload(
         "metadata": metadata,
     }
     return payload
+
+
+def bounded_limit(limit: int, *, default: int = 200, maximum: int = MAX_PAGE_LIMIT) -> int:
+    if limit is None:
+        return default
+    if limit < 0:
+        raise HTTPException(status_code=400, detail="limit must be >= 0")
+    if limit == 0:
+        return 0
+    return min(limit, maximum)
+
+
+def event_sequence(event: dict[str, Any]) -> int:
+    sequence = event.get("sequence")
+    if isinstance(sequence, int):
+        return sequence
+    event_id = str(event.get("event_id") or "")
+    try:
+        return int(event_id.rsplit(":", 1)[-1])
+    except ValueError:
+        return 0
+
+
+def page_event_list(
+    events: list[dict[str, Any]],
+    *,
+    limit: int = 200,
+    after_sequence: Optional[int] = None,
+) -> dict[str, Any]:
+    bounded = bounded_limit(limit)
+    ordered = sorted(events, key=event_sequence)
+    if after_sequence is not None:
+        ordered = [event for event in ordered if event_sequence(event) > after_sequence]
+    total_after_cursor = len(ordered)
+    page = ordered if bounded == 0 else ordered[:bounded]
+    has_more = bounded != 0 and total_after_cursor > len(page)
+    next_after_sequence = event_sequence(page[-1]) if page else after_sequence
+    return {
+        "events": page,
+        "count": len(page),
+        "event_count": len(events),
+        "total_event_count": len(events),
+        "after_sequence": after_sequence,
+        "next_after_sequence": next_after_sequence,
+        "has_more": has_more,
+    }
 
 
 def sse_frame(payload: dict[str, Any]) -> str:
@@ -322,6 +370,7 @@ async def execute_background_run(run_id: str) -> None:
             "schema": SERVICE_EVENT_SCHEMA_VERSION,
             "type": "error",
             "event_id": f"{run_id}:{sequence}",
+            "sequence": sequence,
             "parent_event_id": parent_event_id,
             "run_id": run_id,
             "session_id": record["session_id"],
@@ -345,6 +394,7 @@ async def execute_background_run(run_id: str) -> None:
             "schema": SERVICE_EVENT_SCHEMA_VERSION,
             "type": "error",
             "event_id": f"{run_id}:{sequence}",
+            "sequence": sequence,
             "parent_event_id": parent_event_id,
             "run_id": run_id,
             "session_id": record["session_id"],
@@ -615,11 +665,21 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         return {"type": "run", **run_snapshot(record)}
 
     @app.get("/v1/runs")
-    async def list_runs(request: Request) -> dict[str, Any]:
+    async def list_runs(request: Request, limit: int = 200, status: Optional[str] = None) -> dict[str, Any]:
         require_service_auth(request)
         runs = [run_snapshot(record) for record in _runs.values()]
+        if status:
+            runs = [run for run in runs if run["status"] == status]
         runs.sort(key=lambda item: item["created_at"], reverse=True)
-        return {"runs": runs, "count": len(runs)}
+        bounded = bounded_limit(limit)
+        page = runs if bounded == 0 else runs[:bounded]
+        return {
+            "runs": page,
+            "count": len(page),
+            "total_count": len(runs),
+            "limit": bounded,
+            "has_more": bounded != 0 and len(runs) > len(page),
+        }
 
     @app.get("/v1/runs/{run_id}")
     async def get_run(run_id: str, request: Request) -> dict[str, Any]:
@@ -630,17 +690,22 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         return {"type": "run", **run_snapshot(record)}
 
     @app.get("/v1/runs/{run_id}/events")
-    async def get_run_events(run_id: str, request: Request) -> dict[str, Any]:
+    async def get_run_events(
+        run_id: str,
+        request: Request,
+        limit: int = 200,
+        after_sequence: Optional[int] = None,
+    ) -> dict[str, Any]:
         require_service_auth(request)
         record = _runs.get(run_id)
         if not record:
             raise HTTPException(status_code=404, detail="Run not found")
+        page = page_event_list(record["events"], limit=limit, after_sequence=after_sequence)
         return {
             "run_id": run_id,
             "session_id": record["session_id"],
             "status": record["status"],
-            "events": list(record["events"]),
-            "event_count": len(record["events"]),
+            **page,
         }
 
     @app.post("/v1/runs/{run_id}/cancel")
@@ -663,8 +728,17 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         require_service_auth(request)
         agent = get_agent()
         store = getattr(agent, "store", None)
-        records = store.read("traces", limit=limit, session_id=session_id) if store else []
-        return {"traces": records, "count": len(records)}
+        records = store.read("traces", limit=0, session_id=session_id) if store else []
+        records.sort(key=lambda item: item.get("completed_at") or item.get("created_at") or "", reverse=True)
+        bounded = bounded_limit(limit)
+        page = records if bounded == 0 else records[:bounded]
+        return {
+            "traces": page,
+            "count": len(page),
+            "total_count": len(records),
+            "limit": bounded,
+            "has_more": bounded != 0 and len(records) > len(page),
+        }
 
     @app.get("/v1/traces/{run_id}")
     async def get_trace(run_id: str, request: Request) -> dict[str, Any]:
@@ -680,7 +754,12 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         raise HTTPException(status_code=404, detail="Trace not found")
 
     @app.get("/v1/traces/{run_id}/events")
-    async def get_trace_events(run_id: str, request: Request) -> dict[str, Any]:
+    async def get_trace_events(
+        run_id: str,
+        request: Request,
+        limit: int = 200,
+        after_sequence: Optional[int] = None,
+    ) -> dict[str, Any]:
         require_service_auth(request)
         agent = get_agent()
         store = getattr(agent, "store", None)
@@ -690,7 +769,8 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             events = list(record.get("events", []))
         if not events:
             raise HTTPException(status_code=404, detail="Trace events not found")
-        return {"run_id": run_id, "events": events, "event_count": len(events)}
+        page = page_event_list(events, limit=limit, after_sequence=after_sequence)
+        return {"run_id": run_id, **page}
 
     @app.post("/run")
     async def run_legacy(request: dict[str, Any]) -> dict[str, str]:

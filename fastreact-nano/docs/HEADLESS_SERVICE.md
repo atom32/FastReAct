@@ -314,9 +314,13 @@ curl http://127.0.0.1:8000/v1/runs/optional-run-id \
 Fetch collected events:
 
 ```bash
-curl http://127.0.0.1:8000/v1/runs/optional-run-id/events \
+curl 'http://127.0.0.1:8000/v1/runs/optional-run-id/events?limit=200&after_sequence=0' \
   -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
 ```
+
+Run and trace event APIs return events ordered by ascending `sequence`. Use
+`limit` and `after_sequence` for replay pagination. Responses include `count`,
+`total_event_count`, `next_after_sequence`, and `has_more`.
 
 Fetch trace summary:
 
@@ -334,9 +338,9 @@ curl -X POST http://127.0.0.1:8000/v1/runs/optional-run-id/cancel \
 
 The current implementation uses an in-process run registry and writes trace
 summaries plus service event payloads to the JSONL store. It establishes the API
-contract and replay shape. Retry/backoff, crash recovery, leases, retention,
-pagination, and migration rules are still product-polish items before daemon
-1.0.
+contract, event ordering, and first replay pagination shape. Retry/backoff,
+crash recovery, leases, durable replay from storage, retention, redaction, and
+migration rules are still product-polish items before daemon 1.0.
 
 ## Formal Runtime Configuration
 
