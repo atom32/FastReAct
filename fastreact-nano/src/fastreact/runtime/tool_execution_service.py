@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from time import perf_counter
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -28,6 +28,8 @@ class ToolExecutionResult:
 class ToolExecutionService:
     """Centralized tool execution with safety policy integration."""
 
+    DEFAULT_APPROVAL_TIMEOUT_SECONDS = 300.0
+
     def __init__(self, agent: "Agent"):
         self._agent = agent
         self._pending_approvals: dict[str, asyncio.Future] = {}
@@ -49,6 +51,8 @@ class ToolExecutionService:
 
         request_id = f"approval-{uuid.uuid4().hex[:10]}"
         future = asyncio.get_running_loop().create_future()
+        created_at = self._now()
+        expires_at = created_at + timedelta(seconds=self.DEFAULT_APPROVAL_TIMEOUT_SECONDS)
         self._pending_approvals[request_id] = future
         self._approval_records[request_id] = {
             "request_id": request_id,
@@ -63,7 +67,9 @@ class ToolExecutionService:
             "status": "pending",
             "approved": None,
             "expired": False,
-            "created_at": self._now_iso(),
+            "timeout_seconds": self.DEFAULT_APPROVAL_TIMEOUT_SECONDS,
+            "created_at": self._format_iso(created_at),
+            "expires_at": self._format_iso(expires_at),
             "resolved_at": None,
         }
         event = AgentEvent.ask_user(
@@ -76,6 +82,8 @@ class ToolExecutionService:
             "request_id": request_id,
             "decision_level": decision.level.value,
             "pattern_matched": decision.pattern_matched,
+            "timeout_seconds": self.DEFAULT_APPROVAL_TIMEOUT_SECONDS,
+            "expires_at": self._format_iso(expires_at),
             "policy_scope": decision.policy_scope,
             "policy_action": decision.policy_action,
             "policy_matched": decision.policy_matched,
@@ -93,11 +101,7 @@ class ToolExecutionService:
                 return bool(result.get("approved"))
             return bool(result)
         except asyncio.TimeoutError:
-            if request_id in self._approval_records:
-                self._approval_records[request_id]["status"] = "expired"
-                self._approval_records[request_id]["approved"] = False
-                self._approval_records[request_id]["expired"] = True
-                self._approval_records[request_id]["resolved_at"] = self._now_iso()
+            self._expire_approval(request_id, timeout_seconds)
             return False
         finally:
             self._pending_approvals.pop(request_id, None)
@@ -118,8 +122,25 @@ class ToolExecutionService:
     def list_approvals(self) -> list[dict[str, Any]]:
         return list(self._approval_records.values())
 
+    def _expire_approval(self, request_id: str, timeout_seconds: float) -> None:
+        record = self._approval_records.get(request_id)
+        if not record or record.get("status") != "pending":
+            return
+        record["status"] = "expired"
+        record["approved"] = False
+        record["expired"] = True
+        record["resolved_at"] = self._now_iso()
+        record["resolution_reason"] = "approval_timeout"
+        record["timeout_seconds"] = timeout_seconds
+
+    def _now(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    def _format_iso(self, value: datetime) -> str:
+        return value.isoformat()
+
     def _now_iso(self) -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return self._format_iso(self._now())
 
     async def execute(
         self,

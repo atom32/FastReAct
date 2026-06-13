@@ -51,7 +51,8 @@ can remain the reference implementation until those boundaries are clear.
 - Headless approval round trip: `ask_user` events include
   `approval_request_id`, and clients can call `GET /v1/approvals`,
   `GET /v1/approvals/{id}`, `POST /v1/approvals/{id}/approve`, or
-  `POST /v1/approvals/{id}/deny`.
+  `POST /v1/approvals/{id}/deny`. Approval records now include timeout fields;
+  unresolved requests expire as denied by default.
 - Background run contract: clients can call `POST /v1/runs`,
   `GET /v1/runs`, `GET /v1/runs/{id}`, `GET /v1/runs/{id}/events`, and
   `POST /v1/runs/{id}/cancel`. The first implementation is in-process and not
@@ -108,10 +109,11 @@ just feature-rich.
   tool decisions, and diagnose failures without reading internal files.
 
 - Finish approval policy at the product layer.
-  The headless approval API exists, but PSKA still needs a UI or policy client
-  that consumes `ask_user`, applies caller/user/tool policy, and resolves
-  `/v1/approvals/*`. FastReAct should document safe defaults for no-client,
-  deny-by-default, timeout, and operator-approved modes.
+  The headless approval API, deny-by-timeout default, and approval metadata
+  exist. PSKA still needs a UI or policy client that consumes `ask_user`,
+  applies caller/user/tool policy, and resolves `/v1/approvals/*`. FastReAct
+  still needs configurable timeout defaults and operator-approved mode
+  documentation.
 
 - Add per-tool, per-user, and per-tenant policy controls.
   The config, validation errors, dry-run contracts, and first policy audit

@@ -54,6 +54,10 @@ class FakeApprovalExecutor:
                 "status": "pending",
                 "approved": None,
                 "expired": False,
+                "timeout_seconds": 300.0,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "expires_at": "2026-01-01T00:05:00+00:00",
+                "resolved_at": None,
             }
         }
 
@@ -306,10 +310,13 @@ def test_headless_approval_endpoints_list_get_and_resolve(monkeypatch):
         assert listed_payload["count"] == 1
         assert listed_payload["pending_count"] == 1
         assert listed_payload["approvals"][0]["request_id"] == "approval-123"
+        assert listed_payload["approvals"][0]["timeout_seconds"] == 300.0
+        assert listed_payload["approvals"][0]["expires_at"] == "2026-01-01T00:05:00+00:00"
 
         fetched = client.get("/v1/approvals/approval-123", headers=headers)
         assert fetched.status_code == 200
         assert fetched.json()["approval"]["tool_name"] == "exec"
+        assert fetched.json()["approval"]["expires_at"] == "2026-01-01T00:05:00+00:00"
 
         approved = client.post(
             "/v1/approvals/approval-123/approve",

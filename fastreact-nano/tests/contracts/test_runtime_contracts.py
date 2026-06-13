@@ -108,7 +108,39 @@ async def test_tool_approval_contract(tmp_path):
     assert event is not None
     assert event.type == EventType.ASK_USER
     request_id = event.metadata["request_id"]
+    assert event.metadata["timeout_seconds"] == 300.0
+    assert event.metadata["expires_at"]
     assert agent.tool_executor.resolve_approval(request_id, approved=True)
+
+
+@pytest.mark.asyncio
+async def test_tool_approval_timeout_marks_record_expired(tmp_path):
+    config = make_test_config(tmp_path)
+    config.react.enable_safety = True
+    agent = Agent(config=config, multitenant=False)
+
+    decision, event = agent.tool_executor.assess(
+        tool_name="exec",
+        tool_params={"command": "rm test.txt"},
+        session_id="approval-timeout-session",
+    )
+
+    assert decision is not None
+    assert event is not None
+    request_id = event.metadata["request_id"]
+
+    approved = await agent.tool_executor.wait_for_approval(request_id, timeout_seconds=0.01)
+
+    assert approved is False
+    record = agent.tool_executor.list_approvals()[0]
+    assert record["request_id"] == request_id
+    assert record["status"] == "expired"
+    assert record["approved"] is False
+    assert record["expired"] is True
+    assert record["resolution_reason"] == "approval_timeout"
+    assert record["timeout_seconds"] == 0.01
+    assert record["resolved_at"]
+    assert agent.tool_executor.resolve_approval(request_id, approved=True) is False
 
 
 @pytest.mark.asyncio

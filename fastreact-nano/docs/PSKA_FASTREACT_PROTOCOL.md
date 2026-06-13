@@ -195,7 +195,9 @@ Approval request event:
   },
   "metadata": {
     "request_id": "approval-123",
-    "decision_level": "danger"
+    "decision_level": "danger",
+    "timeout_seconds": 300.0,
+    "expires_at": "2026-06-12T00:05:00+00:00"
   }
 }
 ```
@@ -222,6 +224,12 @@ Approve or deny body:
 
 All approval APIs use the same service token as `/ready` and
 `/v1/chat/completions` when service auth is enabled.
+
+Approval records include `status`, `approved`, `expired`, `timeout_seconds`,
+`created_at`, `expires_at`, `resolved_at`, and `resolution_reason`. The first
+version defaults to a 300 second timeout. If no client resolves the request
+before timeout, FastReAct marks it `expired`, sets `approved=false`, records
+`resolution_reason="approval_timeout"`, and denies the tool execution.
 
 Client rules:
 

@@ -175,6 +175,9 @@ interop protocol.
 
 When a tool is dangerous, FastReAct emits an `ask_user` event and stores a
 pending approval request. Headless clients can resolve it through HTTP.
+Approval requests include `timeout_seconds`, `expires_at`, `resolved_at`, and
+`resolution_reason`. The first version defaults to 300 seconds; timeout marks
+the request `expired`, sets `approved=false`, and denies the tool execution.
 
 List pending and historical approval requests:
 
