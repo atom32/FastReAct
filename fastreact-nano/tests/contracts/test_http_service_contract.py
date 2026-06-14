@@ -4,6 +4,7 @@ from fastreact.adapters.http import (
     create_app,
     extract_history,
     extract_query,
+    metrics_payload,
     readiness_payload,
     service_event_payload,
     set_agent_for_testing,
@@ -261,6 +262,69 @@ def test_readiness_payload_has_deployment_contract_fields(monkeypatch):
     assert configured_service_token() == "service-secret"
 
 
+def test_metrics_payload_summarizes_headless_service_state(tmp_path):
+    from fastreact.runtime.store_service import StoreService
+
+    fake_agent = FakeApprovalAgent()
+    fake_agent.store = StoreService(tmp_path / "metrics-store")
+    fake_agent.store.append(
+        "traces",
+        {
+            "run_id": "run-ok",
+            "session_id": "session-ok",
+            "status": "completed",
+            "duration_ms": 120.0,
+        },
+    )
+    fake_agent.store.append(
+        "traces",
+        {
+            "run_id": "run-failed",
+            "session_id": "session-failed",
+            "status": "failed",
+            "duration_ms": 80.0,
+            "error": "boom",
+        },
+    )
+    fake_agent.store.append(
+        "events",
+        {
+            "run_id": "run-failed",
+            "session_id": "session-failed",
+            "type": "error",
+            "content": "boom",
+            "timestamp": "2026-01-01T00:00:00+00:00",
+        },
+    )
+    fake_agent.store.append(
+        "audit",
+        {
+            "session_id": "session-ok",
+            "tool_name": "pska_search",
+            "duration_ms": 20.0,
+        },
+    )
+    fake_agent.tool_executor.records["approval-123"]["status"] = "approved"
+    fake_agent.tool_executor.records["approval-123"]["approved"] = True
+    fake_agent.tool_executor.records["approval-123"]["resolved_at"] = "2026-01-01T00:00:03+00:00"
+
+    payload = metrics_payload(fake_agent)
+
+    assert payload["schema"] == "fastreact.metrics.v1"
+    assert payload["runs"]["trace_count"] == 2
+    assert payload["runs"]["status_counts"]["completed"] == 1
+    assert payload["runs"]["status_counts"]["failed"] == 1
+    assert payload["runs"]["avg_duration_ms"] == 100.0
+    assert payload["events"]["error_count"] == 1
+    assert payload["tools"]["audit_count"] == 1
+    assert payload["tools"]["avg_duration_ms"] == 20.0
+    assert payload["approvals"]["count"] == 1
+    assert payload["approvals"]["status_counts"]["approved"] == 1
+    assert payload["approvals"]["avg_resolution_ms"] == 3000.0
+    assert payload["errors"]["count"] == 2
+    assert payload["store"]["total_records"] == 4
+
+
 def test_service_auth_blocks_chat_and_readiness_when_configured(monkeypatch):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
@@ -274,10 +338,16 @@ def test_service_auth_blocks_chat_and_readiness_when_configured(monkeypatch):
         )
         assert unauthenticated.status_code == 401
         assert client.get("/ready").status_code == 401
+        assert client.get("/v1/metrics").status_code == 401
 
         ready = client.get("/ready", headers={"Authorization": "Bearer service-secret"})
         assert ready.status_code == 200
         assert ready.json()["auth"]["required"] is True
+
+        set_agent_for_testing(FakeApprovalAgent())
+        metrics = client.get("/v1/metrics", headers={"Authorization": "Bearer service-secret"})
+        assert metrics.status_code == 200
+        assert metrics.json()["schema"] == "fastreact.metrics.v1"
 
         response = client.post(
             "/v1/chat/completions",

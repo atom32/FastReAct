@@ -455,6 +455,97 @@ def readiness_payload(agent: Agent) -> dict[str, Any]:
     }
 
 
+def _avg(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
+
+
+def _duration_between_ms(start: Any, end: Any) -> float | None:
+    if not start or not end:
+        return None
+    try:
+        started = datetime.fromisoformat(str(start))
+        ended = datetime.fromisoformat(str(end))
+    except ValueError:
+        return None
+    return round((ended - started).total_seconds() * 1000, 2)
+
+
+def metrics_payload(agent: Agent) -> dict[str, Any]:
+    """Return lightweight headless-service observability metrics."""
+    store = getattr(agent, "store", None)
+    store_stats = store.stats() if store else {}
+    traces = store.read("traces", limit=0) if store else []
+    events = store.read("events", limit=0) if store else []
+    audit = store.read("audit", limit=0) if store else []
+    approvals = agent.tool_executor.list_approvals() if hasattr(agent, "tool_executor") else []
+
+    live_runs = [run_snapshot(record) for record in _runs.values()]
+    all_run_statuses: dict[str, int] = {}
+    for item in [*traces, *live_runs]:
+        status = str(item.get("status") or "unknown")
+        all_run_statuses[status] = all_run_statuses.get(status, 0) + 1
+
+    trace_durations = [float(record["duration_ms"]) for record in traces if isinstance(record.get("duration_ms"), (int, float))]
+    tool_durations = [float(record["duration_ms"]) for record in audit if isinstance(record.get("duration_ms"), (int, float))]
+    approval_durations = [
+        duration
+        for duration in (_duration_between_ms(record.get("created_at"), record.get("resolved_at")) for record in approvals)
+        if duration is not None
+    ]
+
+    approval_statuses: dict[str, int] = {}
+    for record in approvals:
+        status = str(record.get("status") or "unknown")
+        approval_statuses[status] = approval_statuses.get(status, 0) + 1
+
+    error_events = [event for event in events if event.get("type") == "error"]
+    failed_traces = [trace for trace in traces if trace.get("error") or trace.get("status") == "failed"]
+    recent_errors = [
+        {
+            "run_id": item.get("run_id"),
+            "session_id": item.get("session_id"),
+            "type": item.get("type") or "trace_error",
+            "content": item.get("content") or item.get("error") or "",
+            "timestamp": item.get("timestamp") or item.get("completed_at") or item.get("created_at"),
+        }
+        for item in [*error_events[-5:], *failed_traces[-5:]]
+    ][-5:]
+
+    return {
+        "schema": "fastreact.metrics.v1",
+        "service_contract": SERVICE_EVENT_SCHEMA_VERSION,
+        "timestamp": utc_now(),
+        "runs": {
+            "live_count": len(live_runs),
+            "trace_count": len(traces),
+            "status_counts": all_run_statuses,
+            "avg_duration_ms": _avg(trace_durations),
+        },
+        "events": {
+            "total_count": len(events),
+            "error_count": len(error_events),
+        },
+        "tools": {
+            "audit_count": len(audit),
+            "avg_duration_ms": _avg(tool_durations),
+        },
+        "approvals": {
+            "count": len(approvals),
+            "pending_count": sum(1 for record in approvals if record.get("status") == "pending"),
+            "expired_count": sum(1 for record in approvals if record.get("expired") is True),
+            "status_counts": approval_statuses,
+            "avg_resolution_ms": _avg(approval_durations),
+        },
+        "errors": {
+            "count": len(error_events) + len(failed_traces),
+            "recent": recent_errors,
+        },
+        "store": store_stats,
+    }
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:  # type: ignore[valid-type]
     get_agent()
@@ -485,6 +576,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "tools": "GET /v1/tools",
                 "policy": "GET /v1/policy",
                 "approvals": "GET /v1/approvals",
+                "metrics": "GET /v1/metrics",
                 "runs": "POST /v1/runs",
                 "traces": "GET /v1/traces",
             },
@@ -508,6 +600,11 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         if hasattr(agent, "ensure_mcp_loaded"):
             await agent.ensure_mcp_loaded()
         return readiness_payload(agent)
+
+    @app.get("/v1/metrics")
+    async def metrics(request: Request) -> dict[str, Any]:  # type: ignore[valid-type]
+        require_service_auth(request)
+        return metrics_payload(get_agent())
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request, chat_request: ChatRequest) -> Any:  # type: ignore[valid-type]

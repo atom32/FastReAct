@@ -40,6 +40,7 @@ Only protocol data crosses the boundary:
 - tool results: JSON/text result, citation ids, trace summaries, errors
 - response summary: final answer, events, tool calls, duration, run id, session id
 - health/readiness: model config status, MCP readiness, loaded tools, dependency status
+- metrics: run status, latency, tool duration, approval duration, error summaries
 
 The boundary must not carry:
 
@@ -402,6 +403,25 @@ Formalization requirements for this first version:
 - Define retention, compaction, and redaction behavior for traces.
 - Add retry/backoff and lease semantics before introducing external workers.
 - Preserve this HTTP contract when the storage/worker implementation changes.
+
+## Metrics Contract
+
+```http
+GET /v1/metrics
+```
+
+Metrics responses use `schema="fastreact.metrics.v1"` and the same service auth
+as other control-plane APIs. The first version reports:
+
+- `runs`: live run count, trace count, status counts, average trace duration.
+- `events`: total event count and error event count.
+- `tools`: audit count and average audited tool duration.
+- `approvals`: status counts, pending/expired counts, average resolution time.
+- `errors`: total error count and recent error summaries.
+- `store`: JSONL stream statistics.
+
+This is an operational summary contract, not a billing ledger. Token/model usage
+should be added only after provider usage data is captured consistently.
 
 ## PSKA Tool Binding
 

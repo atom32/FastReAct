@@ -128,9 +128,10 @@ just feature-rich.
   tasks relate to sessions and run traces.
 
 - Improve service observability.
-  Keep audit logs, but expose stable health/readiness, run metrics, latency,
-  token/model usage where available, tool duration, approval duration, and error
-  summaries without requiring Web/Gateway internals.
+  Stable health/readiness, JSONL store stats, run metrics, latency, tool
+  duration, approval duration, and error summaries are now exposed through
+  `/v1/metrics` without requiring Web/Gateway internals. Token/model usage
+  should be added once provider usage data is captured consistently.
 
 - Keep the single-agent core small and explicit.
   Continue separating headless service/runtime from optional adapters, Web,

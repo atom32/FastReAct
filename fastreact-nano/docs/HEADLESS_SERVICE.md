@@ -47,6 +47,12 @@ Approval list:
 GET /v1/approvals
 ```
 
+Metrics:
+
+```http
+GET /v1/metrics
+```
+
 Background runs:
 
 ```http
@@ -344,6 +350,21 @@ summaries plus service event payloads to the JSONL store. It establishes the API
 contract, event ordering, and first replay pagination shape. Retry/backoff,
 crash recovery, leases, durable replay from storage, retention, redaction, and
 migration rules are still product-polish items before daemon 1.0.
+
+## Observability
+
+Use `/v1/metrics` for headless service diagnostics without the optional Web or
+Gateway UI:
+
+```bash
+curl http://127.0.0.1:8000/v1/metrics \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
+The first metrics contract is `fastreact.metrics.v1`. It summarizes run status,
+trace latency, event errors, tool audit duration, approval state, approval
+resolution duration, and JSONL store stats. Token/model usage is included later
+when providers expose stable usage data through the runtime.
 
 ## Formal Runtime Configuration
 
