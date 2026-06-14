@@ -57,8 +57,8 @@ docker-compose ps
 ```
 
 **Access services:**
-- Gateway: http://localhost:9000
-- WebUI: http://localhost:8501
+- HTTP daemon: http://localhost:8000
+- Service console: http://localhost:3000/service
 
 ### Method 4: Manual Installation (3 minutes) 📦
 
@@ -121,13 +121,13 @@ response = await ask("What is 2+2?")
 print(response)
 ```
 
-**Using Gateway (WebSocket):**
+**Using HTTP Daemon:**
 ```bash
-# Start gateway server
-python -m fastreact.adapters.gateway
+# Start HTTP/SSE service daemon
+python -m fastreact.adapters.http
 
 # Connect from client
-# ws://localhost:9000/ws
+# http://localhost:8000
 ```
 
 ---
@@ -140,9 +140,6 @@ FastReAct supports multiple adapters for different use cases:
 |---------|----------|------|
 | **CLI** | Command-line interface, scripting | - |
 | **HTTP** | REST API with streaming, integrations | 8000 |
-| **Gateway** | WebSocket server, real-time apps | 9000 |
-| **Feishu** | Lark/Feishu bot integration | 8001 |
-| **Streamlit** | Web UI, interactive demos | 8501 |
 
 ### Start Specific Adapter
 
@@ -153,14 +150,6 @@ python -m fastreact.adapters.cli
 # HTTP API (REST + SSE)
 python -m fastreact.adapters.http
 
-# Gateway (WebSocket)
-python -m fastreact.adapters.gateway
-
-# Streamlit WebUI
-streamlit run src/fastreact/adapters/web.py
-
-# Feishu Bot
-python -m fastreact.adapters.feishu
 ```
 
 ---
@@ -197,11 +186,11 @@ pip install fastreact-nano
 
 ```bash
 # Find and stop the conflicting service
-lsof -i :9000  # Find the process
+lsof -i :8000  # Find the process
 kill -9 <PID>  # Stop it
 
 # Or change port in .env
-echo "GATEWAY_PORT=9001" >> .env
+echo "FASTREACT_SERVICE_PORT=8001" >> .env
 ```
 
 ### API Key Issues

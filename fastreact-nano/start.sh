@@ -40,10 +40,8 @@ echo ""
 echo "  [2] HTTP API 服务器"
 echo "      端口 8000，适合 API 调用"
 echo ""
-echo "  [3] WebSocket Gateway"
-echo "      实时通信，适合 Web 集成"
 echo ""
-read -p "请输入选择 [1-3]: " choice
+read -p "请输入选择 [1-2]: " choice
 
 case $choice in
     1)
@@ -58,13 +56,6 @@ case $choice in
         echo "访问 http://localhost:8000 查看 API 文档"
         echo ""
         python3 -m fastreact.adapters.http
-        ;;
-    3)
-        echo ""
-        echo "启动 WebSocket Gateway..."
-        echo "访问 http://localhost:8000 查看 Gateway UI"
-        echo ""
-        python3 -m fastreact.adapters.gateway
         ;;
     *)
         echo "[ERROR] 无效选择"

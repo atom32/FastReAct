@@ -262,8 +262,6 @@ class PathsConfig:
 
     # Workspace
     gateway_workspace: Path = field(default_factory=lambda: Path.cwd() / "workspaces" / "default")
-    feishu_workspace_base: Path = field(default_factory=lambda: Path("/var/fastreact/tenants/feishu"))
-
     @classmethod
     def from_env(cls) -> "PathsConfig":
         """Create paths config from environment variables"""
@@ -271,48 +269,6 @@ class PathsConfig:
             global_skills_dir=_expand_path(os.getenv("FASTRACT_SKILLS_DIR", str(Path.cwd() / "skills" / "builtin"))),
             user_skills_template=os.getenv("FASTRACT_USER_SKILLS_TEMPLATE", "{user_workspace}/skills"),
             gateway_workspace=_expand_path(os.getenv("FASTRACT_GATEWAY_WORKSPACE", str(Path.cwd() / "workspaces" / "default"))),
-            feishu_workspace_base=_expand_path(os.getenv("FEISHU_BASE_WORKSPACE", "/var/fastreact/tenants/feishu")),
-        )
-
-
-@dataclass
-class GatewayConfig:
-    """Gateway (WebSocket) configuration"""
-
-    # Multi-tenant mode
-    enable_multitenant: bool = True  # Default: multi-tenant mode enabled
-    admin_only: bool = False  # Restrict to admin only (for single-tenant mode)
-
-    # Server configuration
-    host: str = "0.0.0.0"
-    port: int = 9000
-    log_level: str = "info"
-
-    # Admin API
-    admin_api_key: str = "admin-secret-key-change-in-production"
-
-    @classmethod
-    def from_env(cls) -> "GatewayConfig":
-        """Create Gateway config from environment variables"""
-        return cls(
-            enable_multitenant=os.getenv("GATEWAY_MULTITENANT", "true").lower() == "true",
-            admin_only=os.getenv("GATEWAY_ADMIN_ONLY", "false").lower() == "true",
-            host=os.getenv("GATEWAY_HOST", "0.0.0.0"),
-            port=int(os.getenv("GATEWAY_PORT", "9000")),
-            log_level=os.getenv("GATEWAY_LOG_LEVEL", "info"),
-            admin_api_key=os.getenv("GATEWAY_ADMIN_KEY", "admin-secret-key-change-in-production"),
-        )
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "GatewayConfig":
-        """Create Gateway config from dictionary"""
-        return cls(
-            enable_multitenant=data.get("enable_multitenant", True),
-            admin_only=data.get("admin_only", False),
-            host=data.get("host", "0.0.0.0"),
-            port=data.get("port", 9000),
-            log_level=data.get("log_level", "info"),
-            admin_api_key=data.get("admin_api_key", "admin-secret-key-change-in-production"),
         )
 
 
@@ -324,6 +280,10 @@ class ServiceConfig:
     port: int = 8000
     log_level: str = "info"
     service_token: Optional[str] = None
+    approval_timeout_seconds: float = 300.0
+    run_lease_seconds: float = 300.0
+    run_max_attempts: int = 3
+    recover_queued_runs: bool = True
 
     @classmethod
     def from_env(cls, api_key_file: Optional[Path] = None) -> "ServiceConfig":
@@ -333,6 +293,10 @@ class ServiceConfig:
             port=int(os.getenv("FASTREACT_PORT", "8000")),
             log_level=os.getenv("FASTREACT_LOG_LEVEL", "info"),
             service_token=token,
+            approval_timeout_seconds=float(os.getenv("FASTREACT_APPROVAL_TIMEOUT_SECONDS", "300")),
+            run_lease_seconds=float(os.getenv("FASTREACT_RUN_LEASE_SECONDS", "300")),
+            run_max_attempts=int(os.getenv("FASTREACT_RUN_MAX_ATTEMPTS", "3")),
+            recover_queued_runs=os.getenv("FASTREACT_RECOVER_QUEUED_RUNS", "true").lower() == "true",
         )
 
     @classmethod
@@ -343,6 +307,10 @@ class ServiceConfig:
             port=int(data.get("port", 8000)),
             log_level=data.get("log_level", "info"),
             service_token=token,
+            approval_timeout_seconds=float(data.get("approval_timeout_seconds", 300.0)),
+            run_lease_seconds=float(data.get("run_lease_seconds", 300.0)),
+            run_max_attempts=int(data.get("run_max_attempts", 3)),
+            recover_queued_runs=bool(data.get("recover_queued_runs", True)),
         )
 
 
@@ -440,73 +408,6 @@ class PolicyConfig:
 
 
 @dataclass
-class FeishuConfig:
-    """Feishu (Lark) channel configuration"""
-
-    # Connection mode: "webhook" (HTTP) or "sdk" (WebSocket long connection)
-    connection_mode: str = "sdk"
-
-    # App credentials
-    app_id: str = ""
-    app_secret: str = ""
-
-    # Webhook security (only for webhook mode)
-    encrypt_key: str = ""
-    verification_token: str = ""
-
-    # Server configuration (only for webhook mode)
-    host: str = "0.0.0.0"
-    port: int = 8001
-    webhook_path: str = "/webhook/feishu"
-
-    # SDK configuration (only for SDK mode)
-    auto_reconnect: bool = True
-    log_level: str = "info"
-
-    # Multi-tenant settings
-    enable_multitenant: bool = True
-    base_workspace: Optional[Path] = None
-
-    @classmethod
-    def from_env(cls) -> "FeishuConfig":
-        """Create Feishu config from environment variables"""
-        workspace_str = os.getenv("FEISHU_WORKSPACE")
-        return cls(
-            connection_mode=os.getenv("FEISHU_CONNECTION_MODE", "sdk"),
-            app_id=os.getenv("FEISHU_APP_ID", ""),
-            app_secret=os.getenv("FEISHU_APP_SECRET", ""),
-            encrypt_key=os.getenv("FEISHU_ENCRYPT_KEY", ""),
-            verification_token=os.getenv("FEISHU_VERIFICATION_TOKEN", ""),
-            host=os.getenv("FEISHU_HOST", "0.0.0.0"),
-            port=int(os.getenv("FEISHU_PORT", "8001")),
-            webhook_path=os.getenv("FEISHU_WEBHOOK_PATH", "/webhook/feishu"),
-            auto_reconnect=os.getenv("FEISHU_AUTO_RECONNECT", "true").lower() == "true",
-            log_level=os.getenv("FEISHU_LOG_LEVEL", "info"),
-            enable_multitenant=os.getenv("FEISHU_MULTITENANT", "true").lower() == "true",
-            base_workspace=_expand_path(workspace_str) if workspace_str else None,
-        )
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "FeishuConfig":
-        """Create Feishu config from dictionary"""
-        workspace_str = data.get("base_workspace")
-        return cls(
-            connection_mode=data.get("connection_mode", "sdk"),
-            app_id=data.get("app_id", ""),
-            app_secret=data.get("app_secret", ""),
-            encrypt_key=data.get("encrypt_key", ""),
-            verification_token=data.get("verification_token", ""),
-            host=data.get("host", "0.0.0.0"),
-            port=data.get("port", 8001),
-            webhook_path=data.get("webhook_path", "/webhook/feishu"),
-            auto_reconnect=data.get("auto_reconnect", True),
-            log_level=data.get("log_level", "info"),
-            enable_multitenant=data.get("enable_multitenant", True),
-            base_workspace=_expand_path(workspace_str) if workspace_str else None,
-        )
-
-
-@dataclass
 class Config:
     """
     Main configuration for FastReAct Nano
@@ -539,8 +440,7 @@ class Config:
         FASTRACT_MCP_SERVERS: JSON array of MCP server configs (default: [])
         FASTRACT_SKILLS_DIR: Global skills directory (default: ./skills/builtin)
         FASTRACT_USER_SKILLS_TEMPLATE: User skills path template (default: {user_workspace}/skills)
-        FASTRACT_GATEWAY_WORKSPACE: Gateway workspace path (default: ./workspaces/default)
-        FEISHU_BASE_WORKSPACE: Feishu multi-tenant base workspace (default: /var/fastreact/tenants/feishu)
+        FASTRACT_GATEWAY_WORKSPACE: Daemon workspace path (default: ./workspaces/default)
     """
 
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -548,10 +448,8 @@ class Config:
     react: ReactConfig = field(default_factory=ReactConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
-    gateway: GatewayConfig = field(default_factory=GatewayConfig)
     service: ServiceConfig = field(default_factory=ServiceConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
-    feishu: FeishuConfig = field(default_factory=FeishuConfig)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -700,20 +598,7 @@ class Config:
                     user_skills_template=paths_data.get("user_skills_template", "{user_workspace}/skills"),
                     user_skills_dir=_expand_path(paths_data.get("user_skills_dir")) if paths_data.get("user_skills_dir") else None,
                     gateway_workspace=_expand_path(paths_data.get("gateway_workspace", str(Path.cwd() / "workspaces" / "default"))),
-                    feishu_workspace_base=_expand_path(paths_data.get("feishu_workspace_base", "/var/fastreact/tenants/feishu")),
                 )
-
-            # Extract Feishu configuration
-            feishu_config = FeishuConfig()
-            if "feishu" in data:
-                feishu_data = data["feishu"]
-                feishu_config = FeishuConfig.from_dict(feishu_data)
-
-            # Extract Gateway configuration
-            gateway_config = GatewayConfig()
-            if "gateway" in data:
-                gateway_data = data["gateway"]
-                gateway_config = GatewayConfig.from_dict(gateway_data)
 
             # Extract headless HTTP service configuration
             service_config = ServiceConfig()
@@ -734,10 +619,8 @@ class Config:
                 react=react_config,
                 mcp=mcp_config,
                 paths=paths_config,
-                gateway=gateway_config,
                 service=service_config,
                 policy=policy_config,
-                feishu=feishu_config,
             )
 
         # Fallback to environment variables

@@ -41,6 +41,7 @@ class AgentRuntime:
         event_count = 0
         time_to_first_event_ms = None
         final_answer_length = 0
+        usage_totals = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         async for event in self._run_event_stream_impl(
             query=query,
@@ -56,10 +57,25 @@ class AgentRuntime:
                 time_to_first_event_ms = round(span.elapsed_ms, 2)
                 event.metadata["timing"]["time_to_first_event_ms"] = time_to_first_event_ms
 
+            llm_usage = event.metadata.get("llm_usage")
+            if isinstance(llm_usage, dict):
+                if "total_tokens" not in llm_usage:
+                    prompt_tokens = llm_usage.get("prompt_tokens", 0)
+                    completion_tokens = llm_usage.get("completion_tokens", 0)
+                    if isinstance(prompt_tokens, (int, float)) and isinstance(completion_tokens, (int, float)):
+                        llm_usage["total_tokens"] = int(prompt_tokens) + int(completion_tokens)
+                for key in usage_totals:
+                    value = llm_usage.get(key)
+                    if isinstance(value, (int, float)):
+                        usage_totals[key] += int(value)
+
             if event.type.value in ("session_end", "error"):
                 span.finish(event_type=event.type.value)
                 event.metadata.setdefault("timing", {})
                 event.metadata["timing"]["time_to_final_ms"] = round(span.elapsed_ms, 2)
+                event.metadata["llm_usage_total"] = {
+                    key: value for key, value in usage_totals.items() if value
+                }
                 final_answer_length = len(event.content or "")
                 if hasattr(self._agent, "store"):
                     self._agent.store.append("traces", {
@@ -71,6 +87,7 @@ class AgentRuntime:
                         "time_to_final_ms": round(span.elapsed_ms, 2),
                         "event_count": event_count,
                         "final_answer_length": final_answer_length,
+                        "llm_usage_total": event.metadata["llm_usage_total"],
                     })
 
             self._record_event(event, query=query, user_key=user_key, skills=skills, final_answer_length=final_answer_length)
@@ -377,7 +394,21 @@ class AgentRuntime:
                         preserve_initial_query=True,
                         # recent_count defaults to config value
                     )
-                    self._record_span(session_id, "context.compress", compress_span, message_count=len(messages))
+                    compression_metadata = getattr(agent, "_last_compression_metadata", {})
+                    self._record_span(
+                        session_id,
+                        "context.compress",
+                        compress_span,
+                        message_count=len(messages),
+                        **{key: value for key, value in compression_metadata.items() if key != "preserved_message_indices"},
+                    )
+                    if compression_metadata.get("compressed"):
+                        yield AgentEvent.think(
+                            "[CONTEXT_COMPRESSION] Sliding-window context compression applied",
+                            session_id,
+                            compression=compression_metadata,
+                            compression_event=True,
+                        )
 
                     # Call Brain (Core) for reasoning step
                     step_end = None

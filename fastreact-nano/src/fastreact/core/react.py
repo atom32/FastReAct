@@ -185,11 +185,16 @@ class ReActCore:
                     )
 
             # Signal step completion
-            yield AgentEvent.step_end(
+            step_end = AgentEvent.step_end(
                 session_id,
                 final_answer=response.content or "",
                 has_tool_calls=has_tool_calls,
             )
+            step_end.metadata.update({
+                "llm_usage": response.usage or {},
+                "model": response.model,
+            })
+            yield step_end
 
         except Exception as e:
             yield AgentEvent.error(f"Core step failed: {e}", session_id)

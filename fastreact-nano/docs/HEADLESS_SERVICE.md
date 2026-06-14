@@ -39,6 +39,7 @@ Skill list:
 
 ```http
 GET /v1/skills
+GET /v1/skills/diagnostics
 ```
 
 Approval list:
@@ -51,6 +52,25 @@ Metrics:
 
 ```http
 GET /v1/metrics
+```
+
+Setup and workspace profile:
+
+```http
+GET /v1/setup
+GET /v1/setup/presets
+POST /v1/setup/config-draft
+GET /v1/workspace/profile
+PUT /v1/workspace/profile
+```
+
+Durable tasks:
+
+```http
+GET /v1/tasks
+POST /v1/tasks
+GET /v1/tasks/{task_id}
+PATCH /v1/tasks/{task_id}
 ```
 
 Background runs:
@@ -182,8 +202,11 @@ interop protocol.
 When a tool is dangerous, FastReAct emits an `ask_user` event and stores a
 pending approval request. Headless clients can resolve it through HTTP.
 Approval requests include `timeout_seconds`, `expires_at`, `resolved_at`, and
-`resolution_reason`. The first version defaults to 300 seconds; timeout marks
-the request `expired`, sets `approved=false`, and denies the tool execution.
+`resolution_reason`. The default timeout is 300 seconds and can be changed with
+`service.approval_timeout_seconds` or `FASTREACT_APPROVAL_TIMEOUT_SECONDS`.
+Timeout marks the request `expired`, sets `approved=false`, and denies the tool
+execution. In headless service mode, operator decisions should come through the
+approval HTTP API rather than an interactive terminal prompt.
 
 List pending and historical approval requests:
 
@@ -345,16 +368,28 @@ curl -X POST http://127.0.0.1:8000/v1/runs/optional-run-id/cancel \
   -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
 ```
 
-The current implementation uses an in-process run registry and writes trace
-summaries plus service event payloads to the JSONL store. It establishes the API
-contract, event ordering, and first replay pagination shape. Retry/backoff,
-crash recovery, leases, durable replay from storage, retention, redaction, and
-migration rules are still product-polish items before daemon 1.0.
+Background runs are backed by JSONL snapshots and append-only replay events.
+The in-process worker task is only the current executor; run status, event
+sequence, cancellation, trace summaries, and replay pagination are durable.
+Daemon startup recovers queued runs and stale running leases when
+`service.recover_queued_runs=true`.
+
+Run snapshots may include additive daemon fields such as:
+
+```text
+attempts
+lease_expires_at
+retry_after
+worker_id
+last_error
+```
+
+Run and trace event APIs read durable replay events ordered by ascending
+`sequence`; they do not depend on an in-memory run registry.
 
 ## Observability
 
-Use `/v1/metrics` for headless service diagnostics without the optional Web or
-Gateway UI:
+Use `/v1/metrics` for headless service diagnostics:
 
 ```bash
 curl http://127.0.0.1:8000/v1/metrics \
@@ -363,8 +398,114 @@ curl http://127.0.0.1:8000/v1/metrics \
 
 The first metrics contract is `fastreact.metrics.v1`. It summarizes run status,
 trace latency, event errors, tool audit duration, approval state, approval
-resolution duration, and JSONL store stats. Token/model usage is included later
-when providers expose stable usage data through the runtime.
+resolution duration, durable run queue counts, stale leases, replay event count,
+provider token usage when available, and JSONL store stats.
+
+## Skill Diagnostics
+
+Use `/v1/skills/diagnostics` to inspect loaded skills, declared dependencies,
+recommended tools, MCP server requirements, and missing runtime dependencies:
+
+```bash
+curl http://127.0.0.1:8000/v1/skills/diagnostics \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+```
+
+The endpoint is read-only and returns `fastreact.skill_diagnostics.v1`.
+
+## Durable Tasks
+
+The headless service exposes the same JSONL-backed task board that agents can
+use through `task_create`, `task_update`, `task_list`, and `task_get`. This gives
+the product shell and external clients a durable planning surface without adding
+a database.
+
+Create a task:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/tasks \
+  -H "Authorization: Bearer $FASTREACT_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Review PSKA citations",
+    "description": "Check source ids and evidence fields",
+    "priority": "high",
+    "owner": "pska"
+  }'
+```
+
+List and update tasks:
+
+```bash
+curl http://127.0.0.1:8000/v1/tasks?status=in_progress \
+  -H "Authorization: Bearer $FASTREACT_SERVICE_TOKEN"
+
+curl -X PATCH http://127.0.0.1:8000/v1/tasks/task-abc123 \
+  -H "Authorization: Bearer $FASTREACT_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"completed"}'
+```
+
+Task detail includes related durable runs and traces when a run was launched with
+`metadata.task_id` or reused the task session id.
+
+## Product Shell
+
+The optional Next.js console is the OpenClaw-like product shell for the daemon
+API. It is not required for protocol-only PSKA integration, but it gives an
+operator a practical UI for:
+
+- Chat/Run creation through durable `/v1/runs`.
+- Run and trace event replay from `/v1/runs/{run_id}/events`.
+- Durable task board creation, status updates, and task-linked run launch.
+- Skill diagnostics, MCP server status, missing tool dependencies.
+- Workspace profile viewing and editing for `AGENTS.md` and `SOUL.md`.
+- Approval queue handling and policy checks.
+- Setup status for model, service token, MCP servers, and the PSKA preset.
+- Draft-only configuration wizard for model, service token, workspace, MCP
+  servers, and PSKA policy preset.
+
+Start the HTTP service and the console separately:
+
+```bash
+cd /Users/xudawei/FastReAct/fastreact-nano
+python3 -m fastreact.adapters.http
+
+cd /Users/xudawei/FastReAct/fastreact-nano-web
+NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL=http://127.0.0.1:8000 npm run dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:3000/service
+```
+
+If service auth is enabled, paste the service token in the console header. The
+token is stored in browser local storage for local operator use.
+
+The setup wizard intentionally generates a config draft only. It does not write
+`~/.fastreact/config.json`, and it does not accept or emit raw LLM API keys. Use
+`api_key_file` or environment variables for provider secrets.
+
+## Workspace Profile
+
+FastReAct can load optional workspace profile files into the variable system
+prompt section. This is the low-risk OpenClaw-style customization path for a
+single-agent daemon. The following files are detected from the gateway
+workspace, tool working directory, and current working directory:
+
+```text
+AGENTS.md
+SOUL.md
+.fastreact/AGENT.md
+.fastreact/SOUL.md
+```
+
+Files are truncated before prompt injection. The service console can edit the
+top-level `AGENTS.md` and `SOUL.md`; nested `.fastreact/*` files are shown for
+inspection. These files should define workspace conventions, personality/profile
+guidance, or project-specific operating notes; they should not contain secrets.
 
 ## Formal Runtime Configuration
 
@@ -390,7 +531,11 @@ Recommended user-level config:
     "host": "127.0.0.1",
     "port": 8000,
     "log_level": "info",
-    "service_token": "replace-with-local-service-token"
+    "service_token": "replace-with-local-service-token",
+    "approval_timeout_seconds": 300,
+    "run_lease_seconds": 300,
+    "run_max_attempts": 3,
+    "recover_queued_runs": true
   },
   "react": {
     "max_iterations": 20,
@@ -418,6 +563,12 @@ export FASTREACT_SERVICE_TOKEN='replace-with-local-service-token'
 ## PSKA MCP Configuration
 
 Configure PSKA as a deployment-scoped MCP server.
+
+The repository also includes a complete preset:
+
+```text
+config.pska.example.json
+```
 
 ```json
 {

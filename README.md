@@ -8,7 +8,7 @@ FastReAct 当前主线是 `nano` 分支上的 headless agentic service。它的�
 POST /v1/chat/completions
 ```
 
-主要代码在 [`fastreact-nano/`](fastreact-nano/)。Web Gateway 和 Admin 控制台仍然保留，但属于可选控制面、调试面和运维面。
+主要代码在 [`fastreact-nano/`](fastreact-nano/)。产品壳集中在 [`fastreact-nano-web/app/service`](fastreact-nano-web/app/service)。
 
 ## 当前服务形态
 
@@ -107,7 +107,7 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 - per-server MCP `env` 透传。
 - service token 保护。
 - skills、tasks、TODO、session、context window 和 trace 相关基础设施。
-- 可选 Web Gateway、Admin API、JSONL 控制面存储和运维脚本。
+- JSONL 控制面存储和运维脚本。
 
 当前仍然不是：
 
@@ -141,7 +141,7 @@ python3 run_tests.py release-full
 
 默认测试不会访问真实 LLM。`release-llm` 会读取 `~/api_key.txt` 做真实 LLM smoke test 和 LLM Judge。
 
-## 可选 Web/Gateway
+## Service 控制台
 
 需要控制台时再启动完整本地开发栈：
 
@@ -160,16 +160,16 @@ cd ..
 ./fastreact-nano/scripts/dev_full.sh
 ```
 
-Web 控制台：
+Service 控制台：
 
 ```text
-http://localhost:3000
+http://localhost:3000/service
 ```
 
-Gateway 健康检查：
+HTTP daemon 健康检查：
 
 ```text
-http://localhost:9000/health
+http://localhost:8000/health
 ```
 
 ## 文档

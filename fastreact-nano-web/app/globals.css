@@ -125,6 +125,291 @@
   }
 }
 
+/* Daemon service console fallback styles. These keep /service polished even when
+   utility generation changes across Next/Tailwind versions. */
+.service-console {
+  width: min(100% - 32px, 1280px);
+  margin: 0 auto;
+  padding: 24px 0 48px;
+  color: var(--fr-text-primary);
+}
+
+.service-console__topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.service-console__settings {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(180px, 260px) auto;
+  gap: 8px;
+}
+
+.service-console h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.service-console p {
+  margin: 4px 0 0;
+}
+
+.service-console input,
+.service-console textarea,
+.service-console select {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--fr-text-primary);
+  padding: 9px 11px;
+  font: inherit;
+  outline: none;
+}
+
+.service-console textarea {
+  min-height: 160px;
+  resize: vertical;
+}
+
+.service-console select {
+  min-height: 40px;
+}
+
+.service-console input:focus,
+.service-console textarea:focus,
+.service-console select:focus {
+  border-color: var(--fr-accent-secondary);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.18);
+}
+
+.service-console button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.78);
+  color: var(--fr-text-primary);
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.service-console button:hover {
+  border-color: var(--fr-accent-secondary);
+  background: rgba(30, 41, 59, 0.92);
+}
+
+.service-console button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.service-console [role="tablist"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  padding-bottom: 8px;
+}
+
+.service-console [role="tab"][data-state="active"] {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--fr-gradient-start), var(--fr-gradient-end));
+  color: #fff;
+}
+
+.service-console [data-radix-collection-item] svg,
+.service-console button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.service-console--hydrated [data-state="inactive"][role="tabpanel"] {
+  display: none;
+}
+
+.service-console [role="tabpanel"] > .grid,
+.service-console .grid {
+  display: grid;
+  gap: 16px;
+}
+
+.service-console [class*="lg:grid-cols-[380px"] {
+  grid-template-columns: 380px minmax(0, 1fr);
+}
+
+.service-console [class*="lg:grid-cols-[minmax(0,0.95fr"] {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+}
+
+.service-console [class*="lg:grid-cols-[minmax(0,1fr)_360px"] {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.service-console [class*="lg:grid-cols-[minmax(0,1fr)_420px"] {
+  grid-template-columns: minmax(0, 1fr) 420px;
+}
+
+.service-console [class*="lg:grid-cols-3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.service-console [class*="md:grid-cols-2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.service-console [class*="lg:col-span-3"] {
+  grid-column: 1 / -1;
+}
+
+.service-console .rounded-md,
+.service-console .rounded {
+  border-radius: 6px;
+}
+
+.service-console .border,
+.service-console [class*="border"] {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.service-console [class*="bg-muted"],
+.service-console pre {
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.service-console pre {
+  overflow: auto;
+  border-radius: 6px;
+  padding: 10px;
+  color: #cbd5e1;
+}
+
+.service-console [class*="text-muted-foreground"] {
+  color: var(--fr-text-secondary);
+}
+
+.service-console [class*="space-y"] > * + * {
+  margin-top: 12px;
+}
+
+.service-console [class*="flex"] {
+  display: flex;
+}
+
+.service-console [class*="items-center"] {
+  align-items: center;
+}
+
+.service-console [class*="justify-between"] {
+  justify-content: space-between;
+}
+
+.service-console [class*="gap-2"] {
+  gap: 8px;
+}
+
+.service-console [class*="gap-3"] {
+  gap: 12px;
+}
+
+.service-console [class*="gap-4"] {
+  gap: 16px;
+}
+
+.service-console [class*="font-mono"] {
+  font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+}
+
+.service-console [class*="text-xs"] {
+  font-size: 12px;
+}
+
+.service-console [class*="text-sm"] {
+  font-size: 14px;
+}
+
+.service-console [class*="font-medium"] {
+  font-weight: 600;
+}
+
+.service-console [class*="break-all"] {
+  word-break: break-all;
+}
+
+.service-console [class*="whitespace-pre-wrap"] {
+  white-space: pre-wrap;
+}
+
+.service-console .bg-emerald-50,
+.service-console .bg-red-50,
+.service-console .bg-amber-50,
+.service-console .bg-slate-50 {
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.service-console .text-emerald-700 {
+  color: #34d399;
+}
+
+.service-console .text-red-700 {
+  color: #f87171;
+}
+
+.service-console .text-amber-700 {
+  color: #fbbf24;
+}
+
+.service-console .text-slate-700 {
+  color: #cbd5e1;
+}
+
+.service-console [class*="Card"],
+.service-console [data-slot="card"],
+.service-console .bg-card {
+  background: rgba(10, 14, 39, 0.76);
+}
+
+.service-console .bg-card {
+  border-radius: 8px;
+  color: var(--fr-text-primary);
+}
+
+.service-console .bg-card > div:first-child {
+  padding: 16px 16px 8px;
+}
+
+.service-console .bg-card > div + div {
+  padding: 0 16px 16px;
+}
+
+.service-console .bg-card [class*="text-2xl"],
+.service-console .bg-card [class*="text-base"],
+.service-console .bg-card label {
+  color: var(--fr-text-primary);
+}
+
+.service-console .bg-card [class*="leading-none"] {
+  line-height: 1.25;
+}
+
+@media (max-width: 960px) {
+  .service-console__settings,
+  .service-console [role="tabpanel"] > .grid,
+  .service-console .grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 /* ===== FastReAct Theme System ===== */
 
 /* Theme CSS Variables */

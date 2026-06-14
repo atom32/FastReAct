@@ -1,6 +1,6 @@
 #!/bin/bash
 # FastReAct Nano - Startup Script
-# This script starts both the Gateway (backend) and Web UI (frontend)
+# This script starts both the HTTP daemon (backend) and Web UI (frontend)
 
 set -e  # Exit on error
 
@@ -40,10 +40,10 @@ cleanup() {
     echo ""
     echo -e "${YELLOW}Stopping services...${NC}"
 
-    # Kill Gateway
-    if [ -n "$GATEWAY_PID" ]; then
-        echo "Stopping Gateway (PID: $GATEWAY_PID)..."
-        kill $GATEWAY_PID 2>/dev/null || true
+    # Kill HTTP daemon
+    if [ -n "$SERVICE_PID" ]; then
+        echo "Stopping HTTP daemon (PID: $SERVICE_PID)..."
+        kill $SERVICE_PID 2>/dev/null || true
     fi
 
     # Kill Web UI (if run in foreground)
@@ -59,9 +59,9 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # ============================
-# Start Gateway (Backend)
+# Start HTTP Daemon (Backend)
 # ============================
-echo -e "${BLUE}[1/2] Starting Gateway (backend)...${NC}"
+echo -e "${BLUE}[1/2] Starting HTTP daemon (backend)...${NC}"
 
 cd fastreact-nano
 
@@ -74,22 +74,22 @@ if [ ! -f ".env" ]; then
     fi
 fi
 
-# Start Gateway in background
-python3 -m fastreact.adapters.gateway > /tmp/fastreact-gateway.log 2>&1 &
-GATEWAY_PID=$!
+# Start HTTP daemon in background
+python3 -m fastreact.adapters.http --host 127.0.0.1 --port 8000 > /tmp/fastreact-http.log 2>&1 &
+SERVICE_PID=$!
 
-echo -e "${GREEN}✓ Gateway started (PID: $GATEWAY_PID)${NC}"
-echo "  Logs: /tmp/fastreact-gateway.log"
-echo "  URL: ws://localhost:9000/ws"
+echo -e "${GREEN}✓ HTTP daemon started (PID: $SERVICE_PID)${NC}"
+echo "  Logs: /tmp/fastreact-http.log"
+echo "  URL: http://localhost:8000"
 
-# Wait for Gateway to be ready
-echo "Waiting for Gateway to initialize..."
+# Wait for HTTP daemon to be ready
+echo "Waiting for HTTP daemon to initialize..."
 sleep 3
 
-# Check if Gateway is still running
-if ! ps -p $GATEWAY_PID > /dev/null; then
-    echo -e "${RED}Error: Gateway failed to start${NC}"
-    echo "Check logs: tail /tmp/fastreact-gateway.log"
+# Check if HTTP daemon is still running
+if ! ps -p $SERVICE_PID > /dev/null; then
+    echo -e "${RED}Error: HTTP daemon failed to start${NC}"
+    echo "Check logs: tail /tmp/fastreact-http.log"
     exit 1
 fi
 
@@ -114,7 +114,7 @@ if [ ! -f ".env.local" ]; then
     echo -e "${YELLOW}Creating .env.local...${NC}"
     cat > .env.local << EOF
 # Next.js
-NEXT_PUBLIC_API_URL=ws://localhost:9000/ws
+NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL=http://localhost:8000
 EOF
 fi
 
@@ -136,11 +136,11 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}✓ All services started successfully!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "Gateway:  ${BLUE}ws://localhost:9000/ws${NC} (PID: $GATEWAY_PID)"
-echo -e "Web UI:   ${BLUE}http://localhost:3000${NC} (PID: $WEB_PID)"
+echo -e "HTTP API: ${BLUE}http://localhost:8000${NC} (PID: $SERVICE_PID)"
+echo -e "Web UI:   ${BLUE}http://localhost:3000/service${NC} (PID: $WEB_PID)"
 echo ""
 echo -e "${YELLOW}Logs:${NC}"
-echo -e "  Gateway: tail -f /tmp/fastreact-gateway.log"
+echo -e "  HTTP API: tail -f /tmp/fastreact-http.log"
 echo -e "  Web UI:  Check browser console"
 echo ""
 

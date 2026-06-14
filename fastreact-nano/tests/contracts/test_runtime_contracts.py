@@ -43,6 +43,12 @@ async def test_runtime_adds_timing_metadata(tmp_path, mock_llm_no_tools):
     assert events[-1].type == EventType.SESSION_END
     assert "time_to_first_event_ms" in events[0].metadata["timing"]
     assert "time_to_final_ms" in events[-1].metadata["timing"]
+    assert events[-1].metadata["llm_usage_total"]["prompt_tokens"] == 10
+    assert events[-1].metadata["llm_usage_total"]["completion_tokens"] == 5
+    assert events[-1].metadata["llm_usage_total"]["total_tokens"] == 15
+
+    traces = agent.store.read("traces", session_id="timing-contract")
+    assert traces[-1]["llm_usage_total"]["total_tokens"] == 15
 
 
 def test_store_task_service_jsonl_roundtrip(tmp_path):
@@ -73,6 +79,50 @@ def test_store_service_reports_stream_stats(tmp_path):
     assert stats["total_records"] == 2
     assert stats["streams"]["audit"]["records"] == 1
     assert stats["streams"]["traces"]["bytes"] > 0
+
+
+def test_store_service_sanitizes_sensitive_nested_fields(tmp_path):
+    store = StoreService(tmp_path / ".fastreact")
+
+    store.append(
+        "run_events",
+        {
+            "run_id": "run-secret",
+            "metadata": {
+                "authorization": "Bearer secret-token",
+                "nested": {
+                    "api_key": "sk-test-secret",
+                    "long_text": "x" * 1300,
+                },
+            },
+            "tool_args": {
+                "password": "plain-secret",
+                "query": "safe",
+            },
+        },
+    )
+
+    record = store.read("run_events", limit=0)[0]
+    assert record["metadata"]["authorization"] == "***"
+    assert record["metadata"]["nested"]["api_key"] == "***"
+    assert record["tool_args"]["password"] == "***"
+    assert record["tool_args"]["query"] == "safe"
+    assert record["metadata"]["nested"]["long_text"].endswith("[... truncated ...]")
+
+
+def test_workspace_profile_context_loads_agents_and_soul_files(tmp_path):
+    config = make_test_config(tmp_path)
+    config.paths.gateway_workspace = tmp_path
+    (tmp_path / "AGENTS.md").write_text("Project convention: cite sources.", encoding="utf-8")
+    (tmp_path / ".fastreact").mkdir()
+    (tmp_path / ".fastreact" / "SOUL.md").write_text("Agent profile: calm and precise.", encoding="utf-8")
+    agent = Agent(config=config, multitenant=False)
+
+    _base_prompt, variable_content = agent.skill_resolver.build_prompt(skills=None)
+
+    assert "# Workspace Profile" in variable_content
+    assert "Project convention: cite sources." in variable_content
+    assert "Agent profile: calm and precise." in variable_content
 
 
 @pytest.mark.asyncio
@@ -144,6 +194,31 @@ async def test_tool_approval_timeout_marks_record_expired(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_tool_approval_uses_configured_timeout_and_persists_record(tmp_path):
+    config = make_test_config(tmp_path)
+    config.react.enable_safety = True
+    config.service.approval_timeout_seconds = 0.02
+    agent = Agent(config=config, multitenant=False)
+
+    _decision, event = agent.tool_executor.assess(
+        tool_name="exec",
+        tool_params={"command": "rm test.txt"},
+        session_id="approval-config-session",
+    )
+
+    request_id = event.metadata["request_id"]
+    assert event.metadata["timeout_seconds"] == 0.02
+
+    approved = await agent.tool_executor.wait_for_approval(request_id)
+
+    assert approved is False
+    record = agent.store.latest_by_id("approvals", "request_id", request_id)
+    assert record["status"] == "expired"
+    assert record["timeout_seconds"] == 0.02
+    assert record["resolution_reason"] == "approval_timeout"
+
+
+@pytest.mark.asyncio
 async def test_tool_policy_approval_metadata_and_audit_contract(tmp_path):
     config = make_test_config(tmp_path)
     config.react.enable_safety = True
@@ -187,3 +262,32 @@ async def test_session_detail_replays_persisted_events(tmp_path, mock_llm_no_too
     assert detail is not None
     assert detail["session_id"] == "replay-session"
     assert any(event["type"] == "session_start" for event in detail["events"])
+
+
+@pytest.mark.asyncio
+async def test_context_compression_emits_auditable_event(tmp_path, mock_llm_no_tools):
+    config = make_test_config(tmp_path)
+    agent = Agent(config=config, multitenant=False)
+    agent._config.react.sliding_window_size = 1
+    history = [
+        {"role": "user", "content": "initial question " + ("x" * 30000)},
+        {"role": "assistant", "content": "older answer " + ("y" * 30000)},
+        {"role": "user", "content": "follow up " + ("z" * 30000)},
+    ]
+
+    events = []
+    async for event in agent.run_event_stream(
+        "compress now " + ("q" * 30000),
+        session_id="compression-session",
+        history=history,
+    ):
+        events.append(event)
+
+    compression_events = [
+        event for event in events
+        if event.metadata.get("compression_event") is True
+    ]
+    assert compression_events
+    metadata = compression_events[0].metadata["compression"]
+    assert metadata["compressed"] is True
+    assert metadata["dropped_count"] > 0

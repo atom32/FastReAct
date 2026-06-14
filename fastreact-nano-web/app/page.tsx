@@ -1,12 +1,5 @@
-"use client"
-
-import { ThemeProvider } from "@/lib/theme-context"
-import { ChatInterface } from "@/components/chat/chat-interface"
+import { redirect } from "next/navigation"
 
 export default function Page() {
-  return (
-    <ThemeProvider>
-      <ChatInterface />
-    </ThemeProvider>
-  )
+  redirect("/service")
 }

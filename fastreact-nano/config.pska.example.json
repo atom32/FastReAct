@@ -1,0 +1,67 @@
+{
+  "_comment": "FastReAct Nano headless daemon preset for PSKA integration.",
+  "llm": {
+    "model": "deepseek-v4-flash",
+    "api_base": "https://api.deepseek.com",
+    "api_key_file": "~/api_key.txt",
+    "temperature": 0.7,
+    "max_tokens": 4096
+  },
+  "service": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "log_level": "info",
+    "service_token": "replace-with-local-service-token",
+    "approval_timeout_seconds": 300,
+    "run_lease_seconds": 300,
+    "run_max_attempts": 3,
+    "recover_queued_runs": true
+  },
+  "paths": {
+    "gateway_workspace": "~/fastreact-pska-workspace"
+  },
+  "react": {
+    "max_iterations": 20,
+    "max_context_tokens": 128000,
+    "sliding_window_size": 15,
+    "max_tool_output_chars": 5000,
+    "enable_safety": true,
+    "auto_approve_safe": true,
+    "enable_filesystem_memory": true
+  },
+  "mcp": {
+    "servers": [
+      {
+        "name": "pska",
+        "transport": "stdio",
+        "command": "/Users/xudawei/Documents/personal archive/scripts/pska",
+        "args": ["mcp-server"],
+        "isolation": "shared",
+        "description": "PSKA personal knowledge store tools."
+      }
+    ],
+    "_example_http_mcp": {
+      "_comment": "Replace the stdio server above with this once PSKA online HTTP MCP is enabled.",
+      "name": "pska",
+      "transport": "http",
+      "url": "http://127.0.0.1:8765/mcp",
+      "isolation": "shared",
+      "description": "PSKA HTTP MCP endpoint."
+    }
+  },
+  "policy": {
+    "default_action": "caution",
+    "tenant_rules": {
+      "pska": {
+        "tools": {
+          "exec": "require_approval",
+          "write_file": "require_approval",
+          "edit_file": "require_approval",
+          "pska_pska_search": "allow",
+          "pska_pska_agentic_search": "allow",
+          "pska_pska_index_status": "allow"
+        }
+      }
+    }
+  }
+}

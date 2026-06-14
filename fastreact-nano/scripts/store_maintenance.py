@@ -23,6 +23,16 @@ from fastreact.runtime.store_service import StoreService  # noqa: E402
 SNAPSHOT_ID_FIELDS = {
     "sessions": "session_id",
     "tasks": "task_id",
+    "runs": "run_id",
+    "traces": "run_id",
+    "approvals": "request_id",
+}
+
+APPEND_ONLY_STREAMS = {
+    "events",
+    "run_events",
+    "audit",
+    "runtime_spans",
 }
 
 
@@ -101,6 +111,8 @@ def compact_store(store: StoreService, keep_last: int, make_backup: bool) -> dic
         original_count = len(records)
         if stream in SNAPSHOT_ID_FIELDS:
             records = latest_snapshots(records, SNAPSHOT_ID_FIELDS[stream])
+        elif stream in APPEND_ONLY_STREAMS:
+            pass
         elif keep_last > 0 and len(records) > keep_last:
             records = records[-keep_last:]
         write_jsonl(path, records)

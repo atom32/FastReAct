@@ -89,6 +89,18 @@
     "auto_approve_safe": true
   },
 
+  "service": {
+    "_comment": "Headless HTTP/SSE daemon settings",
+    "host": "0.0.0.0",
+    "port": 8000,
+    "log_level": "info",
+    "service_token": null,
+    "approval_timeout_seconds": 300,
+    "run_lease_seconds": 300,
+    "run_max_attempts": 3,
+    "recover_queued_runs": true
+  },
+
   "mcp": {
     "_comment": "MCP (Model Context Protocol) 服务器配置",
     "_comment_2": "MCP 服务器可以与 Skill 关联，实现渐进式工具发现",

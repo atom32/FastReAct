@@ -12,6 +12,7 @@ from fastreact.runtime.skill_resolver import SkillResolver
 from fastreact.runtime.mcp_bootstrapper import MCPBootstrapper
 from fastreact.runtime.timing import TimingSpan, now_ms
 from fastreact.runtime.store_service import StoreService
+from fastreact.runtime.run_service import RunService
 from fastreact.runtime.task_service import (
     TaskService,
     TaskCreateTool,
@@ -27,6 +28,7 @@ __all__ = [
     "SkillResolver",
     "MCPBootstrapper",
     "StoreService",
+    "RunService",
     "TaskService",
     "TaskCreateTool",
     "TaskUpdateTool",

@@ -10,12 +10,12 @@ services:
       dockerfile: Dockerfile
     deploy:
       replicas: 1
-      port: 9000
+      port: 8000
     env:
-      - key=PORT, value=9000
+      - key=PORT, value=8000
       - key=FASTREACT_MODEL, sync=false
       - key=FASTREACT_API_KEY, sync=false
     healthCheck:
       http:
         path: /health
-        port: 9000
+        port: 8000

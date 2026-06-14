@@ -2,13 +2,12 @@
 FastReAct Nano v2.4.2 - Dual Transport MCP
 
 Modern AI Agent SDK with Next.js 14 Frontend
-- Next.js 14 App: Chat interface, Admin panel, MCP Marketplace
+- Next.js App: Daemon service console
 - Ironclad Backend: Infinite loop protection, JSON repair, auto-reconnect
 - MCP Zombie Resurrection: Automatic server crash recovery
 - Multi-turn Memory: Conversation history with auto-pruning (50 turns)
 - Professional UI: Unified themes, glassmorphism, gradient accents
-- WebSocket Streaming: Real-time AgentEvent protocol
-- 6 Themes: Cyber Dark, Midnight, Solar Light, Forest, Sunset, Matrix
+- HTTP/SSE Streaming: AgentEvent protocol
 - DUAL TRANSPORT MCP: stdio + HTTP for local and remote servers
 - Secure Credentials: Separate credentials.json with env var support
 """
@@ -20,7 +19,7 @@ __author__ = "FastReAct Team"
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.react import ReActCore
 from fastreact.core.tools import Tool, ToolRegistry
-from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig, MCPConfig, PolicyConfig, FeishuConfig
+from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig, MCPConfig, PolicyConfig
 from fastreact.core.context import ContextMonitor, ContextStats, FilesystemMemory, FilesystemNode
 from fastreact.core.safety import (
     SafetyLevel,
@@ -85,7 +84,6 @@ __all__ = [
     "ReactConfig",
     "MCPConfig",
     "PolicyConfig",
-    "FeishuConfig",
     # Context (Cortex)
     "ContextMonitor",
     "ContextStats",

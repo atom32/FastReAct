@@ -60,14 +60,12 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeName>("cyber-dark")
-  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem("fastreact-theme") as ThemeName | null
     if (saved && themes.some((t) => t.name === saved)) {
       setThemeState(saved)
     }
-    setMounted(true)
   }, [])
 
   const setTheme = (t: ThemeName) => {
@@ -76,15 +74,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   const config = themes.find((t) => t.name === theme) || themes[0]
-
-  if (!mounted) {
-    return (
-      <div
-        data-theme="cyber-dark"
-        style={{ background: "#0a0e27", minHeight: "100vh" }}
-      />
-    )
-  }
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, config }}>

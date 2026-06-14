@@ -205,16 +205,6 @@ build_docker_images() {
         --tag fastreactnano/fastreact-nano:v${version} \
         --tag fastreactnano/fastreact-nano:latest \
         --build-arg MCP_ENABLED=true \
-        --build-arg GATEWAY_ENABLED=true \
-        .
-
-    # Build Feishu image
-    docker build \
-        --target production \
-        --tag fastreactnano/fastreact-nano:v${version}-feishu \
-        --build-arg MCP_ENABLED=true \
-        --build-arg GATEWAY_ENABLED=false \
-        --build-arg FEISHU_ENABLED=true \
         .
 
     # Build development image
@@ -222,8 +212,6 @@ build_docker_images() {
         --target development \
         --tag fastreactnano/fastreact-nano:v${version}-dev \
         --build-arg MCP_ENABLED=true \
-        --build-arg GATEWAY_ENABLED=true \
-        --build-arg FEISHU_ENABLED=true \
         .
 
     log_success "Docker images built successfully"

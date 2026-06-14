@@ -291,17 +291,16 @@ async def test_async_function():
     assert result is not None
 ```
 
-## End-to-End Tests (NEW)
+## End-to-End Tests
 
 ### Purpose
 
-Comprehensive testing of Feishu + GraphRAG + Multi-tenant integration.
+Comprehensive testing of the HTTP/SSE daemon, durable events, skills, MCP tools,
+and cross-repo PSKA smoke flows.
 
 **Files**:
-- `integration/test_e2e_feishu_graphrag.py` - Main E2E scenarios
 - `integration/test_concurrent_users.py` - Concurrent access tests
 - `helpers/test_helpers.py` - Event collection utilities
-- `helpers/mock_feishu_client.py` - Mock Feishu client
 
 ### Test Scenarios
 
@@ -337,12 +336,6 @@ Comprehensive testing of Feishu + GraphRAG + Multi-tenant integration.
 # Set API key
 export FASTRACT_API_KEY="sk-xxx"
 
-# Run all E2E tests
-pytest tests/integration/test_e2e_feishu_graphrag.py -v -m api
-
-# Run specific scenario
-pytest tests/integration/test_e2e_feishu_graphrag.py::TestE2ESingleRound -v -m api
-
 # Run concurrent user tests
 pytest tests/integration/test_concurrent_users.py -v
 ```
@@ -366,7 +359,8 @@ assert_session_completed(events)
 assert_tool_called(events, "graphrag_search_graph")
 ```
 
-See `integration/test_e2e_feishu_graphrag.py` for examples.
+Use the PSKA-side `core/scripts/fastreact_http_sse_e2e.py` for cross-repo
+HTTP/SSE smoke testing.
 
 ## Test Coverage Documentation
 
@@ -378,7 +372,6 @@ For detailed coverage targets, gap analysis, and improvement strategies, see **[
 
 Current status:
 - [x] `test_auto_skills_pytest.py` - Converted to pytest
-- [x] `test_e2e_feishu_graphrag.py` - NEW E2E test suite
 - [x] `test_concurrent_users.py` - NEW concurrent tests
 - [ ] `test_skills_integration.py` - To convert
 - [ ] `test_agent_loop.py` - To convert

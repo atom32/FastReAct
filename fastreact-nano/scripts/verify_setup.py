@@ -229,7 +229,7 @@ def main():
         print("\nNext steps:")
         print("  - Run unit tests: python3 run_tests.py unit")
         print("  - Test with query: python3 -m fastreact 'Hello'")
-        print("  - Start Gateway: python3 -m fastreact.adapters.gateway")
+        print("  - Start HTTP daemon: python3 -m fastreact.adapters.http")
         return 0
     else:
         print("\n[WARNING] Some checks failed. Please fix the issues above.")

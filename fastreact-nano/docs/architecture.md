@@ -19,9 +19,10 @@ Internal APIs may change as long as those surfaces remain compatible.
 - `ToolExecutionService`: validates tool calls, applies permission rules, emits approval requests, executes native/MCP tools, truncates output, and writes audit records.
 - `SkillResolver`: loads skills, selects relevant skills, and injects skill prompt context.
 - `MCPBootstrapper`: lazy-loads MCP servers and refreshes tool registrations when needed.
+- `RunService`: stores durable background run snapshots, leases, replay events, recovery state, and trace summaries.
 - `TaskService`: stores lightweight durable tasks and injects task context.
-- `StoreService`: append-only JSONL storage for sessions, events, tasks, audit, and traces.
-- `Gateway`: transport boundary for HTTP/WebSocket. It delegates business state to services.
+- `StoreService`: append-only JSONL storage for sessions, runs, events, tasks, audit, approvals, runtime spans, and traces.
+- `HTTP adapter`: transport boundary for HTTP/SSE. It delegates business state to services.
 
 ## Control Plane
 
@@ -43,9 +44,13 @@ The JSONL store is intentionally simple:
 ```text
 $FASTRACT_GATEWAY_WORKSPACE/.fastreact/
   sessions.jsonl
+  runs.jsonl
   events.jsonl
+  run_events.jsonl
   tasks.jsonl
+  approvals.jsonl
   audit.jsonl
+  runtime_spans.jsonl
   traces.jsonl
 ```
 

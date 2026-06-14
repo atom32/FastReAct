@@ -1,6 +1,6 @@
 # FastReAct Nano
 
-FastReAct Nano 是 FastReAct 当前主线实现。当前版本的首要形态是 headless agentic service：以 HTTP/SSE 对外提供单智能体循环、工具编排、MCP 调用和事件流服务。Web Gateway 和 Admin 控制台是可选控制面，不是运行 PSKA 集成的必要条件。
+FastReAct Nano 是 FastReAct 当前主线实现。当前版本的首要形态是 headless agentic service：以 HTTP/SSE 对外提供单智能体循环、工具编排、MCP 调用和事件流服务。
 
 ## 快速启动无头服务
 
@@ -218,9 +218,9 @@ replay、approval policy、tenant/user/tool policy、observability、PSKA
 index/replay、policy hot path、MCP transport supervision 等高并发或高
 可靠性基础设施。
 
-## 可选 Web/Gateway 控制面
+## Service 控制台
 
-需要 Admin 控制台或 Gateway 调试时：
+需要本地控制台时：
 
 ```bash
 cd /Users/xudawei/FastReAct/fastreact-nano
@@ -239,9 +239,9 @@ cd ..
 
 启动后访问：
 
-- Web 控制台：http://localhost:3000
-- Gateway 健康检查：http://localhost:9000/health
-- Gateway 状态：http://localhost:9000/api/status
+- Service 控制台：http://localhost:3000/service
+- HTTP daemon 健康检查：http://localhost:8000/health
+- HTTP daemon 状态：http://localhost:8000/ready
 
 控制面鉴权：
 

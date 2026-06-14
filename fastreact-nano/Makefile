@@ -104,9 +104,7 @@ docker-up:
 	@echo '$(GREEN)Starting Docker services...$(NC)'
 	docker-compose up -d
 	@echo '$(GREEN)Services started!$(NC)'
-	@echo 'Gateway: http://localhost:9000'
-	@echo 'Web UI: http://localhost:8501'
-	@echo 'Feishu: http://localhost:8001'
+	@echo 'HTTP daemon: http://localhost:8000'
 
 ## docker-down: Stop all services
 docker-down:
@@ -138,11 +136,6 @@ docker-clean:
 	@echo '$(YELLOW)Removing Docker containers and volumes...$(NC)'
 	docker-compose down -v
 	docker system prune -f
-
-## feishu-test: Test Feishu integration
-feishu-test:
-	@echo '$(GREEN)Testing Feishu integration...$(NC)'
-	python3 test_feishu_gateway_integration.py
 
 ## e2e-test: Run end-to-end tests
 e2e-test:

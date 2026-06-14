@@ -48,12 +48,15 @@ ENV/
 # FastReAct Nano specific
 .fastreact/
 runtime_baseline.json
+release_llm_report.json
 session_data/
 memory.json
 *.log
 config.json
 
 # Workspace data (runtime and testing)
+MagicMock/
+relative/
 workspace/
 workspaces/
 !workspaces/.gitkeep

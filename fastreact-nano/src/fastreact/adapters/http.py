@@ -21,6 +21,7 @@ import uuid
 
 try:
     from fastapi import FastAPI, HTTPException, Request
+    from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel, Field
     import uvicorn
@@ -29,6 +30,7 @@ try:
 except ImportError:  # pragma: no cover - exercised in minimal installs.
     FASTAPI_AVAILABLE = False
     FastAPI = None  # type: ignore[assignment]
+    CORSMiddleware = None  # type: ignore[assignment]
     HTTPException = Exception  # type: ignore[assignment]
     Request = None  # type: ignore[assignment]
     StreamingResponse = None  # type: ignore[assignment]
@@ -42,6 +44,7 @@ except ImportError:  # pragma: no cover - exercised in minimal installs.
 
 from fastreact import Agent, Config
 from fastreact.core.events import AgentEvent
+from fastreact.runtime.run_service import RunService, TERMINAL_RUN_STATUSES
 
 
 SERVICE_EVENT_SCHEMA_VERSION = "fastreact.agent_event.v1"
@@ -50,7 +53,7 @@ MAX_PAGE_LIMIT = 1000
 
 _agent: Optional[Agent] = None
 _service_config = None
-_runs: dict[str, dict[str, Any]] = {}
+_run_tasks: dict[str, asyncio.Task] = {}
 
 
 class ChatRequest(BaseModel):
@@ -85,6 +88,44 @@ class PolicyCheckRequest(BaseModel):
     tenant_key: Optional[str] = None
 
 
+class TaskCreateRequest(BaseModel):
+    title: str
+    description: str = ""
+    priority: str = "normal"
+    owner: str = ""
+    dependencies: list[str] = Field(default_factory=list)
+    session_id: str = ""
+
+
+class TaskUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    owner: Optional[str] = None
+    dependencies: Optional[list[str]] = None
+    session_id: Optional[str] = None
+
+
+class SetupConfigDraftRequest(BaseModel):
+    model: str = "deepseek-v4-flash"
+    api_base: Optional[str] = "https://api.deepseek.com"
+    api_key_file: str = "~/api_key.txt"
+    service_token: Optional[str] = None
+    host: str = "127.0.0.1"
+    port: int = 8000
+    workspace: str = "~/fastreact-workspace"
+    preset: str = "default"
+    include_pska: bool = False
+    pska_command: str = "/Users/xudawei/Documents/personal archive/scripts/pska"
+    pska_http_url: Optional[str] = None
+
+
+class WorkspaceProfileUpdateRequest(BaseModel):
+    agents_md: Optional[str] = None
+    soul_md: Optional[str] = None
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -101,6 +142,7 @@ def get_agent() -> Agent:
 def set_agent_for_testing(agent: Optional[Agent]) -> None:
     global _agent
     _agent = agent
+    _run_tasks.clear()
 
 
 def set_service_config(config: Any) -> None:
@@ -128,6 +170,19 @@ def require_service_auth(request: Request) -> None:  # type: ignore[valid-type]
     if bearer_token == expected or header_token == expected:
         return
     raise HTTPException(status_code=401, detail="FastReAct service token required")
+
+
+def get_run_service(agent: Any | None = None) -> RunService:
+    agent = agent or get_agent()
+    service = getattr(agent, "runs", None)
+    if service:
+        return service
+    store = getattr(agent, "store", None)
+    if not store:
+        raise HTTPException(status_code=503, detail="Durable run store not available")
+    service = RunService(store, event_schema=SERVICE_EVENT_SCHEMA_VERSION)
+    setattr(agent, "runs", service)
+    return service
 
 
 def extract_query(messages: list[dict[str, Any]]) -> str:
@@ -282,64 +337,43 @@ def run_snapshot(record: dict[str, Any], include_events: bool = False) -> dict[s
         "completed_at": record.get("completed_at"),
         "cancelled_at": record.get("cancelled_at"),
         "duration_ms": record.get("duration_ms"),
-        "event_count": len(record.get("events", [])),
+        "event_count": record.get("event_count", len(record.get("events", []))),
         "error": record.get("error"),
         "metadata": record.get("metadata", {}),
+        "attempts": record.get("attempts", 0),
+        "lease_expires_at": record.get("lease_expires_at"),
+        "retry_after": record.get("retry_after"),
+        "worker_id": record.get("worker_id"),
+        "last_error": record.get("last_error"),
     }
     if include_events:
         snapshot["events"] = list(record.get("events", []))
     return snapshot
 
 
-def persist_run_trace(record: dict[str, Any]) -> None:
-    agent = get_agent()
+def task_runs_and_traces(agent: Any, task_id: str, session_id: str | None = None) -> dict[str, Any]:
+    run_service = get_run_service(agent)
+    runs = [
+        run_service.snapshot(run["run_id"]) or run_snapshot(run)
+        for run in run_service.list(limit=0)
+        if run.get("metadata", {}).get("task_id") == task_id or (session_id and run.get("session_id") == session_id)
+    ]
     store = getattr(agent, "store", None)
-    if not store:
-        return
-    events = list(record.get("events", []))
-    final_event = next((event for event in reversed(events) if event.get("type") == "session_end"), None)
-    tool_calls = [event for event in events if event.get("type") == "tool_call"]
-    store.append(
-        "traces",
-        {
-            "trace_type": "background_run",
-            "run_id": record["run_id"],
-            "session_id": record["session_id"],
-            "status": record["status"],
-            "created_at": record["created_at"],
-            "started_at": record.get("started_at"),
-            "completed_at": record.get("completed_at"),
-            "duration_ms": record.get("duration_ms"),
-            "event_count": len(events),
-            "tool_call_count": len(tool_calls),
-            "final_content": final_event.get("content") if final_event else "",
-            "error": record.get("error"),
-            "metadata": record.get("metadata", {}),
-        },
-    )
-
-
-def persist_run_event(record: dict[str, Any], event: dict[str, Any]) -> None:
-    agent = get_agent()
-    store = getattr(agent, "store", None)
-    if not store:
-        return
-    store.append(
-        "events",
-        {
-            **event,
-            "trace_type": "background_run",
-            "run_id": record["run_id"],
-            "session_id": record["session_id"],
-        },
-    )
+    traces = store.read("traces", limit=0) if store else []
+    traces = [
+        trace
+        for trace in traces
+        if trace.get("metadata", {}).get("task_id") == task_id or (session_id and trace.get("session_id") == session_id)
+    ]
+    runs.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+    traces.sort(key=lambda item: item.get("completed_at") or item.get("created_at") or "", reverse=True)
+    return {"runs": runs, "traces": traces}
 
 
 async def execute_background_run(run_id: str) -> None:
-    record = _runs[run_id]
     agent = get_agent()
-    record["status"] = "running"
-    record["started_at"] = utc_now()
+    runs = get_run_service(agent)
+    record = runs.mark_running(run_id)
     started_at = time.perf_counter()
     parent_event_id = None
     sequence = 0
@@ -359,13 +393,11 @@ async def execute_background_run(run_id: str) -> None:
             )
             sequence += 1
             parent_event_id = payload["event_id"]
-            record["events"].append(payload)
-            persist_run_event(record, payload)
-        if record["status"] != "cancelled":
-            record["status"] = "completed"
+            runs.append_event(run_id, payload)
+        latest = runs.get(run_id) or {}
+        if latest.get("status") != "cancelled":
+            runs.complete(run_id)
     except asyncio.CancelledError:
-        record["status"] = "cancelled"
-        record["cancelled_at"] = utc_now()
         payload = {
             "schema": SERVICE_EVENT_SCHEMA_VERSION,
             "type": "error",
@@ -384,12 +416,10 @@ async def execute_background_run(run_id: str) -> None:
             "cited_source_ids": [],
             "metadata": {"error_type": "CancelledError"},
         }
-        record["events"].append(payload)
-        persist_run_event(record, payload)
+        runs.append_event(run_id, payload)
+        runs.cancel(run_id)
         raise
     except Exception as exc:  # noqa: BLE001 - background run should record errors.
-        record["status"] = "failed"
-        record["error"] = str(exc)
         payload = {
             "schema": SERVICE_EVENT_SCHEMA_VERSION,
             "type": "error",
@@ -408,13 +438,10 @@ async def execute_background_run(run_id: str) -> None:
             "cited_source_ids": [],
             "metadata": {"error_type": type(exc).__name__},
         }
-        record["events"].append(payload)
-        persist_run_event(record, payload)
+        runs.append_event(run_id, payload)
+        runs.fail(run_id, str(exc))
     finally:
-        record["completed_at"] = utc_now()
-        record["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
-        persist_run_trace(record)
-        record.pop("task", None)
+        _run_tasks.pop(run_id, None)
 
 
 def readiness_payload(agent: Agent) -> dict[str, Any]:
@@ -455,6 +482,157 @@ def readiness_payload(agent: Agent) -> dict[str, Any]:
     }
 
 
+def workspace_profile_root(agent: Any) -> Path:
+    config = getattr(agent, "_config", None)
+    paths = getattr(config, "paths", None)
+    workspace = getattr(paths, "gateway_workspace", None) or getattr(paths, "workspace", None)
+    return Path(workspace) if workspace else Path.cwd() / "workspaces" / "default"
+
+
+def read_workspace_profile(agent: Any) -> dict[str, Any]:
+    root = workspace_profile_root(agent).expanduser().resolve()
+    files = {
+        "AGENTS.md": root / "AGENTS.md",
+        "SOUL.md": root / "SOUL.md",
+        ".fastreact/AGENT.md": root / ".fastreact" / "AGENT.md",
+        ".fastreact/SOUL.md": root / ".fastreact" / "SOUL.md",
+    }
+    profile_files = []
+    for name, path in files.items():
+        exists = path.exists()
+        content = ""
+        error = None
+        if exists:
+            try:
+                content = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                error = str(exc)
+        profile_files.append(
+            {
+                "name": name,
+                "path": str(path),
+                "exists": exists,
+                "size_bytes": path.stat().st_size if exists and path.is_file() else 0,
+                "content": content,
+                "error": error,
+            }
+        )
+    return {
+        "schema": "fastreact.workspace_profile.v1",
+        "workspace": str(root),
+        "files": profile_files,
+        "editable_files": ["AGENTS.md", "SOUL.md"],
+    }
+
+
+def write_workspace_profile(agent: Any, update: WorkspaceProfileUpdateRequest) -> dict[str, Any]:
+    root = workspace_profile_root(agent).expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    updates = {
+        "AGENTS.md": update.agents_md,
+        "SOUL.md": update.soul_md,
+    }
+    written = []
+    for name, content in updates.items():
+        if content is None:
+            continue
+        path = root / name
+        path.write_text(content, encoding="utf-8")
+        written.append({"name": name, "path": str(path), "size_bytes": path.stat().st_size})
+    profile = read_workspace_profile(agent)
+    profile["written"] = written
+    return profile
+
+
+def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
+    token = request.service_token.strip() if request.service_token else f"fr-{uuid.uuid4().hex}"
+    mcp_servers = []
+    if request.include_pska:
+        if request.pska_http_url:
+            mcp_servers.append(
+                {
+                    "name": "pska",
+                    "transport": "http",
+                    "url": request.pska_http_url,
+                    "isolation": "shared",
+                    "description": "PSKA HTTP MCP endpoint.",
+                }
+            )
+        else:
+            mcp_servers.append(
+                {
+                    "name": "pska",
+                    "transport": "stdio",
+                    "command": request.pska_command,
+                    "args": ["mcp-server"],
+                    "isolation": "shared",
+                    "description": "PSKA personal knowledge store tools.",
+                }
+            )
+    policy = {"default_action": "caution"}
+    if request.include_pska:
+        policy["tenant_rules"] = {
+            "pska": {
+                "tools": {
+                    "exec": "require_approval",
+                    "write_file": "require_approval",
+                    "edit_file": "require_approval",
+                    "pska_pska_search": "allow",
+                    "pska_pska_agentic_search": "allow",
+                    "pska_pska_index_status": "allow",
+                }
+            }
+        }
+    config = {
+        "llm": {
+            "model": request.model,
+            "api_base": request.api_base,
+            "api_key_file": request.api_key_file,
+            "temperature": 0.7,
+            "max_tokens": 4096,
+        },
+        "service": {
+            "host": request.host,
+            "port": request.port,
+            "log_level": "info",
+            "service_token": token,
+            "approval_timeout_seconds": 300,
+            "run_lease_seconds": 300,
+            "run_max_attempts": 3,
+            "recover_queued_runs": True,
+        },
+        "paths": {
+            "gateway_workspace": request.workspace,
+        },
+        "react": {
+            "max_iterations": 20,
+            "max_context_tokens": 128000,
+            "sliding_window_size": 15,
+            "max_tool_output_chars": 5000,
+            "enable_safety": True,
+            "auto_approve_safe": True,
+            "enable_filesystem_memory": True,
+        },
+        "mcp": {
+            "servers": mcp_servers,
+        },
+        "policy": policy,
+    }
+    return {
+        "schema": "fastreact.setup_config_draft.v1",
+        "preset": request.preset,
+        "write_supported": False,
+        "recommended_path": "~/.fastreact/config.json",
+        "service_token": token,
+        "config": config,
+        "warnings": [
+            "This endpoint returns a draft only and does not write ~/.fastreact/config.json.",
+            "The draft uses api_key_file and never includes a raw LLM API key.",
+            "Review MCP commands and policy before using the draft in production.",
+        ],
+    }
+
+
 def _avg(values: list[float]) -> float | None:
     if not values:
         return None
@@ -472,6 +650,98 @@ def _duration_between_ms(start: Any, end: Any) -> float | None:
     return round((ended - started).total_seconds() * 1000, 2)
 
 
+def _sum_llm_usage(records: list[dict[str, Any]]) -> dict[str, int]:
+    totals = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    for record in records:
+        usage = record.get("llm_usage_total") or record.get("metadata", {}).get("llm_usage_total")
+        if not isinstance(usage, dict):
+            continue
+        for key in totals:
+            value = usage.get(key)
+            if isinstance(value, (int, float)):
+                totals[key] += int(value)
+    return {key: value for key, value in totals.items() if value}
+
+
+def policy_payload_for_agent(agent: Any) -> dict[str, Any]:
+    config = getattr(agent, "_config", None)
+    policy = getattr(config, "policy", None)
+    payload = policy.to_safety_policy() if policy else {}
+    return payload
+
+
+def approval_resolution_ms(record: dict[str, Any]) -> float | None:
+    return _duration_between_ms(record.get("created_at"), record.get("resolved_at"))
+
+
+def approval_summary(approvals: list[dict[str, Any]]) -> dict[str, Any]:
+    status_counts: dict[str, int] = {}
+    policy_action_counts: dict[str, int] = {}
+    durations = []
+    for record in approvals:
+        status = str(record.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        action = str(record.get("policy_action") or "none")
+        policy_action_counts[action] = policy_action_counts.get(action, 0) + 1
+        duration = approval_resolution_ms(record)
+        if duration is not None:
+            durations.append(duration)
+    return {
+        "count": len(approvals),
+        "pending_count": sum(1 for item in approvals if item.get("status") == "pending"),
+        "expired_count": sum(1 for item in approvals if item.get("expired") is True),
+        "status_counts": status_counts,
+        "policy_action_counts": policy_action_counts,
+        "avg_resolution_ms": _avg(durations),
+    }
+
+
+def filter_approvals(
+    approvals: list[dict[str, Any]],
+    *,
+    status: str | None = None,
+    session_id: str | None = None,
+    tool_name: str | None = None,
+    policy_action: str | None = None,
+    policy_scope: str | None = None,
+    run_id: str | None = None,
+    task_id: str | None = None,
+    agent: Any | None = None,
+) -> list[dict[str, Any]]:
+    if status:
+        approvals = [item for item in approvals if item.get("status") == status]
+    if session_id:
+        approvals = [item for item in approvals if item.get("session_id") == session_id]
+    if tool_name:
+        approvals = [item for item in approvals if item.get("tool_name") == tool_name]
+    if policy_action:
+        approvals = [item for item in approvals if item.get("policy_action") == policy_action]
+    if policy_scope:
+        approvals = [item for item in approvals if item.get("policy_scope") == policy_scope]
+    if run_id and agent:
+        run = get_run_service(agent).get(run_id) or {}
+        run_session_id = run.get("session_id")
+        approvals = [
+            item
+            for item in approvals
+            if item.get("run_id") == run_id or (run_session_id and item.get("session_id") == run_session_id)
+        ]
+    if task_id and agent:
+        task = getattr(agent, "tasks", None).get(task_id) if getattr(agent, "tasks", None) else None
+        task_session_id = task.get("session_id") if task else None
+        related = task_runs_and_traces(agent, task_id, task_session_id)
+        session_ids = {run.get("session_id") for run in related.get("runs", []) if run.get("session_id")}
+        if task_session_id:
+            session_ids.add(task_session_id)
+        approvals = [
+            item
+            for item in approvals
+            if item.get("task_id") == task_id or (item.get("session_id") in session_ids if session_ids else False)
+        ]
+    approvals.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+    return approvals
+
+
 def metrics_payload(agent: Agent) -> dict[str, Any]:
     """Return lightweight headless-service observability metrics."""
     store = getattr(agent, "store", None)
@@ -481,9 +751,11 @@ def metrics_payload(agent: Agent) -> dict[str, Any]:
     audit = store.read("audit", limit=0) if store else []
     approvals = agent.tool_executor.list_approvals() if hasattr(agent, "tool_executor") else []
 
-    live_runs = [run_snapshot(record) for record in _runs.values()]
+    run_service = get_run_service(agent) if store else None
+    durable_run_stats = run_service.stats() if run_service else {}
+    durable_runs = run_service.list(limit=0) if run_service else []
     all_run_statuses: dict[str, int] = {}
-    for item in [*traces, *live_runs]:
+    for item in [*traces, *durable_runs]:
         status = str(item.get("status") or "unknown")
         all_run_statuses[status] = all_run_statuses.get(status, 0) + 1
 
@@ -518,10 +790,11 @@ def metrics_payload(agent: Agent) -> dict[str, Any]:
         "service_contract": SERVICE_EVENT_SCHEMA_VERSION,
         "timestamp": utc_now(),
         "runs": {
-            "live_count": len(live_runs),
+            "live_count": sum(1 for run in durable_runs if run.get("status") in {"queued", "running"}),
             "trace_count": len(traces),
             "status_counts": all_run_statuses,
             "avg_duration_ms": _avg(trace_durations),
+            "durable": durable_run_stats,
         },
         "events": {
             "total_count": len(events),
@@ -530,6 +803,9 @@ def metrics_payload(agent: Agent) -> dict[str, Any]:
         "tools": {
             "audit_count": len(audit),
             "avg_duration_ms": _avg(tool_durations),
+        },
+        "llm": {
+            "usage_total": _sum_llm_usage(traces),
         },
         "approvals": {
             "count": len(approvals),
@@ -548,7 +824,19 @@ def metrics_payload(agent: Agent) -> dict[str, Any]:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:  # type: ignore[valid-type]
-    get_agent()
+    agent = get_agent()
+    try:
+        runs = get_run_service(agent)
+        runs.recover_stale()
+        service_config = getattr(getattr(agent, "_config", None), "service", None)
+        if getattr(service_config, "recover_queued_runs", True):
+            for record in runs.queued_for_recovery():
+                run_id = record["run_id"]
+                if run_id not in _run_tasks:
+                    _run_tasks[run_id] = asyncio.create_task(execute_background_run(run_id))
+    except Exception:
+        # Readiness and metrics will report degraded dependency state.
+        pass
     yield
 
 
@@ -561,6 +849,26 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         description="Headless agentic service API for FastReAct Nano",
         version="2.4.2",
         lifespan=lifespan,
+    )
+    configured_origins = [
+        origin.strip()
+        for origin in os.getenv("FASTREACT_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:13000",
+            "http://127.0.0.1:13000",
+            "http://localhost:13001",
+            "http://127.0.0.1:13001",
+            *configured_origins,
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.get("/")
@@ -579,6 +887,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "metrics": "GET /v1/metrics",
                 "runs": "POST /v1/runs",
                 "traces": "GET /v1/traces",
+                "tasks": "GET/POST /v1/tasks",
             },
         }
 
@@ -605,6 +914,80 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     async def metrics(request: Request) -> dict[str, Any]:  # type: ignore[valid-type]
         require_service_auth(request)
         return metrics_payload(get_agent())
+
+    @app.get("/v1/setup")
+    async def setup_status(request: Request) -> dict[str, Any]:  # type: ignore[valid-type]
+        require_service_auth(request)
+        agent = get_agent()
+        readiness = readiness_payload(agent)
+        metrics = metrics_payload(agent)
+        config = getattr(agent, "_config", None)
+        service = getattr(config, "service", None)
+        paths = getattr(config, "paths", None)
+        mcp_config = getattr(config, "mcp", None)
+        return {
+            "schema": "fastreact.setup_status.v1",
+            "timestamp": utc_now(),
+            "readiness": readiness,
+            "service": {
+                "host": getattr(service, "host", None),
+                "port": getattr(service, "port", None),
+                "auth_required": configured_service_token() is not None,
+                "approval_timeout_seconds": getattr(service, "approval_timeout_seconds", None),
+                "run_lease_seconds": getattr(service, "run_lease_seconds", None),
+                "recover_queued_runs": getattr(service, "recover_queued_runs", None),
+            },
+            "workspace": {
+                "path": str(workspace_profile_root(agent)),
+                "profile_files": read_workspace_profile(agent)["files"],
+            },
+            "mcp": {
+                "configured_servers": len(getattr(mcp_config, "servers", []) or []),
+                "servers": readiness.get("mcp", {}).get("servers", []),
+                "tools": readiness.get("mcp", {}).get("tools", []),
+            },
+            "paths": {
+                "global_skills_dir": str(getattr(paths, "global_skills_dir", "")),
+                "user_skills_dir": str(getattr(paths, "user_skills_dir", "") or ""),
+                "gateway_workspace": str(getattr(paths, "gateway_workspace", "")),
+            },
+            "metrics": metrics,
+            "presets": {
+                "pska": {
+                    "config_file": "config.pska.example.json",
+                    "protocol_only": True,
+                    "notes": "Use HTTP/SSE plus MCP/HTTP MCP. FastReAct should not import PSKA internals or access the PSKA DB.",
+                }
+            },
+        }
+
+    @app.get("/v1/setup/presets")
+    async def setup_presets(request: Request) -> dict[str, Any]:  # type: ignore[valid-type]
+        require_service_auth(request)
+        return {
+            "schema": "fastreact.setup_presets.v1",
+            "presets": [
+                {
+                    "id": "default",
+                    "label": "Generic single-agent daemon",
+                    "description": "HTTP/SSE daemon with durable runs, approvals, JSONL store, and local workspace profile.",
+                },
+                {
+                    "id": "pska",
+                    "label": "PSKA protocol-only integration",
+                    "description": "Adds PSKA MCP server and tenant-safe policy defaults without importing PSKA internals.",
+                },
+            ],
+            "write_supported": False,
+        }
+
+    @app.post("/v1/setup/config-draft")
+    async def create_setup_config_draft(
+        request: Request,
+        draft_request: SetupConfigDraftRequest,
+    ) -> dict[str, Any]:
+        require_service_auth(request)
+        return setup_config_draft(draft_request)
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request, chat_request: ChatRequest) -> Any:  # type: ignore[valid-type]
@@ -736,38 +1119,28 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         run_id = str(chat_request.metadata.get("run_id") or uuid.uuid4())
-        if run_id in _runs:
+        runs = get_run_service()
+        if runs.get(run_id):
             raise HTTPException(status_code=409, detail="Run already exists")
         session_id = chat_request.session_id or str(uuid.uuid4())
-        record = {
-            "run_id": run_id,
-            "session_id": session_id,
-            "status": "queued",
-            "created_at": utc_now(),
-            "started_at": None,
-            "completed_at": None,
-            "cancelled_at": None,
-            "duration_ms": None,
-            "query": query,
-            "skills": chat_request.skills,
-            "history": extract_history(chat_request.messages),
-            "user_key": chat_request.user_key,
-            "metadata": dict(chat_request.metadata or {}),
-            "events": [],
-            "error": None,
-        }
-        _runs[run_id] = record
+        record = runs.create(
+            run_id=run_id,
+            session_id=session_id,
+            query=query,
+            skills=chat_request.skills,
+            history=extract_history(chat_request.messages),
+            user_key=chat_request.user_key,
+            metadata=dict(chat_request.metadata or {}),
+        )
         task = asyncio.create_task(execute_background_run(run_id))
-        record["task"] = task
-        return {"type": "run", **run_snapshot(record)}
+        _run_tasks[run_id] = task
+        return {"type": "run", **(runs.snapshot(run_id) or run_snapshot(record))}
 
     @app.get("/v1/runs")
     async def list_runs(request: Request, limit: int = 200, status: Optional[str] = None) -> dict[str, Any]:
         require_service_auth(request)
-        runs = [run_snapshot(record) for record in _runs.values()]
-        if status:
-            runs = [run for run in runs if run["status"] == status]
-        runs.sort(key=lambda item: item["created_at"], reverse=True)
+        run_service = get_run_service()
+        runs = [run_service.snapshot(run["run_id"]) or run_snapshot(run) for run in run_service.list(status=status, limit=0)]
         bounded = bounded_limit(limit)
         page = runs if bounded == 0 else runs[:bounded]
         return {
@@ -781,10 +1154,11 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     @app.get("/v1/runs/{run_id}")
     async def get_run(run_id: str, request: Request) -> dict[str, Any]:
         require_service_auth(request)
-        record = _runs.get(run_id)
-        if not record:
+        run_service = get_run_service()
+        snapshot = run_service.snapshot(run_id)
+        if not snapshot:
             raise HTTPException(status_code=404, detail="Run not found")
-        return {"type": "run", **run_snapshot(record)}
+        return {"type": "run", **snapshot}
 
     @app.get("/v1/runs/{run_id}/events")
     async def get_run_events(
@@ -794,10 +1168,12 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         after_sequence: Optional[int] = None,
     ) -> dict[str, Any]:
         require_service_auth(request)
-        record = _runs.get(run_id)
+        run_service = get_run_service()
+        record = run_service.get(run_id)
         if not record:
             raise HTTPException(status_code=404, detail="Run not found")
-        page = page_event_list(record["events"], limit=limit, after_sequence=after_sequence)
+        events = run_service.events(run_id)
+        page = page_event_list(events, limit=limit, after_sequence=after_sequence)
         return {
             "run_id": run_id,
             "session_id": record["session_id"],
@@ -808,17 +1184,17 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     @app.post("/v1/runs/{run_id}/cancel")
     async def cancel_run(run_id: str, request: Request) -> dict[str, Any]:
         require_service_auth(request)
-        record = _runs.get(run_id)
+        run_service = get_run_service()
+        record = run_service.get(run_id)
         if not record:
             raise HTTPException(status_code=404, detail="Run not found")
-        if record["status"] in {"completed", "failed", "cancelled"}:
-            return {"type": "run", **run_snapshot(record)}
-        record["status"] = "cancelled"
-        record["cancelled_at"] = utc_now()
-        task = record.get("task")
+        if record["status"] in TERMINAL_RUN_STATUSES:
+            return {"type": "run", **(run_service.snapshot(run_id) or run_snapshot(record))}
+        record = run_service.cancel(run_id)
+        task = _run_tasks.get(run_id)
         if task and not task.done():
             task.cancel()
-        return {"type": "run", **run_snapshot(record)}
+        return {"type": "run", **(run_service.snapshot(run_id) or run_snapshot(record))}
 
     @app.get("/v1/traces")
     async def list_traces(request: Request, limit: int = 200, session_id: Optional[str] = None) -> dict[str, Any]:
@@ -845,9 +1221,10 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         records = store.read("traces", limit=0, run_id=run_id) if store else []
         if records:
             return {"trace": records[-1]}
-        record = _runs.get(run_id)
-        if record:
-            return {"trace": run_snapshot(record, include_events=False)}
+        run_service = get_run_service(agent)
+        snapshot = run_service.snapshot(run_id, include_events=False)
+        if snapshot:
+            return {"trace": snapshot}
         raise HTTPException(status_code=404, detail="Trace not found")
 
     @app.get("/v1/traces/{run_id}/events")
@@ -860,14 +1237,91 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         require_service_auth(request)
         agent = get_agent()
         store = getattr(agent, "store", None)
-        record = _runs.get(run_id)
-        events = store.read("events", limit=0, run_id=run_id) if store else []
-        if not events and record:
-            events = list(record.get("events", []))
+        run_service = get_run_service(agent)
+        events = run_service.events(run_id)
+        if not events and store:
+            events = store.read("events", limit=0, run_id=run_id)
         if not events:
             raise HTTPException(status_code=404, detail="Trace events not found")
         page = page_event_list(events, limit=limit, after_sequence=after_sequence)
         return {"run_id": run_id, **page}
+
+    @app.get("/v1/tasks")
+    async def list_tasks(
+        request: Request,
+        limit: int = 200,
+        status: Optional[str] = None,
+        owner: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        tasks_service = getattr(agent, "tasks", None)
+        if not tasks_service:
+            raise HTTPException(status_code=503, detail="Task service not available")
+        bounded = bounded_limit(limit)
+        tasks = tasks_service.list(status=status, owner=owner, session_id=session_id, limit=0)
+        if isinstance(tasks, dict):
+            tasks = list(tasks.values())
+            tasks.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+        page = tasks if bounded == 0 else tasks[:bounded]
+        return {
+            "schema": "fastreact.tasks.v1",
+            "tasks": page,
+            "count": len(page),
+            "total_count": len(tasks),
+            "limit": bounded,
+            "has_more": bounded != 0 and len(tasks) > len(page),
+        }
+
+    @app.post("/v1/tasks")
+    async def create_task(request: Request, task_request: TaskCreateRequest) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        tasks_service = getattr(agent, "tasks", None)
+        if not tasks_service:
+            raise HTTPException(status_code=503, detail="Task service not available")
+        if not task_request.title.strip():
+            raise HTTPException(status_code=400, detail="Task title is required")
+        task = tasks_service.create(
+            title=task_request.title.strip(),
+            description=task_request.description,
+            priority=task_request.priority,
+            owner=task_request.owner,
+            dependencies=task_request.dependencies,
+            session_id=task_request.session_id,
+        )
+        return {"schema": "fastreact.tasks.v1", "task": task}
+
+    @app.get("/v1/tasks/{task_id}")
+    async def get_task(task_id: str, request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        tasks_service = getattr(agent, "tasks", None)
+        if not tasks_service:
+            raise HTTPException(status_code=503, detail="Task service not available")
+        task = tasks_service.get(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        related = task_runs_and_traces(agent, task_id, task.get("session_id") or None)
+        return {"schema": "fastreact.tasks.v1", "task": task, **related}
+
+    @app.patch("/v1/tasks/{task_id}")
+    async def update_task(task_id: str, request: Request, task_request: TaskUpdateRequest) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        tasks_service = getattr(agent, "tasks", None)
+        if not tasks_service:
+            raise HTTPException(status_code=503, detail="Task service not available")
+        changes = task_request.model_dump(exclude_unset=True) if hasattr(task_request, "model_dump") else task_request.dict(exclude_unset=True)
+        try:
+            task = tasks_service.update(task_id, **changes)
+        except ValueError as exc:
+            message = str(exc)
+            status_code = 404 if "not found" in message.lower() else 400
+            raise HTTPException(status_code=status_code, detail=message) from exc
+        related = task_runs_and_traces(agent, task_id, task.get("session_id") or None)
+        return {"schema": "fastreact.tasks.v1", "task": task, **related}
 
     @app.post("/run")
     async def run_legacy(request: dict[str, Any]) -> dict[str, str]:
@@ -882,7 +1336,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         agent = get_agent()
         skills = []
         for name in agent.list_skills():
-            skill = agent.skills.get(name)
+            skill = agent.get_skill(name) if hasattr(agent, "get_skill") else getattr(agent, "skills", {}).get(name)
             if skill:
                 skills.append(
                     {
@@ -893,6 +1347,48 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 )
         return {"skills": skills}
 
+    @app.get("/v1/skills/diagnostics")
+    async def skill_diagnostics(request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        agent = get_agent()
+        diagnostics = []
+        available_tools = set(agent.list_tools())
+        mcp_status = agent.list_mcp_server_status() if hasattr(agent, "list_mcp_server_status") else []
+        mcp_by_name = {item.get("name"): item for item in mcp_status if isinstance(item, dict)}
+        for name in agent.list_skills():
+            skill = agent.get_skill(name) if hasattr(agent, "get_skill") else getattr(agent, "skills", {}).get(name)
+            if not skill:
+                continue
+            metadata = skill.metadata
+            missing_tools = [tool for tool in metadata.recommended_tools if tool not in available_tools]
+            missing_mcp_servers = [
+                server_name
+                for server_name in metadata.mcp_servers
+                if not mcp_by_name.get(server_name, {}).get("alive", False)
+            ]
+            diagnostics.append(
+                {
+                    "name": skill.name,
+                    "description": skill.description,
+                    "version": metadata.version,
+                    "tags": metadata.tags,
+                    "dependencies": metadata.dependencies,
+                    "mcp_servers": metadata.mcp_servers,
+                    "recommended_tools": metadata.recommended_tools,
+                    "missing_tools": missing_tools,
+                    "missing_mcp_servers": missing_mcp_servers,
+                    "files": skill.list_files(),
+                    "status": "ready" if not missing_tools and not missing_mcp_servers else "degraded",
+                }
+            )
+        return {
+            "schema": "fastreact.skill_diagnostics.v1",
+            "skills": diagnostics,
+            "count": len(diagnostics),
+            "tools": sorted(available_tools),
+            "mcp_servers": mcp_status,
+        }
+
     @app.get("/v1/tools")
     async def list_tools() -> dict[str, Any]:
         agent = get_agent()
@@ -901,14 +1397,30 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             "mcp_tools": agent.list_mcp_tools() if hasattr(agent, "list_mcp_tools") else [],
         }
 
+    @app.get("/v1/workspace/profile")
+    async def get_workspace_profile(request: Request) -> dict[str, Any]:
+        require_service_auth(request)
+        return read_workspace_profile(get_agent())
+
+    @app.put("/v1/workspace/profile")
+    async def update_workspace_profile(
+        request: Request,
+        update: WorkspaceProfileUpdateRequest,
+    ) -> dict[str, Any]:
+        require_service_auth(request)
+        return write_workspace_profile(get_agent(), update)
+
     @app.get("/v1/policy")
     async def get_policy(request: Request) -> dict[str, Any]:
         require_service_auth(request)
         agent = get_agent()
-        config = getattr(agent, "_config", None)
-        policy = getattr(config, "policy", None)
+        policy_payload = policy_payload_for_agent(agent)
         return {
-            "policy": policy.to_safety_policy() if policy else {},
+            "schema": "fastreact.policy.v1",
+            "policy": policy_payload,
+            "policy_snapshot_hash": RunService.policy_snapshot_hash(policy_payload),
+            "policy_version": RunService.policy_snapshot_hash(policy_payload),
+            "reload_supported": False,
             "actions": ["allow", "caution", "require_approval", "deny"],
             "priority": ["user_rules", "tenant_rules", "tool_rules", "default_action", "built_in_safety"],
             "tenant_inference": "prefix_before_colon_in_user_key",
@@ -951,15 +1463,53 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         }
 
     @app.get("/v1/approvals")
-    async def list_approvals(request: Request) -> dict[str, Any]:
+    async def list_approvals(
+        request: Request,
+        limit: int = 200,
+        status: Optional[str] = None,
+        session_id: Optional[str] = None,
+        tool_name: Optional[str] = None,
+        policy_action: Optional[str] = None,
+        policy_scope: Optional[str] = None,
+        run_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+    ) -> dict[str, Any]:
         require_service_auth(request)
         agent = get_agent()
         executor = getattr(agent, "tool_executor", None)
         approvals = executor.list_approvals() if executor and hasattr(executor, "list_approvals") else []
+        filtered = filter_approvals(
+            approvals,
+            status=status,
+            session_id=session_id,
+            tool_name=tool_name,
+            policy_action=policy_action,
+            policy_scope=policy_scope,
+            run_id=run_id,
+            task_id=task_id,
+            agent=agent,
+        )
+        bounded = bounded_limit(limit)
+        page = filtered if bounded == 0 else filtered[:bounded]
+        summary = approval_summary(filtered)
         return {
-            "approvals": approvals,
-            "count": len(approvals),
-            "pending_count": len([item for item in approvals if item.get("status") == "pending"]),
+            "schema": "fastreact.approvals.v1",
+            "approvals": page,
+            "count": len(page),
+            "total_count": len(filtered),
+            "limit": bounded,
+            "has_more": bounded != 0 and len(filtered) > len(page),
+            "pending_count": summary["pending_count"],
+            "summary": summary,
+            "filters": {
+                "status": status,
+                "session_id": session_id,
+                "tool_name": tool_name,
+                "policy_action": policy_action,
+                "policy_scope": policy_scope,
+                "run_id": run_id,
+                "task_id": task_id,
+            },
         }
 
     @app.get("/v1/approvals/{request_id}")

@@ -1,26 +1,24 @@
 # FastReAct Nano - Docker Compose Configuration
-# Production-ready multi-service deployment
+# Daemon 1.0 default deployment
 
 version: '3.8'
 
 services:
   # ==================================================
-  # Gateway Service (HTTP/WebSocket)
+  # HTTP Agentic Service Daemon
   # ==================================================
-  gateway:
+  service:
     build:
       context: .
       dockerfile: Dockerfile
       target: production
       args:
         MCP_ENABLED: "true"
-        GATEWAY_ENABLED: "true"
-        FEISHU_ENABLED: "false"
     image: fastreact-nano:latest
-    container_name: fastreact-gateway
+    container_name: fastreact-service
     restart: unless-stopped
     ports:
-      - "9000:9000"
+      - "8000:8000"
     volumes:
       - workspace:/workspace
       - config:/root/.fastreact:ro
@@ -30,91 +28,15 @@ services:
       - FASTRACT_API_BASE=${FASTRACT_API_BASE}
       - FASTRACT_TEMPERATURE=${FASTRACT_TEMPERATURE:-0.7}
       - FASTRACT_MAX_TOKENS=${FASTRACT_MAX_TOKENS:-4096}
+      - FASTREACT_SERVICE_TOKEN=${FASTREACT_SERVICE_TOKEN:-}
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
-    networks:
-      - fastreact-network
-
-  # ==================================================
-  # Streamlit Web UI
-  # ==================================================
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: production
-      args:
-        MCP_ENABLED: "true"
-        GATEWAY_ENABLED: "false"
-    image: fastreact-nano:latest
-    container_name: fastreact-web
-    restart: unless-stopped
-    ports:
-      - "8501:8501"
-    volumes:
-      - workspace:/workspace
-      - config:/root/.fastreact:ro
-    environment:
-      - FASTRACT_MODEL=${FASTRACT_MODEL:-gpt-4o-mini}
-      - FASTRACT_API_KEY=${FASTRACT_API_KEY}
-      - STREAMLIT_SERVER_PORT=8501
-      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
-      - STREAMLIT_SERVER_HEADLESS=true
-      - STREAMLIT_LOGGER_LEVEL=info
-    env_file:
-      - .env
-    depends_on:
-      - gateway
-    networks:
-      - fastreact-network
-
-  # ==================================================
-  # Feishu Bot (Multi-Tenant)
-  # ==================================================
-  feishu:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: production
-      args:
-        MCP_ENABLED: "true"
-        GATEWAY_ENABLED: "false"
-        FEISHU_ENABLED: "true"
-    image: fastreact-nano:feishu
-    container_name: fastreact-feishu
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    volumes:
-      - workspace:/workspace
-      - config:/root/.fastreact:ro
-      - feishu-data:/app/feishu_data
-    environment:
-      - FASTRACT_MODEL=${FASTRACT_MODEL:-gpt-4o-mini}
-      - FASTRACT_API_KEY=${FASTRACT_API_KEY}
-      - FEISHU_APP_ID=${FEISHU_APP_ID}
-      - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
-      - FEISHU_ENCRYPT_KEY=${FEISHU_ENCRYPT_KEY:-}
-      - FEISHU_VERIFICATION_TOKEN=${FEISHU_VERIFICATION_TOKEN:-}
-      - FEISHU_CONNECTION_MODE=sdk
-      - FEISHU_AUTO_RECONNECT=true
-      - FEISHU_MULTITENANT=true
-      - FEISHU_BASE_WORKSPACE=/workspace
-      - FEISHU_HOST=0.0.0.0
-      - FEISHU_PORT=8001
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
     networks:
       - fastreact-network
 
@@ -128,15 +50,12 @@ services:
       target: development
       args:
         MCP_ENABLED: "true"
-        GATEWAY_ENABLED: "true"
-        FEISHU_ENABLED: "true"
     image: fastreact-nano:dev
     container_name: fastreact-dev
     profiles:
       - dev
     ports:
-      - "9000:9000"
-      - "8501:8501"
+      - "8000:8000"
       - "8888:8888"
     volumes:
       - .:/app:cached
@@ -209,8 +128,6 @@ volumes:
     name: fastreact-workspace
   config:
     name: fastreact-config
-  feishu-data:
-    name: fastreact-feishu-data
   prometheus-data:
     name: fastreact-prometheus-data
   grafana-data:

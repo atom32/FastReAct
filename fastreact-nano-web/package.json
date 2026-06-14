@@ -7,7 +7,6 @@
     "dev": "next dev --turbo -H 0.0.0.0",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
-    "e2e": "node scripts/frontend-e2e.mjs",
     "lint": "next lint"
   },
   "dependencies": {

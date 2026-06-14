@@ -1,6 +1,7 @@
 """Append-only JSONL store for product control-plane data."""
 
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any, Optional
@@ -9,6 +10,7 @@ from fastreact.core.time import utc_iso
 
 
 SENSITIVE_KEYS = {"api_key", "apikey", "token", "pat", "password", "secret", "authorization"}
+SAFE_TOKEN_USAGE_KEYS = {"prompt_tokens", "completion_tokens", "total_tokens"}
 
 
 class StoreService:
@@ -114,18 +116,54 @@ class StoreService:
                 return record
         return None
 
+    def latest_snapshots(self, stream: str, id_field: str, **filters: Any) -> dict[str, dict[str, Any]]:
+        """Return the latest snapshot per id from an append-only snapshot stream."""
+        latest: dict[str, dict[str, Any]] = {}
+        for record in self.read(stream, limit=0):
+            if not all(record.get(key) == value for key, value in filters.items() if value is not None):
+                continue
+            record_id = record.get(id_field)
+            if record_id:
+                latest[str(record_id)] = record
+        return latest
+
     def upsert_snapshot(self, stream: str, id_field: str, record: dict[str, Any]) -> dict[str, Any]:
         """Append a snapshot record; readers use the latest record per id."""
         if id_field not in record:
             raise ValueError(f"Missing id field: {id_field}")
         return self.append(stream, record)
 
+    def compact_snapshots(self, stream: str, id_field: str) -> dict[str, Any]:
+        """
+        Compact a snapshot stream to one latest record per id.
+
+        Event streams should remain append-only; this helper is for streams such
+        as runs, sessions, tasks, and approvals where latest-snapshot semantics
+        are expected.
+        """
+        latest = self.latest_snapshots(stream, id_field)
+        path = self.stream_path(stream)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with self._lock:
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                for record in latest.values():
+                    handle.write(json.dumps(self.sanitize(record), ensure_ascii=False, default=str) + "\n")
+            os.replace(tmp_path, path)
+        return {
+            "stream": stream,
+            "records": len(latest),
+            "path": str(path),
+        }
+
     @classmethod
     def sanitize(cls, value: Any) -> Any:
         if isinstance(value, dict):
             cleaned = {}
             for key, inner in value.items():
-                if any(secret in str(key).lower() for secret in SENSITIVE_KEYS):
+                key_lower = str(key).lower()
+                if key_lower in SAFE_TOKEN_USAGE_KEYS:
+                    cleaned[key] = cls.sanitize(inner)
+                elif any(secret in key_lower for secret in SENSITIVE_KEYS):
                     cleaned[key] = "***"
                 else:
                     cleaned[key] = cls.sanitize(inner)

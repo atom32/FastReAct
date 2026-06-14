@@ -55,12 +55,6 @@ python3 -m fastreact.adapters.http
 # 访问 http://localhost:8000
 ```
 
-WebSocket Gateway:
-```bash
-python3 -m fastreact.adapters.gateway
-# 访问 http://localhost:8000
-```
-
 ## 💡 使用示例
 
 启动 CLI 后，你可以这样提问：

@@ -7,6 +7,6 @@
   "deploy": {
     "healthcheckPath": "/health",
     "replicas": 1,
-    "startCommand": "python -m fastreact.adapters.gateway --port $PORT"
+    "startCommand": "python -m fastreact.adapters.http --host 0.0.0.0 --port $PORT"
   }
 }

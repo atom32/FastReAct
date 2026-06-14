@@ -35,6 +35,12 @@ class ToolExecutionService:
         self._pending_approvals: dict[str, asyncio.Future] = {}
         self._approval_records: dict[str, dict[str, Any]] = {}
 
+    @property
+    def approval_timeout_seconds(self) -> float:
+        config = getattr(self._agent, "_config", None)
+        service = getattr(config, "service", None)
+        return float(getattr(service, "approval_timeout_seconds", self.DEFAULT_APPROVAL_TIMEOUT_SECONDS))
+
     def assess(
         self,
         tool_name: str,
@@ -52,7 +58,8 @@ class ToolExecutionService:
         request_id = f"approval-{uuid.uuid4().hex[:10]}"
         future = asyncio.get_running_loop().create_future()
         created_at = self._now()
-        expires_at = created_at + timedelta(seconds=self.DEFAULT_APPROVAL_TIMEOUT_SECONDS)
+        timeout_seconds = self.approval_timeout_seconds
+        expires_at = created_at + timedelta(seconds=timeout_seconds)
         self._pending_approvals[request_id] = future
         self._approval_records[request_id] = {
             "request_id": request_id,
@@ -67,11 +74,12 @@ class ToolExecutionService:
             "status": "pending",
             "approved": None,
             "expired": False,
-            "timeout_seconds": self.DEFAULT_APPROVAL_TIMEOUT_SECONDS,
+            "timeout_seconds": timeout_seconds,
             "created_at": self._format_iso(created_at),
             "expires_at": self._format_iso(expires_at),
             "resolved_at": None,
         }
+        self._persist_approval(request_id)
         event = AgentEvent.ask_user(
             decision.reason,
             tool_name,
@@ -82,7 +90,7 @@ class ToolExecutionService:
             "request_id": request_id,
             "decision_level": decision.level.value,
             "pattern_matched": decision.pattern_matched,
-            "timeout_seconds": self.DEFAULT_APPROVAL_TIMEOUT_SECONDS,
+            "timeout_seconds": timeout_seconds,
             "expires_at": self._format_iso(expires_at),
             "policy_scope": decision.policy_scope,
             "policy_action": decision.policy_action,
@@ -91,10 +99,11 @@ class ToolExecutionService:
         self._audit(tool_name, tool_params, decision, None, session_id, request_id=request_id)
         return decision, event
 
-    async def wait_for_approval(self, request_id: str, timeout_seconds: float = 300.0) -> bool:
+    async def wait_for_approval(self, request_id: str, timeout_seconds: Optional[float] = None) -> bool:
         future = self._pending_approvals.get(request_id)
         if not future:
             return False
+        timeout_seconds = self.approval_timeout_seconds if timeout_seconds is None else timeout_seconds
         try:
             result = await asyncio.wait_for(future, timeout=timeout_seconds)
             if isinstance(result, dict):
@@ -117,10 +126,14 @@ class ToolExecutionService:
             self._approval_records[request_id]["expired"] = False
             self._approval_records[request_id]["resolved_at"] = self._now_iso()
             self._approval_records[request_id]["resolution_reason"] = reason
+            self._persist_approval(request_id)
         return True
 
     def list_approvals(self) -> list[dict[str, Any]]:
-        return list(self._approval_records.values())
+        records = dict(self._approval_records)
+        if hasattr(self._agent, "store"):
+            records.update(self._agent.store.latest_snapshots("approvals", "request_id"))
+        return list(records.values())
 
     def _expire_approval(self, request_id: str, timeout_seconds: float) -> None:
         record = self._approval_records.get(request_id)
@@ -132,6 +145,14 @@ class ToolExecutionService:
         record["resolved_at"] = self._now_iso()
         record["resolution_reason"] = "approval_timeout"
         record["timeout_seconds"] = timeout_seconds
+        self._persist_approval(request_id)
+
+    def _persist_approval(self, request_id: str) -> None:
+        if not hasattr(self._agent, "store"):
+            return
+        record = self._approval_records.get(request_id)
+        if record:
+            self._agent.store.upsert_snapshot("approvals", "request_id", record)
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)

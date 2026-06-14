@@ -41,6 +41,7 @@ from fastreact.runtime import (
     SkillResolver,
     MCPBootstrapper,
     StoreService,
+    RunService,
     TaskService,
     TaskCreateTool,
     TaskUpdateTool,
@@ -228,6 +229,11 @@ class Agent:
         # Runtime service boundaries. These keep adapters and public methods
         # away from Agent private state.
         self.store = StoreService.from_agent(self)
+        self.runs = RunService(
+            self.store,
+            lease_seconds=self._config.service.run_lease_seconds,
+            max_attempts=self._config.service.run_max_attempts,
+        )
         self.tasks = TaskService(self.store)
         self._register_task_tools()
         self.sessions = SessionService(self)
@@ -376,6 +382,10 @@ class Agent:
         # This will be injected as a separate system message to preserve cache
         variable_content = ""
 
+        workspace_profile = self._load_workspace_profile_context()
+        if workspace_profile:
+            variable_content += workspace_profile
+
         # === Add Available Tools Section ===
         tools_section = "\n\n# Available Tools\nYou have access to the following tools:\n\n"
 
@@ -492,6 +502,53 @@ class Agent:
 
         return base_prompt, variable_content
 
+    def _load_workspace_profile_context(self, max_chars_per_file: int = 4000) -> str:
+        """Load optional workspace profile files such as AGENTS.md or SOUL.md."""
+        roots = []
+        paths = getattr(self._config, "paths", None)
+        workspace = getattr(paths, "gateway_workspace", None)
+        if workspace:
+            roots.append(Path(workspace))
+        tool_working_dir = getattr(getattr(self._config, "tools", None), "working_dir", None)
+        if tool_working_dir:
+            roots.append(Path(tool_working_dir))
+        roots.append(Path.cwd())
+
+        seen_roots = []
+        for root in roots:
+            root = root.expanduser()
+            if root not in seen_roots:
+                seen_roots.append(root)
+
+        candidates = []
+        for root in seen_roots:
+            candidates.extend([
+                root / "AGENTS.md",
+                root / "SOUL.md",
+                root / ".fastreact" / "AGENT.md",
+                root / ".fastreact" / "SOUL.md",
+            ])
+
+        sections = []
+        seen_files = set()
+        for path in candidates:
+            if path in seen_files or not path.exists() or not path.is_file():
+                continue
+            seen_files.add(path)
+            try:
+                content = path.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if not content.strip():
+                continue
+            if len(content) > max_chars_per_file:
+                content = content[:max_chars_per_file] + "\n[... workspace profile truncated ...]"
+            sections.append(f"## {path.name} ({path})\n{content.strip()}")
+
+        if not sections:
+            return ""
+        return "\n\n# Workspace Profile\nUse these local workspace instructions when they apply.\n\n" + "\n\n".join(sections)
+
     def enable_auto_skill_selection(self, max_skills: int = 3):
         """
         Enable automatic skill selection
@@ -602,6 +659,15 @@ class Agent:
         Returns:
             Compressed message list
         """
+        self._last_compression_metadata = {
+            "compressed": False,
+            "reason": "under_limit",
+            "original_message_count": len(messages),
+            "compressed_message_count": len(messages),
+            "dropped_count": 0,
+            "tool_output_truncation_count": 0,
+            "preserved_message_indices": list(range(len(messages))),
+        }
         # Use config value if not specified
         if recent_count is None:
             recent_count = self._config.react.sliding_window_size
@@ -621,6 +687,7 @@ class Agent:
 
         # Level 2: Sliding window compression
         compressed = []
+        preserved_indices: list[int] = []
 
         # Preserve system prompt if requested
         system_msg = None
@@ -643,9 +710,11 @@ class Agent:
         # Build sliding window
         if system_msg:
             compressed.append(system_msg)
+            preserved_indices.append(messages.index(system_msg))
 
         if initial_query:
             compressed.append(initial_query)
+            preserved_indices.append(initial_query_index)
 
         # Add recent messages (excluding system and initial query)
         recent_messages = []
@@ -663,6 +732,11 @@ class Agent:
             recent_messages = recent_messages[-recent_count:]
 
         compressed.extend(recent_messages)
+        for msg in recent_messages:
+            try:
+                preserved_indices.append(messages.index(msg))
+            except ValueError:
+                pass
 
         # Level 3: Character-level truncation (if still over limit)
         # Estimate compressed tokens
@@ -673,6 +747,7 @@ class Agent:
 
         if compressed_tokens > max_tokens:
             # Truncate tool outputs to fit
+            tool_output_truncation_count = 0
             for msg in compressed:
                 if msg.get("role") == "tool":
                     content = msg.get("content", "")
@@ -681,6 +756,21 @@ class Agent:
                         head = content[:1600]
                         tail = content[-400:] if len(content) > 2000 else ""
                         msg["content"] = f"{head}\n... [Context truncated] ...\n{tail}"
+                        tool_output_truncation_count += 1
+        else:
+            tool_output_truncation_count = 0
+
+        self._last_compression_metadata = {
+            "compressed": True,
+            "reason": "sliding_window" if tool_output_truncation_count == 0 else "sliding_window_and_tool_truncation",
+            "original_message_count": len(messages),
+            "compressed_message_count": len(compressed),
+            "dropped_count": max(0, len(messages) - len(compressed)),
+            "tool_output_truncation_count": tool_output_truncation_count,
+            "preserved_message_indices": sorted(set(preserved_indices)),
+            "estimated_tokens_before": total_tokens,
+            "estimated_tokens_after": compressed_tokens,
+        }
 
         return compressed
 

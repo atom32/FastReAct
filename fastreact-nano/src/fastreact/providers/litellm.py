@@ -111,6 +111,11 @@ class LiteLLMProvider:
             # Configure litellm
             self._configure_litellm()
 
+    @property
+    def model(self) -> str:
+        """Public model name for diagnostics, tests, and lightweight adapters."""
+        return self._model
+
     def _detect_model(self) -> str:
         """Detect model from environment variables"""
         # Check common model variables

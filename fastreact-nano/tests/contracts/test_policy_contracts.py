@@ -126,7 +126,11 @@ def test_headless_policy_inspection_and_dry_run_endpoints(monkeypatch):
         policy_response = client.get("/v1/policy", headers=headers)
         assert policy_response.status_code == 200
         policy_payload = policy_response.json()
+        assert policy_payload["schema"] == "fastreact.policy.v1"
         assert policy_payload["policy"]["tool_rules"]["exec"] == "require_approval"
+        assert policy_payload["policy_snapshot_hash"]
+        assert policy_payload["policy_version"] == policy_payload["policy_snapshot_hash"]
+        assert policy_payload["reload_supported"] is False
         assert "require_approval" in policy_payload["actions"]
 
         denied = client.post(

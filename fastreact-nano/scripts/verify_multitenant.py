@@ -262,7 +262,7 @@ def main():
     if passed == total:
         print_success(f"所有测试通过 ({passed}/{total})")
         print("\n下一步:")
-        print("  1. 启动 Gateway: python -m fastreact.adapters.gateway")
+        print("  1. 启动 HTTP daemon: python -m fastreact.adapters.http")
         print("  2. 运行端到端测试: python tests/integration/test_multitenant_e2e.py")
         print("  3. 启动前端测试: cd ../fastreact-nano-web && npm run dev")
         return 0

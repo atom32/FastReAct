@@ -137,17 +137,15 @@ docker-compose logs -f
 
 The Docker Compose setup includes:
 
-- **gateway**: HTTP/WebSocket API (port 9000)
-- **web**: Streamlit WebUI (port 8501)
-- **feishu**: Feishu bot adapter (port 8001, optional)
+- **service**: HTTP/SSE agentic service daemon (port 8000)
 - **prometheus**: Monitoring (port 9090, optional)
 - **grafana**: Metrics dashboard (port 3000, optional)
 
 #### Starting Specific Services
 
 ```bash
-# Start only gateway and web
-docker-compose up -d gateway web
+# Start the HTTP daemon
+docker-compose up -d service
 
 # Start with monitoring
 docker-compose --profile monitoring up -d
@@ -165,8 +163,8 @@ docker-compose down
 # Stop and remove volumes (clean slate)
 docker-compose down -v
 
-# View logs for a specific service
-docker-compose logs -f gateway
+# View logs for the daemon
+docker-compose logs -f service
 ```
 
 #### Production Configuration
@@ -289,13 +287,9 @@ FASTREACT_API_KEY=sk-your-api-key-here
 FASTREACT_TEMPERATURE=0.7
 FASTREACT_MAX_TOKENS=4096
 
-# Optional: Service ports
-GATEWAY_PORT=9000
-WEBUI_PORT=8501
+# Optional: Service port
+FASTREACT_SERVICE_PORT=8000
 
-# Optional: Feishu bot (if using)
-# FEISHU_APP_ID=your-app-id
-# FEISHU_APP_SECRET=your-app-secret
 ```
 
 ### Config File (Alternative)
@@ -380,10 +374,10 @@ echo "FASTREACT_API_KEY=sk-your-key" >> .env
 
 ```bash
 # Change port in .env
-echo "GATEWAY_PORT=9001" >> .env
+echo "FASTREACT_SERVICE_PORT=8002" >> .env
 
 # Or find and stop the conflicting service
-lsof -i :9000
+lsof -i :8000
 ```
 
 #### Connection Refused
@@ -393,10 +387,10 @@ lsof -i :9000
 docker-compose ps
 
 # Restart service
-docker-compose restart gateway
+docker-compose restart service
 
 # Check logs
-docker-compose logs -f gateway
+docker-compose logs -f service
 ```
 
 ### Getting Help
@@ -449,7 +443,6 @@ After deployment:
 1. [Read the User Guide](../README_NANO.md)
 2. [Explore Adapters](../docs/ADAPTERS.md)
 3. [Build Custom Tools](../docs/TOOLS.md)
-4. [Configure Feishu Bot](../docs/FEISHU.md)
 5. [Set Up Monitoring](../docs/MONITORING.md)
 
 ---

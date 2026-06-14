@@ -89,7 +89,6 @@ def main():
             (["python3", str(project_root / "run_tests.py"), "all"], "All Default Tests"),
             (["npm", "run", "build"], "Frontend Build"),
             (["npm", "audit", "--omit=dev"], "Frontend Production Audit"),
-            (["python3", str(project_root / "scripts" / "frontend_e2e.py")], "Frontend E2E"),
             (["python3", str(project_root / "run_tests.py"), "release-llm"], "Release LLM Efficiency Gate"),
         ]
         for cmd, description in checks:

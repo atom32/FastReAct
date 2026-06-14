@@ -24,7 +24,6 @@ from fastreact.core.config import (
     ReactConfig,
     MCPConfig,
     MCPServerConfig,
-    FeishuConfig,
 )
 
 
@@ -868,42 +867,3 @@ class TestMCPConfiguration:
         assert server.per_user_args_template is None
         assert server.idle_timeout == 300
         assert server.max_instances == 10
-
-
-class TestFeishuConfiguration:
-    """Test Feishu configuration"""
-
-    def test_feishu_defaults(self, clean_env):
-        """Test Feishu configuration defaults"""
-        config = FeishuConfig()
-
-        assert config.connection_mode == "sdk"
-        assert config.app_id == ""
-        assert config.app_secret == ""
-        assert config.encrypt_key == ""
-        assert config.verification_token == ""
-        assert config.host == "0.0.0.0"
-        assert config.port == 8001
-        assert config.webhook_path == "/webhook/feishu"
-        assert config.auto_reconnect is True
-        assert config.log_level == "info"
-        assert config.enable_multitenant is True
-        assert config.base_workspace is None
-
-    def test_feishu_from_env(self, clean_env):
-        """Test Feishu configuration from environment"""
-        os.environ["FEISHU_CONNECTION_MODE"] = "webhook"
-        os.environ["FEISHU_APP_ID"] = "cli_test_id"
-        os.environ["FEISHU_APP_SECRET"] = "test_secret"
-        os.environ["FEISHU_HOST"] = "localhost"
-        os.environ["FEISHU_PORT"] = "9000"
-        os.environ["FEISHU_WORKSPACE"] = "/workspace"
-
-        config = FeishuConfig.from_env()
-
-        assert config.connection_mode == "webhook"
-        assert config.app_id == "cli_test_id"
-        assert config.app_secret == "test_secret"
-        assert config.host == "localhost"
-        assert config.port == 9000
-        assert config.base_workspace == Path("/workspace")

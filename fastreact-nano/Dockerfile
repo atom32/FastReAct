@@ -5,9 +5,7 @@
 FROM python:3.11-slim AS base-builder
 
 # Set build arguments for optional features
-ARG FEISHU_ENABLED=false
 ARG MCP_ENABLED=true
-ARG GATEWAY_ENABLED=true
 
 WORKDIR /build
 
@@ -24,14 +22,8 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 
 # Build extras list based on features
-RUN if [ "$FEISHU_ENABLED" = "true" ]; then \
-        EXTRAS="$EXTRAS,feishu"; \
-    fi && \
-    if [ "$MCP_ENABLED" = "true" ]; then \
+RUN if [ "$MCP_ENABLED" = "true" ]; then \
         EXTRAS="$EXTRAS,mcp"; \
-    fi && \
-    if [ "$GATEWAY_ENABLED" = "true" ]; then \
-        EXTRAS="$EXTRAS,gateway"; \
     fi && \
     echo "Installing with extras: [$EXTRAS]" && \
     pip install --no-cache-dir --upgrade pip setuptools wheel && \
@@ -80,16 +72,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:9000/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Expose ports
-# 8501: Streamlit Web UI
-# 9000: Gateway HTTP/WebSocket
-# 8001: Feishu Webhook (optional)
-EXPOSE 8501 9000 8001
+# 8000: HTTP daemon
+# 8000: HTTP daemon
+EXPOSE 8000
 
 # Default command (can be overridden)
-CMD ["python", "-m", "fastreact.adapters.gateway"]
+CMD ["python", "-m", "fastreact.adapters.http", "--host", "0.0.0.0", "--port", "8000"]
 
 # Stage 3: Development Environment
 FROM production AS development

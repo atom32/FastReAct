@@ -270,33 +270,6 @@ def sample_config_dict():
     }
 
 
-# ============================================================================
-# Mock Feishu Client Fixtures
-# ============================================================================
-
-@pytest.fixture
-def mock_feishu_client():
-    """
-    Mock Feishu client for testing
-
-    Provides a mock implementation that simulates Feishu events
-    without requiring real credentials or WebSocket connections.
-    """
-    from tests.helpers.mock_feishu_client import MockFeishuClient
-    return MockFeishuClient()
-
-
-@pytest.fixture
-def test_feishu_users():
-    """
-    Test Feishu user data
-
-    Returns dict of test users with user_id, chat_id, and name.
-    """
-    from tests.helpers.mock_feishu_client import TEST_FEISHU_USERS
-    return TEST_FEISHU_USERS
-
-
 @pytest.fixture
 def config_with_real_llm():
     """

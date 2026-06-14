@@ -86,34 +86,35 @@ whether FastReAct Nano feels complete as a single-agent framework rather than
 just feature-rich.
 
 - Productize run/job contracts for durable background execution.
-  The first background run API exists, but release-quality daemon behavior still
-  needs durable persistence, retry/backoff, leases, crash recovery, event replay
-  from storage, and clear concurrency limits.
+  Durable JSONL run snapshots, leases, stale-run recovery, cancellation, and
+  replay events now exist for the single-process daemon. Remaining work is
+  clearer retry/backoff policy, concurrency limits, and multi-worker leasing
+  semantics before treating it as a high-concurrency daemon.
 
 - Formalize the first run/trace implementation.
-  Preserve the current `/v1/runs/*` and `/v1/traces/*` HTTP contract while
-  replacing in-process run state with a durable queue. The first replay
-  pagination contract exists through ascending `sequence`, `limit`,
-  `after_sequence`, `next_after_sequence`, and `has_more`; continue formalizing
-  redaction, retention, compaction, durable replay consistency, and migration
-  behavior before treating the API as stable daemon infrastructure.
+  The `/v1/runs/*` and `/v1/traces/*` contracts now read durable replay events
+  ordered by ascending `sequence`, with pagination through `limit`,
+  `after_sequence`, `next_after_sequence`, and `has_more`. Remaining work is
+  retention policy, migration behavior, and deeper replay consistency checks
+  across future multi-worker deployments.
 
 - Make context compression verifiable and replayable.
-  Current context window and truncation support are useful, but compression
-  should preserve a traceable summary chain, cite what was compressed, and make
-  it possible to inspect why a later agent step still has enough context.
+  Compression now emits auditable metadata about preserved message indices,
+  dropped count, truncation count, and estimated token counts. Remaining work is
+  a true summary chain that cites what was compressed and why the later step has
+  enough context.
 
 - Productize run trace persistence and replay through a public service API.
-  Traces and audit data exist as infrastructure, but operators and PSKA clients
-  need stable endpoints to fetch a completed run, inspect event order, replay
-  tool decisions, and diagnose failures without reading internal files.
+  Public trace endpoints can fetch completed run summaries and replay ordered
+  events without reading internal files. Remaining work is richer operator
+  diagnosis around policy decisions, retention, and redaction previews.
 
 - Finish approval policy at the product layer.
   The headless approval API, deny-by-timeout default, and approval metadata
-  exist. PSKA still needs a UI or policy client that consumes `ask_user`,
-  applies caller/user/tool policy, and resolves `/v1/approvals/*`. FastReAct
-  still needs configurable timeout defaults and operator-approved mode
-  documentation.
+  exist, and FastReAct now supports configurable timeout defaults plus
+  operator-approved HTTP resolution. PSKA still needs a UI or policy client that
+  consumes `ask_user`, applies caller/user/tool policy, and resolves
+  `/v1/approvals/*`.
 
 - Add per-tool, per-user, and per-tenant policy controls.
   The config, validation errors, dry-run contracts, and first policy audit
@@ -130,12 +131,14 @@ just feature-rich.
 - Improve service observability.
   Stable health/readiness, JSONL store stats, run metrics, latency, tool
   duration, approval duration, and error summaries are now exposed through
-  `/v1/metrics` without requiring Web/Gateway internals. Token/model usage
-  should be added once provider usage data is captured consistently.
+  `/v1/metrics` without requiring legacy WebSocket internals. Provider token usage is
+  now captured from LLM responses when available and summarized in trace and
+  metrics payloads. Remaining work is cost accounting and model/provider
+  breakdowns.
 
 - Keep the single-agent core small and explicit.
-  Continue separating headless service/runtime from optional adapters, Web,
-  Feishu/Telegram/WeChat, and admin surfaces so "Nano" remains an architecture
+  Continue separating headless service/runtime from optional UI and integration
+  presets so "Nano" remains an architecture
   boundary rather than an accidental bundle of every integration.
 
 - Make PSKA/FastReAct cross-repo E2E a first-class gate.

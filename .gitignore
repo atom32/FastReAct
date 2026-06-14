@@ -13,6 +13,7 @@ node_modules/
 # Testing
 /coverage
 /docs_archive/v1_code/
+/docs_archive/nano_debug/
 
 # Production
 /out/
@@ -39,10 +40,16 @@ fastreact-nano/MagicMock/
 MagicMock/
 workspace/
 workspaces/
+relative/
+fastreact-nano/workspace/
+fastreact-nano/workspaces/
+fastreact-nano/relative/
+fastreact-nano/.fastreact/
+fastreact-nano/.pytest_cache/
+fastreact-nano/src/*.egg-info/
 .claude/settings.local.json
 
 # Test and debug files (keep repo clean)
-docs_archive/nano_debug/
 fastreact-nano/docs_archive/sprints/
 fastreact-nano/examples/testing/
 fastreact-nano/tests/fixtures/
