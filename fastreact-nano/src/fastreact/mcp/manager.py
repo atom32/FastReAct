@@ -12,7 +12,7 @@ from pathlib import Path
 from fastreact.mcp.client import SimpleMCPClient
 from fastreact.mcp.http_client import StreamableHTTPMCPClient
 from fastreact.core.tools import ToolRegistry, Tool
-from fastreact.core.credentials import Credentials
+from fastreact.core.credentials import Credentials, get_credentials
 
 if TYPE_CHECKING:
     from fastreact.core.multitenant import UserContext
@@ -211,7 +211,7 @@ class MCPToolManager:
         self._servers: Dict[str, Union[SimpleMCPClient, StreamableHTTPMCPClient]] = {}
         self._tool_wrappers: Dict[str, MCPToolWrapper] = {}
         self._isolation_mode = isolation_mode
-        self._credentials = credentials or Credentials()
+        self._credentials = credentials or get_credentials()
 
         # Store server configs for resurrection (Zombie Process Resurrection)
         self._server_configs: Dict[str, Dict[str, Any]] = {}

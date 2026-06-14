@@ -119,7 +119,7 @@ class StreamableHTTPMCPClient:
 
         except httpx.ConnectError as e:
             raise RuntimeError(f"Failed to connect to MCP server: {e}")
-        except httpx.TimeoutError as e:
+        except httpx.TimeoutException as e:
             raise RuntimeError(f"Connection timeout: {e}")
         except Exception as e:
             raise RuntimeError(f"Failed to initialize HTTP MCP client: {e}")
