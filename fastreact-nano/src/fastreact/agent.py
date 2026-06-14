@@ -825,6 +825,9 @@ class Agent:
                     command = server_config.command
                     args = server_config.args
                     env = server_config.env
+                    transport = server_config.transport
+                    url = server_config.url
+                    auth_token_ref = server_config.auth_token_ref
                     description = server_config.description
                     associated_skill = server_config.associated_skill
                     isolation = server_config.isolation
@@ -833,6 +836,9 @@ class Agent:
                     command = server_config.get("command", "")
                     args = server_config.get("args", [])
                     env = server_config.get("env")
+                    transport = server_config.get("transport", "stdio")
+                    url = server_config.get("url")
+                    auth_token_ref = server_config.get("auth_token_ref")
                     description = server_config.get("description")
                     associated_skill = server_config.get("associated_skill")
                     isolation = server_config.get("isolation", "shared")
@@ -873,9 +879,12 @@ class Agent:
                     # Single-tenant mode: Load all servers immediately
                     await self._mcp_manager.add_server(
                         name=server_name,
+                        transport=transport,
                         server_command=command,
                         server_args=args,
                         env=env,
+                        url=url,
+                        auth_token_ref=auth_token_ref,
                     )
 
                     # Index tools for discovery

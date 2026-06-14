@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 from typing import Any, Optional, Dict, AsyncIterator
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -28,8 +28,8 @@ class StreamableHTTPMCPClient:
     - Compatible interface with SimpleMCPClient
 
     Protocol:
-    - Base URL: http://host:port
-    - Endpoint: /message (MCP standard endpoint)
+    - URL with no path, e.g. http://host:port, uses legacy POST /message
+    - URL with a path, e.g. http://host:port/mcp, is treated as the MCP endpoint
     - Auth: Bearer token in Authorization header
     """
 
@@ -43,7 +43,8 @@ class StreamableHTTPMCPClient:
         Initialize HTTP MCP client
 
         Args:
-            base_url: Base URL of MCP server (e.g., "http://localhost:8000")
+            base_url: Base URL or endpoint URL of MCP server
+                (e.g., "http://localhost:8000" or "http://localhost:8000/mcp")
             auth_token: OAuth 2.1 Bearer token for authentication
             timeout: Request timeout in seconds
         """
@@ -55,6 +56,18 @@ class StreamableHTTPMCPClient:
 
         # HTTP client with connection pooling
         self._client: Optional[httpx.AsyncClient] = None
+
+    def _message_url(self) -> str:
+        parsed = urlparse(self._base_url)
+        if parsed.path and parsed.path != "/":
+            return self._base_url
+        return urljoin(self._base_url, "/message")
+
+    def _events_url(self) -> str:
+        parsed = urlparse(self._base_url)
+        if parsed.path and parsed.path != "/":
+            return self._base_url
+        return urljoin(self._base_url, "/events")
 
     async def connect(self) -> None:
         """
@@ -227,7 +240,7 @@ class StreamableHTTPMCPClient:
         if not self._connected:
             raise RuntimeError("Not connected to MCP server")
 
-        sse_url = urljoin(self._base_url, "/events")
+        sse_url = self._events_url()
         retry_count = 0
         backoff = initial_backoff
 
@@ -324,7 +337,7 @@ class StreamableHTTPMCPClient:
         if not self._client:
             raise RuntimeError("HTTP MCP client not connected")
 
-        url = urljoin(self._base_url, "/message")
+        url = self._message_url()
 
         try:
             response = await self._client.post(url, json=request)

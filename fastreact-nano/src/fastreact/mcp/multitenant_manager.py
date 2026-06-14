@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 
 from fastreact.core.time import utc_now
 from fastreact.mcp.client import SimpleMCPClient
+from fastreact.mcp.http_client import StreamableHTTPMCPClient
 from fastreact.mcp.manager import MCPToolManager, MCPToolWrapper
 from fastreact.core.tools import ToolRegistry
 
@@ -117,7 +118,7 @@ class MultiTenantMCPManager:
         server_name: str,
         server_config: "MCPServerConfig",
         user_key: Optional[str] = None,
-    ) -> tuple[MCPToolManager, Optional[SimpleMCPClient]]:
+    ) -> tuple[MCPToolManager, Optional[SimpleMCPClient | StreamableHTTPMCPClient]]:
         """
         Get MCP manager and client for a specific user and server.
 
@@ -127,7 +128,7 @@ class MultiTenantMCPManager:
             user_key: User identifier (required for per_user and lazy_per_user modes)
 
         Returns:
-            Tuple of (MCPToolManager, Optional[SimpleMCPClient])
+            Tuple of (MCPToolManager, optional underlying MCP client)
 
         Raises:
             ValueError: If user_key is required but not provided
@@ -171,6 +172,8 @@ class MultiTenantMCPManager:
                 server_command=server_config.command,
                 server_args=server_config.args,
                 env=server_config.env,
+                url=server_config.url,
+                auth_token_ref=server_config.auth_token_ref,
             )
             self._shared_managers[server_name] = manager
 
@@ -205,6 +208,8 @@ class MultiTenantMCPManager:
                 server_command=server_config.command,
                 server_args=args,
                 env=server_config.env,
+                url=server_config.url,
+                auth_token_ref=server_config.auth_token_ref,
             )
 
             # Wrap in lazy instance (no timeout for per_user mode)
@@ -268,6 +273,8 @@ class MultiTenantMCPManager:
             server_command=server_config.command,
             server_args=args,
             env=server_config.env,
+            url=server_config.url,
+            auth_token_ref=server_config.auth_token_ref,
         )
 
         idle_timeout = server_config.idle_timeout or 300
