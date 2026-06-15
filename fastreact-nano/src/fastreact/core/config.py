@@ -284,6 +284,7 @@ class ServiceConfig:
     run_lease_seconds: float = 300.0
     run_max_attempts: int = 3
     recover_queued_runs: bool = True
+    rate_limit_per_hour: int = 0
 
     @classmethod
     def from_env(cls, api_key_file: Optional[Path] = None) -> "ServiceConfig":
@@ -297,6 +298,7 @@ class ServiceConfig:
             run_lease_seconds=float(os.getenv("FASTREACT_RUN_LEASE_SECONDS", "300")),
             run_max_attempts=int(os.getenv("FASTREACT_RUN_MAX_ATTEMPTS", "3")),
             recover_queued_runs=os.getenv("FASTREACT_RECOVER_QUEUED_RUNS", "true").lower() == "true",
+            rate_limit_per_hour=int(os.getenv("FASTREACT_RATE_LIMIT_PER_HOUR", "0")),
         )
 
     @classmethod
@@ -311,6 +313,7 @@ class ServiceConfig:
             run_lease_seconds=float(data.get("run_lease_seconds", 300.0)),
             run_max_attempts=int(data.get("run_max_attempts", 3)),
             recover_queued_runs=bool(data.get("recover_queued_runs", True)),
+            rate_limit_per_hour=int(data.get("rate_limit_per_hour", 0)),
         )
 
 

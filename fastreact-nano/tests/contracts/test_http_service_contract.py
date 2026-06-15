@@ -8,9 +8,11 @@ from fastreact.adapters.http import (
     readiness_payload,
     service_event_payload,
     set_agent_for_testing,
+    set_service_config,
     sse_frame,
     summarize_events,
 )
+from fastreact.core.config import ServiceConfig
 from fastreact.core.events import AgentEvent
 from fastreact.runtime.run_service import RunService
 
@@ -307,6 +309,62 @@ def test_chat_completions_streaming_endpoint_emits_sse_frames():
     assert "event: session_start" in text
     assert "event: tool_call" in text
     assert "event: done" in text
+
+
+def test_chat_completions_rate_limit_returns_429():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    set_agent_for_testing(FakeAgent())
+    set_service_config(ServiceConfig(rate_limit_per_hour=1))
+    try:
+        client = testclient.TestClient(create_app())
+        body = {
+            "messages": [{"role": "user", "content": "search Atlas"}],
+            "stream": False,
+            "user_key": "web:alice",
+        }
+        first = client.post("/v1/chat/completions", json=body)
+        second = client.post("/v1/chat/completions", json=body)
+    finally:
+        set_agent_for_testing(None)
+        set_service_config(ServiceConfig())
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert "Rate limit exceeded" in second.json()["detail"]
+
+
+def test_background_run_create_rate_limit_returns_429(tmp_path):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    set_agent_for_testing(FakeTaskAgent(tmp_path / "rate-limit-agent"))
+    set_service_config(ServiceConfig(rate_limit_per_hour=1))
+    try:
+        client = testclient.TestClient(create_app())
+        first = client.post(
+            "/v1/runs",
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "user_key": "web:bob",
+                "metadata": {"run_id": "rate-limit-run-1"},
+            },
+        )
+        second = client.post(
+            "/v1/runs",
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "user_key": "web:bob",
+                "metadata": {"run_id": "rate-limit-run-2"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+        set_service_config(ServiceConfig())
+
+    assert first.status_code == 200
+    assert second.status_code == 429
 
 
 def test_readiness_payload_has_deployment_contract_fields(monkeypatch):

@@ -54,6 +54,7 @@ MAX_PAGE_LIMIT = 1000
 _agent: Optional[Agent] = None
 _service_config = None
 _run_tasks: dict[str, asyncio.Task] = {}
+_rate_limit_windows: dict[str, dict[str, float | int]] = {}
 
 
 class ChatRequest(BaseModel):
@@ -143,6 +144,7 @@ def set_agent_for_testing(agent: Optional[Agent]) -> None:
     global _agent
     _agent = agent
     _run_tasks.clear()
+    _rate_limit_windows.clear()
 
 
 def set_service_config(config: Any) -> None:
@@ -170,6 +172,28 @@ def require_service_auth(request: Request) -> None:  # type: ignore[valid-type]
     if bearer_token == expected or header_token == expected:
         return
     raise HTTPException(status_code=401, detail="FastReAct service token required")
+
+
+def require_rate_limit(user_key: Optional[str]) -> None:
+    limit = int(getattr(_service_config, "rate_limit_per_hour", 0) or 0)
+    if limit <= 0:
+        return
+
+    identity = user_key or "anonymous"
+    now = time.time()
+    window = _rate_limit_windows.get(identity)
+    if not window or now - float(window["started_at"]) >= 3600:
+        _rate_limit_windows[identity] = {"started_at": now, "count": 1}
+        return
+
+    count = int(window["count"])
+    if count >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded for user '{identity}': {limit}/hour",
+            headers={"Retry-After": str(max(1, int(3600 - (now - float(window["started_at"])))))},
+        )
+    window["count"] = count + 1
 
 
 def get_run_service(agent: Any | None = None) -> RunService:
@@ -936,6 +960,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "approval_timeout_seconds": getattr(service, "approval_timeout_seconds", None),
                 "run_lease_seconds": getattr(service, "run_lease_seconds", None),
                 "recover_queued_runs": getattr(service, "recover_queued_runs", None),
+                "rate_limit_per_hour": getattr(service, "rate_limit_per_hour", 0),
             },
             "workspace": {
                 "path": str(workspace_profile_root(agent)),
@@ -992,6 +1017,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request, chat_request: ChatRequest) -> Any:  # type: ignore[valid-type]
         require_service_auth(request)
+        require_rate_limit(chat_request.user_key)
         if not chat_request.messages:
             raise HTTPException(status_code=400, detail="No messages provided")
 
@@ -1111,6 +1137,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     @app.post("/v1/runs")
     async def create_run(request: Request, chat_request: ChatRequest) -> dict[str, Any]:
         require_service_auth(request)
+        require_rate_limit(chat_request.user_key)
         if not chat_request.messages:
             raise HTTPException(status_code=400, detail="No messages provided")
         try:
