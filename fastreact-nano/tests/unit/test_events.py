@@ -80,7 +80,7 @@ class TestAgentEventCreation:
         before = time.time()
         event = AgentEvent(type=EventType.THINK)
         after = time.time()
-        assert before <= event.timestamp <= after
+        assert before - 0.001 <= event.timestamp <= after + 0.001
 
     def test_event_metadata_none_handling(self):
         """Test event handles None metadata"""

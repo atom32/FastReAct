@@ -112,6 +112,7 @@ def run_digest_job(config: DigestWorkerConfig, job_id: str, *, http: JsonHttpCli
             batch_count += 1
             response = _run_fastreact_digest(config, job_id, batch, http=http)
             _raise_on_fastreact_error(response)
+            tool_budget = _digest_tool_budget_summary(response)
             fastreact_runs.append(
                 {
                     "run_id": response.get("run_id"),
@@ -119,6 +120,7 @@ def run_digest_job(config: DigestWorkerConfig, job_id: str, *, http: JsonHttpCli
                     "next_cursor": batch.get("next_cursor"),
                     "content": response.get("content"),
                     "tool_calls": response.get("tool_calls") or [],
+                    **tool_budget,
                 }
             )
             if not batch.get("has_more"):
@@ -194,7 +196,10 @@ def _run_fastreact_digest(
         "Allowed tools: pska_pska_write_candidates only, plus pska_pska_job_context only if the batch context is missing. "
         "Do not use built-in tools such as exec, read_file, write_file, or edit_file. "
         "Do not inspect local code, local files, package modules, or environment state.\n"
+        "Tool budget for this batch: pska_pska_write_candidates <= 1 and pska_pska_job_context <= 1. "
         "If there is useful grounded knowledge, call pska_pska_write_candidates at most once. "
+        "Merge all summaries, memory_candidates, review_items, and action candidates into one pska_pska_write_candidates payload. "
+        "Do not split write calls by candidate category, source, confidence, or citation group. "
         "Every candidate must include schema_version='pska.candidates.v1', job_id, source_refs, confidence, and producer='fastreact'. "
         "Low-confidence, sensitive, or high-impact suggestions must be review_items, not direct memory writes. "
         "If there is no useful candidate, do not call tools; return a short final JSON summary. "
@@ -207,7 +212,8 @@ def _run_fastreact_digest(
                 "role": "system",
                 "content": (
                     "You are FastReAct executing a constrained PSKA digest worker. "
-                    "Use only PSKA MCP tools named in the user message. Never use local shell or file tools."
+                    "Use only PSKA MCP tools named in the user message. Never use local shell or file tools. "
+                    "One digest batch may make at most one pska_pska_write_candidates call."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -341,6 +347,24 @@ def _summarize_tool_calls(events: list[Any]) -> list[dict[str, Any]]:
             }
         )
     return summaries
+
+
+def _digest_tool_budget_summary(response: dict[str, Any]) -> dict[str, Any]:
+    write_count = _count_tool_calls(response, "pska_pska_write_candidates")
+    job_context_count = _count_tool_calls(response, "pska_pska_job_context")
+    return {
+        "write_call_count": write_count,
+        "job_context_call_count": job_context_count,
+        "tool_budget": {
+            "pska_pska_write_candidates": 1,
+            "pska_pska_job_context": 1,
+        },
+        "tool_budget_exceeded": write_count > 1 or job_context_count > 1,
+    }
+
+
+def _count_tool_calls(response: dict[str, Any], tool_name: str) -> int:
+    return sum(1 for call in response.get("tool_calls") or [] if isinstance(call, dict) and call.get("tool_name") == tool_name)
 
 
 def _is_ready_digest_job(job: Any) -> bool:

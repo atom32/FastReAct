@@ -129,10 +129,17 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
     assert run_calls[0]["payload"]["metadata"]["pska_job_id"] == "job_digest"
     assert "pska.candidates.v1" in run_calls[0]["payload"]["messages"][1]["content"]
     assert "Do not use built-in tools" in run_calls[0]["payload"]["messages"][1]["content"]
+    assert "pska_pska_write_candidates <= 1" in run_calls[0]["payload"]["messages"][1]["content"]
+    assert "Merge all summaries" in run_calls[0]["payload"]["messages"][1]["content"]
     complete_call = http.calls[-1]
     assert complete_call["url"] == "http://pska.test/jobs/job_digest/complete"
-    assert complete_call["payload"]["result"]["fastreact_runs"][0]["run_id"] == "run_1"
-    tool_summary = complete_call["payload"]["result"]["fastreact_runs"][0]["tool_calls"][0]
+    first_run = complete_call["payload"]["result"]["fastreact_runs"][0]
+    assert first_run["run_id"] == "run_1"
+    assert first_run["write_call_count"] == 1
+    assert first_run["job_context_call_count"] == 0
+    assert first_run["tool_budget"]["pska_pska_write_candidates"] == 1
+    assert first_run["tool_budget_exceeded"] is False
+    tool_summary = first_run["tool_calls"][0]
     assert tool_summary["tool_name"] == "pska_pska_write_candidates"
     assert tool_summary["entity_count"] == 1
     assert "tool_args" not in tool_summary
@@ -187,3 +194,23 @@ def test_run_digest_job_fails_pska_when_fastreact_uses_forbidden_tool():
     assert result["ok"] is False
     assert http.calls[-1]["url"] == "http://pska.test/jobs/job_digest/fail"
     assert "forbidden tools: exec" in http.calls[-1]["payload"]["error"]
+
+
+def test_digest_tool_budget_summary_marks_duplicate_writes():
+    summary = worker._digest_tool_budget_summary(
+        {
+            "tool_calls": [
+                {"tool_name": "pska_pska_job_context"},
+                {"tool_name": "pska_pska_write_candidates"},
+                {"tool_name": "pska_pska_write_candidates"},
+            ]
+        }
+    )
+
+    assert summary["write_call_count"] == 2
+    assert summary["job_context_call_count"] == 1
+    assert summary["tool_budget"] == {
+        "pska_pska_write_candidates": 1,
+        "pska_pska_job_context": 1,
+    }
+    assert summary["tool_budget_exceeded"] is True

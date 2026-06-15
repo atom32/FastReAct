@@ -14,13 +14,15 @@ Use this skill when FastReAct is asked to run a PSKA digest pass.
 Rules:
 
 1. Retrieve context only through PSKA tools.
-2. Use `pska_pska_job_context` when a `job_id` is provided, even if batch context was included in the prompt.
+2. Use `pska_pska_job_context` at most once when a `job_id` is provided and context needs verification.
 3. Write grounded candidates with `pska_pska_write_candidates` when useful candidates exist.
-4. Every write must include `schema_version: "pska.candidates.v1"`, `job_id`, `source_refs`, `confidence`, and `producer: "fastreact"`.
-5. Preserve source refs for every summary, memory candidate, and review candidate.
-6. Low-confidence, sensitive, or high-impact suggestions must become review candidates.
-7. Do not write final user memory unless PSKA explicitly provides a write/apply tool and the action is approved.
-8. Report gaps when evidence is insufficient.
+4. For a digest worker batch, call `pska_pska_write_candidates` at most once. Merge all summaries, memory candidates, review items, and action candidates into one payload.
+5. Do not split write calls by source, candidate type, confidence, or citation group.
+6. Every write must include `schema_version: "pska.candidates.v1"`, `job_id`, `source_refs`, `confidence`, and `producer: "fastreact"`.
+7. Preserve source refs for every summary, memory candidate, and review candidate.
+8. Low-confidence, sensitive, or high-impact suggestions must become review candidates.
+9. Do not write final user memory unless PSKA explicitly provides a write/apply tool and the action is approved.
+10. Report gaps when evidence is insufficient.
 
 Output shape:
 

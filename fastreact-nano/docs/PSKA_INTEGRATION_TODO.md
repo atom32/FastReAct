@@ -94,6 +94,20 @@ cd fastreact-nano
 python3 run_tests.py pska-e2e
 ```
 
+Live PSKA digest gate on 2026-06-15 passed against current HEAD:
+
+- PSKA `/ready` and FastReAct `/ready` both reported ready with PSKA HTTP MCP
+  tools loaded.
+- Canary phrase `orchid-lattice-1781520356` was ingested through source
+  `src_fa0d79e8d7d95ff5aeb4e5066b2f98e9`.
+- Digest job `939bf13c-41d4-46d3-b028-9b3e22da0075` completed through
+  FastReAct durable run `7205eac5-b6eb-499d-9e09-aa906c986b85`.
+- PSKA search recovered the canary phrase with the same source citation.
+- Observation: the model made two `pska_pska_write_candidates` calls in one
+  batch. This is not a gate blocker, but the digest worker now records
+  per-run tool-budget counters so future tuning can detect and eventually
+  enforce one write per batch.
+
 ## Product Polish Before Release
 
 These items are more important than shipping another release. They determine
