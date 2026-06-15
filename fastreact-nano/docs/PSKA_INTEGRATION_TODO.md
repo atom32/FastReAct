@@ -48,6 +48,14 @@ can remain the reference implementation until those boundaries are clear.
 - Config-based service wrapping: `python3 -m fastreact.adapters.http --config <path>`
   or default `~/.fastreact/config.json`.
 - MCP stdio server env can be declared per server in `mcp.servers[].env`.
+- MCP HTTP servers can be declared with `mcp.servers[].transport="http"` and
+  `mcp.servers[].url`. URLs with a path, such as `http://127.0.0.1:8765/mcp`,
+  are treated as full MCP endpoints; root URLs keep the legacy `/message`
+  default for local test servers.
+- In multi-tenant mode, a user's workspace `config.json` may declare
+  `mcp.servers`. FastReAct loads those servers on that user's run with a stable
+  `user_<channel>_<user>_<server>` namespace and rejects execution by other
+  `user_key` values.
 - Headless approval round trip: `ask_user` events include
   `approval_request_id`, and clients can call `GET /v1/approvals`,
   `GET /v1/approvals/{id}`, `POST /v1/approvals/{id}/approve`, or
@@ -77,6 +85,13 @@ JSON-RPC subprocess:
 ```bash
 cd core
 python3 scripts/fastreact_http_sse_e2e.py --python ../.pska/venvs/pska-py312/bin/python
+```
+
+FastReAct-side wrapper:
+
+```bash
+cd fastreact-nano
+python3 run_tests.py pska-e2e
 ```
 
 ## Product Polish Before Release
@@ -142,14 +157,16 @@ just feature-rich.
   boundary rather than an accidental bundle of every integration.
 
 - Make PSKA/FastReAct cross-repo E2E a first-class gate.
-  The manual E2E exists, but the shared service contract should be protected by
-  a repeatable gate whenever both repositories are available.
+  FastReAct now provides `python3 run_tests.py pska-e2e`, which delegates to
+  PSKA's `core/scripts/fastreact_http_sse_e2e.py` when the PSKA checkout is
+  available. Remaining work is CI wiring across both repositories.
 
 ## Remaining Integration Work
 
 - Provide packaged deployment examples for binding PSKA MCP servers without
   importing PSKA internals.
-- Decide whether request/session-scoped MCP binding is needed.
+- Decide whether request/session-scoped MCP binding is needed beyond the
+  current global plus user-workspace config model.
 - Add production examples for service token rotation and tenant isolation.
 - Add CI wiring for PSKA/FastReAct cross-repo E2E.
 - Add PSKA-side approval UI or policy client that consumes `ask_user` and

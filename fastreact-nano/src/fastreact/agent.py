@@ -15,6 +15,7 @@ The Agent layer handles:
 import asyncio
 import json
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Optional, AsyncIterator
@@ -118,6 +119,8 @@ class Agent:
         # Initialize MCP tool manager
         self._mcp_manager = None  # Single-tenant mode
         self._multitenant_mcp_manager = None  # Multi-tenant mode
+        self._mcp_loaded_server_keys: set[str] = set()
+        self._mcp_user_scoped_server_names: set[str] = set()
 
         # Initialize MCP tool discovery service
         self._mcp_discovery = MCPToolDiscovery()
@@ -774,7 +777,40 @@ class Agent:
 
         return compressed
 
-    async def _load_mcp_servers(self, required_skills: Optional[list[str]] = None) -> None:
+    def _user_scoped_mcp_server_name(self, user_key: str, server_name: str) -> str:
+        safe_user = re.sub(r"[^a-zA-Z0-9_]+", "_", user_key).strip("_") or "user"
+        safe_server = re.sub(r"[^a-zA-Z0-9_]+", "_", server_name).strip("_") or "server"
+        return f"user_{safe_user}_{safe_server}"
+
+    def _configured_mcp_servers(self, user_key: Optional[str] = None) -> list:
+        from fastreact.core.config import MCPServerConfig
+
+        servers = list(self._config.mcp.servers or [])
+        if not (self._multitenant_enabled and user_key and self._multitenant):
+            return servers
+
+        user_context = self._multitenant.get_user_context(user_key)
+        user_mcp = (user_context.config or {}).get("mcp", {})
+        user_servers = user_mcp.get("servers", []) if isinstance(user_mcp, dict) else []
+        for raw_server in user_servers:
+            try:
+                server_config = raw_server if isinstance(raw_server, MCPServerConfig) else MCPServerConfig.from_dict(raw_server)
+                original_name = server_config.name
+                server_config.name = self._user_scoped_mcp_server_name(user_key, original_name)
+                server_config.allowed_user_key = user_key
+                self._mcp_user_scoped_server_names.add(server_config.name)
+                if not server_config.description:
+                    server_config.description = f"User-scoped MCP server '{original_name}' for {user_key}."
+                servers.append(server_config)
+            except Exception as exc:  # noqa: BLE001 - user config should not break global MCP.
+                logger.warning("Ignoring invalid user MCP config for '%s': %s", user_key, exc)
+        return servers
+
+    async def _load_mcp_servers(
+        self,
+        required_skills: Optional[list[str]] = None,
+        user_key: Optional[str] = None,
+    ) -> None:
         """
         Load MCP servers from configuration
 
@@ -784,19 +820,17 @@ class Agent:
             required_skills: Optional list of skill names. If provided, only loads
                            MCP servers that are associated with these skills or
                            have no skill association.
+            user_key: Optional user identifier for loading workspace-scoped MCP configs.
         """
-        if self._mcp_manager is not None:
-            # Already loaded
-            return
-
-        # Create MCP manager based on multi-tenant mode
-        if self._multitenant_enabled:
-            self._mcp_manager = MultiTenantMCPManager(self._tools, self._multitenant)
-        else:
-            self._mcp_manager = MCPToolManager(self._tools)
+        if self._mcp_manager is None:
+            # Create MCP manager based on multi-tenant mode
+            if self._multitenant_enabled:
+                self._mcp_manager = MultiTenantMCPManager(self._tools, self._multitenant)
+            else:
+                self._mcp_manager = MCPToolManager(self._tools)
 
         # Load servers from config
-        mcp_servers = self._config.mcp.servers or []
+        mcp_servers = self._configured_mcp_servers(user_key=user_key)
 
         # Build set of required MCP servers from skills
         required_mcp_servers = set()
@@ -808,6 +842,10 @@ class Agent:
 
         for server_config in mcp_servers:
             server_name = server_config.name if hasattr(server_config, 'name') else server_config.get("name", "unknown")
+            is_user_scoped_server = server_name in self._mcp_user_scoped_server_names
+            server_key = f"{user_key}:{server_name}" if is_user_scoped_server else f"global:{server_name}"
+            if server_key in self._mcp_loaded_server_keys:
+                continue
 
             # Skip if skills specified and this server is not required
             # unless it has no skill association (global servers)
@@ -858,6 +896,7 @@ class Agent:
 
                         # Preload shared server for tool discovery
                         await self._mcp_manager.preload_shared_servers([server_config])
+                        self._mcp_loaded_server_keys.add(server_key)
 
                         # Index tools for discovery
                         mcp_tools = self._mcp_manager.list_mcp_tools()
@@ -885,7 +924,9 @@ class Agent:
                         env=env,
                         url=url,
                         auth_token_ref=auth_token_ref,
+                        allowed_user_key=user_key if is_user_scoped_server else None,
                     )
+                    self._mcp_loaded_server_keys.add(server_key)
 
                     # Index tools for discovery
                     mcp_tools = self._mcp_manager.list_mcp_tools()
@@ -1358,9 +1399,13 @@ class Agent:
             return self._mcp_manager.list_mcp_tools()
         return []
 
-    async def ensure_mcp_loaded(self, required_skills: Optional[list[str]] = None) -> dict:
+    async def ensure_mcp_loaded(
+        self,
+        required_skills: Optional[list[str]] = None,
+        user_key: Optional[str] = None,
+    ) -> dict:
         """Public MCP bootstrap hook for admin/read-only endpoints."""
-        return await self.mcp_bootstrapper.ensure_loaded(required_skills=required_skills)
+        return await self.mcp_bootstrapper.ensure_loaded(required_skills=required_skills, user_key=user_key)
 
     def list_mcp_server_status(self) -> list[dict]:
         """Return MCP server health without exposing manager internals."""

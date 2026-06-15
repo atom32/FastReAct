@@ -39,6 +39,7 @@ class MCPToolWrapper(Tool):
         max_retries: int = 3,
         retry_delay: float = 1.0,
         transport: str = "stdio",
+        allowed_user_key: Optional[str] = None,
     ):
         """
         Initialize MCP tool wrapper
@@ -54,6 +55,7 @@ class MCPToolWrapper(Tool):
             max_retries: Maximum reconnect attempts on connection loss (default: 3)
             retry_delay: Delay between retries in seconds (default: 1.0)
             transport: Transport type ("stdio" or "http")
+            allowed_user_key: Optional user key allowed to execute this tool
         """
         self._tool_name = tool_name
         self._server_name = server_name
@@ -65,6 +67,7 @@ class MCPToolWrapper(Tool):
         self._max_retries = max_retries
         self._retry_delay = retry_delay
         self._transport = transport
+        self._allowed_user_key = allowed_user_key
 
     @property
     def name(self) -> str:
@@ -102,6 +105,11 @@ class MCPToolWrapper(Tool):
 
         # Extract user_key from user_context
         user_key = user_context.user_key if user_context else None
+        if self._allowed_user_key and user_key != self._allowed_user_key:
+            return (
+                f"[MCP_ERROR] Tool '{self.name}' is scoped to user "
+                f"'{self._allowed_user_key}' and cannot be executed by '{user_key}'"
+            )
 
         # Track actual call attempts (including retries)
         call_attempts = 0
@@ -260,6 +268,7 @@ class MCPToolManager:
         env: Optional[dict[str, str]] = None,
         url: Optional[str] = None,
         auth_token_ref: Optional[str] = None,
+        allowed_user_key: Optional[str] = None,
     ) -> None:
         """
         Add MCP server and register its tools
@@ -272,6 +281,7 @@ class MCPToolManager:
                         Supports @builtin/ magic path prefix
             url: HTTP server URL (for http transport)
             auth_token_ref: Reference to credentials.json for auth token (for http)
+            allowed_user_key: Optional user key allowed to execute registered tools
 
         Raises:
             RuntimeError: If server fails to start or tool registration fails
@@ -322,7 +332,7 @@ class MCPToolManager:
 
             # Register each tool to ToolRegistry
             for tool_def in tools:
-                await self._register_mcp_tool(name, tool_def, client, transport)
+                await self._register_mcp_tool(name, tool_def, client, transport, allowed_user_key)
 
             self._servers[name] = client
 
@@ -334,6 +344,7 @@ class MCPToolManager:
                     "env": env,
                     "url": url,
                     "auth_token_ref": auth_token_ref,
+                    "allowed_user_key": allowed_user_key,
                 "isolation_mode": self._isolation_mode,
             }
             logger.info("MCP server '%s' (%s) registered and ready", name, transport)
@@ -347,6 +358,7 @@ class MCPToolManager:
         tool_def: Dict[str, Any],
         client: Union[SimpleMCPClient, StreamableHTTPMCPClient],
         transport: str = "stdio",
+        allowed_user_key: Optional[str] = None,
     ) -> None:
         """
         Register MCP tool as a FastReAct tool
@@ -356,6 +368,7 @@ class MCPToolManager:
             tool_def: Tool definition from MCP server
             client: MCP client instance
             transport: Transport type ("stdio" or "http")
+            allowed_user_key: Optional user key allowed to execute this tool
 
         Raises:
             ValueError: If tool already registered
@@ -370,6 +383,7 @@ class MCPToolManager:
             parameters=tool_def.get("inputSchema", {}),
             isolation_mode=self._isolation_mode,
             transport=transport,
+            allowed_user_key=allowed_user_key,
         )
 
         # Check if already registered
@@ -503,7 +517,13 @@ class MCPToolManager:
                     del self._tools._tools[old_wrapper_name]
 
                 # Register new wrapper
-                await self._register_mcp_tool(server_name, tool_def, client, transport)
+                await self._register_mcp_tool(
+                    server_name,
+                    tool_def,
+                    client,
+                    transport,
+                    config.get("allowed_user_key"),
+                )
 
             # Update server reference
             self._servers[server_name] = client

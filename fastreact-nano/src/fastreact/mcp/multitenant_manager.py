@@ -174,6 +174,7 @@ class MultiTenantMCPManager:
                 env=server_config.env,
                 url=server_config.url,
                 auth_token_ref=server_config.auth_token_ref,
+                allowed_user_key=getattr(server_config, "allowed_user_key", None),
             )
             self._shared_managers[server_name] = manager
 
@@ -210,6 +211,7 @@ class MultiTenantMCPManager:
                 env=server_config.env,
                 url=server_config.url,
                 auth_token_ref=server_config.auth_token_ref,
+                allowed_user_key=user_key,
             )
 
             # Wrap in lazy instance (no timeout for per_user mode)
@@ -275,6 +277,7 @@ class MultiTenantMCPManager:
             env=server_config.env,
             url=server_config.url,
             auth_token_ref=server_config.auth_token_ref,
+            allowed_user_key=user_key,
         )
 
         idle_timeout = server_config.idle_timeout or 300

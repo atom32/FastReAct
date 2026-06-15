@@ -7,7 +7,8 @@ Provides multiple test execution strategies:
 2. Integration tests only (mocked/local integration)
 3. All default tests (excludes release LLM gate)
 4. Quick validation (contracts + core runtime)
-5. Release LLM efficiency gate (manual, real API)
+5. PSKA/FastReAct cross-repo E2E gate (manual, external repo)
+6. Release LLM efficiency gate (manual, real API)
 """
 
 import sys
@@ -40,7 +41,7 @@ def main():
     parser.add_argument(
         "suite",
         nargs="?",
-        choices=["unit", "integration", "all", "quick", "contracts", "release-llm", "release-full"],
+        choices=["unit", "integration", "all", "quick", "contracts", "pska-e2e", "release-llm", "release-full"],
         default="all",
         help="Test suite to run (default: all)"
     )
@@ -109,6 +110,12 @@ def main():
         return run_command(
             ["python3", str(project_root / "scripts" / "release_llm_gate.py")],
             "Release LLM Efficiency Gate",
+        )
+
+    if args.suite == "pska-e2e":
+        return run_command(
+            ["python3", str(project_root / "scripts" / "pska_e2e_gate.py")],
+            "PSKA/FastReAct HTTP SSE E2E Gate",
         )
 
     if args.suite == "contracts":

@@ -236,7 +236,7 @@ class AgentRuntime:
         # Load MCP servers on first run (lazy initialization)
         # Pass selected skills to load only required MCP servers
         mcp_span = TimingSpan("mcp.bootstrap")
-        await agent.mcp_bootstrapper.ensure_loaded(required_skills=skills)
+        await agent.mcp_bootstrapper.ensure_loaded(required_skills=skills, user_key=user_key)
 
         # Generate session_id if not provided
         session_id = session_id or str(uuid.uuid4())
