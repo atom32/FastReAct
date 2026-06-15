@@ -276,6 +276,7 @@ class RunService:
         final_event = next((event for event in reversed(events) if event.get("type") == "session_end"), None)
         error_event = next((event for event in reversed(events) if event.get("type") == "error"), None)
         tool_calls = [event for event in events if event.get("type") == "tool_call"]
+        tool_name_counts = self.tool_name_counts(tool_calls)
         approvals = [event for event in events if event.get("type") == "ask_user" or event.get("approval_request_id")]
         compression_count = sum(
             1
@@ -303,6 +304,7 @@ class RunService:
             "duration_ms": record.get("duration_ms"),
             "event_count": len(events),
             "tool_call_count": len(tool_calls),
+            "tool_name_counts": tool_name_counts,
             "approval_count": len(approvals),
             "compression_count": compression_count,
             "llm_usage_total": usage_total,
@@ -311,6 +313,9 @@ class RunService:
             "metadata": record.get("metadata", {}),
             "policy_snapshot_hash": self.policy_snapshot_hash(record.get("metadata", {})),
         }
+        digest_budget = self.pska_digest_tool_budget(record.get("metadata", {}), tool_name_counts)
+        if digest_budget:
+            trace["pska_digest_tool_budget"] = digest_budget
         return self._store.upsert_snapshot("traces", "run_id", trace)
 
     def stats(self) -> dict[str, Any]:
@@ -344,6 +349,35 @@ class RunService:
             return int(event_id.rsplit(":", 1)[-1])
         except ValueError:
             return 0
+
+    @staticmethod
+    def tool_name_counts(tool_calls: list[dict[str, Any]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for event in tool_calls:
+            tool_name = event.get("tool_name")
+            if not tool_name:
+                continue
+            key = str(tool_name)
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    @staticmethod
+    def pska_digest_tool_budget(metadata: dict[str, Any], tool_name_counts: dict[str, int]) -> Optional[dict[str, Any]]:
+        if metadata.get("caller") != "pska_digest_worker" and metadata.get("purpose") != "digest":
+            return None
+        write_count = int(tool_name_counts.get("pska_pska_write_candidates", 0))
+        job_context_count = int(tool_name_counts.get("pska_pska_job_context", 0))
+        tool_budget = {
+            "pska_pska_write_candidates": 1,
+            "pska_pska_job_context": 1,
+        }
+        return {
+            "write_call_count": write_count,
+            "job_context_call_count": job_context_count,
+            "tool_budget": tool_budget,
+            "tool_budget_exceeded": write_count > tool_budget["pska_pska_write_candidates"]
+            or job_context_count > tool_budget["pska_pska_job_context"],
+        }
 
     @staticmethod
     def policy_snapshot_hash(policy_snapshot: Any) -> str | None:

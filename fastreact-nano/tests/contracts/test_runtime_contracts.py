@@ -2,6 +2,7 @@ import pytest
 
 from fastreact import Agent, Config, LLMConfig, PolicyConfig, ReactConfig, ToolConfig
 from fastreact.core.events import EventType
+from fastreact.runtime.run_service import RunService
 from fastreact.runtime.store_service import StoreService
 
 
@@ -79,6 +80,32 @@ def test_store_service_reports_stream_stats(tmp_path):
     assert stats["total_records"] == 2
     assert stats["streams"]["audit"]["records"] == 1
     assert stats["streams"]["traces"]["bytes"] > 0
+
+
+def test_run_trace_records_pska_digest_tool_budget(tmp_path):
+    store = StoreService(tmp_path / ".fastreact")
+    runs = RunService(store)
+    runs.create(
+        run_id="run-pska-digest",
+        session_id="session-pska",
+        query="digest",
+        user_key="pska:user_primary",
+        metadata={"caller": "pska_digest_worker", "purpose": "digest"},
+    )
+    runs.mark_running("run-pska-digest", worker_id="worker-test")
+    runs.append_event("run-pska-digest", {"type": "tool_call", "tool_name": "pska_pska_job_context", "sequence": 1})
+    runs.append_event("run-pska-digest", {"type": "tool_call", "tool_name": "pska_pska_write_candidates", "sequence": 2})
+    runs.append_event("run-pska-digest", {"type": "tool_call", "tool_name": "pska_pska_write_candidates", "sequence": 3})
+    runs.append_event("run-pska-digest", {"type": "session_end", "content": "done", "sequence": 4})
+
+    runs.complete("run-pska-digest")
+    trace = store.latest_by_id("traces", "run_id", "run-pska-digest")
+
+    assert trace["tool_name_counts"]["pska_pska_write_candidates"] == 2
+    assert trace["tool_call_count"] == 3
+    assert trace["pska_digest_tool_budget"]["write_call_count"] == 2
+    assert trace["pska_digest_tool_budget"]["job_context_call_count"] == 1
+    assert trace["pska_digest_tool_budget"]["tool_budget_exceeded"] is True
 
 
 def test_store_service_sanitizes_sensitive_nested_fields(tmp_path):
