@@ -374,6 +374,14 @@ sequence, cancellation, trace summaries, and replay pagination are durable.
 Daemon startup recovers queued runs and stale running leases when
 `service.recover_queued_runs=true`.
 
+Transient worker failures are retried by re-queueing the run until
+`service.run_max_attempts` is reached. Retry delay uses exponential backoff
+bounded by `service.run_retry_base_seconds` and
+`service.run_retry_max_seconds`; queued runs are not scheduled before
+`retry_after`. `service.run_concurrency` limits how many background runs one
+daemon process starts at the same time. This is a single-process concurrency
+limit, not a distributed multi-worker lease protocol.
+
 Run snapshots may include additive daemon fields such as:
 
 ```text
@@ -535,6 +543,9 @@ Recommended user-level config:
     "approval_timeout_seconds": 300,
     "run_lease_seconds": 300,
     "run_max_attempts": 3,
+    "run_retry_base_seconds": 5,
+    "run_retry_max_seconds": 300,
+    "run_concurrency": 4,
     "recover_queued_runs": true
   },
   "react": {

@@ -236,6 +236,8 @@ class Agent:
             self.store,
             lease_seconds=self._config.service.run_lease_seconds,
             max_attempts=self._config.service.run_max_attempts,
+            retry_base_seconds=self._config.service.run_retry_base_seconds,
+            retry_max_seconds=self._config.service.run_retry_max_seconds,
         )
         self.tasks = TaskService(self.store)
         self._register_task_tools()

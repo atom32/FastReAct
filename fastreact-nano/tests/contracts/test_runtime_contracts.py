@@ -113,6 +113,31 @@ def test_run_trace_records_pska_digest_tool_budget(tmp_path):
     assert trace["pska_digest_tool_budget"]["tool_budget_exceeded"] is True
 
 
+def test_run_service_retry_backoff_and_ready_queue(tmp_path):
+    store = StoreService(tmp_path / ".fastreact")
+    runs = RunService(store, max_attempts=2, retry_base_seconds=60, retry_max_seconds=120)
+    runs.create(run_id="run-retry", session_id="session-retry", query="retry")
+    runs.mark_running("run-retry", worker_id="worker-a")
+
+    retry = runs.fail("run-retry", "temporary boom", retryable=True)
+
+    assert retry["status"] == "queued"
+    assert retry["last_error"] == "temporary boom"
+    assert retry["retry_after"]
+    assert runs.queued_for_recovery() == []
+    assert runs.stats()["delayed_queued_count"] == 1
+
+    retry["retry_after"] = "2000-01-01T00:00:00+00:00"
+    store.upsert_snapshot("runs", "run_id", retry)
+    assert [run["run_id"] for run in runs.queued_for_recovery()] == ["run-retry"]
+
+    runs.mark_running("run-retry", worker_id="worker-b")
+    failed = runs.fail("run-retry", "still broken", retryable=True)
+
+    assert failed["status"] == "failed"
+    assert failed["error"] == "still broken"
+
+
 def test_store_service_sanitizes_sensitive_nested_fields(tmp_path):
     store = StoreService(tmp_path / ".fastreact")
 

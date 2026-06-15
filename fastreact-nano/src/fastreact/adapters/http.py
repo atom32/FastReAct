@@ -54,6 +54,7 @@ MAX_PAGE_LIMIT = 1000
 _agent: Optional[Agent] = None
 _service_config = None
 _run_tasks: dict[str, asyncio.Task] = {}
+_run_wakeup_task: Optional[asyncio.Task] = None
 _rate_limit_windows: dict[str, dict[str, float | int]] = {}
 
 
@@ -142,9 +143,12 @@ def get_agent() -> Agent:
 
 
 def set_agent_for_testing(agent: Optional[Agent]) -> None:
-    global _agent
+    global _agent, _run_wakeup_task
     _agent = agent
     _run_tasks.clear()
+    if _run_wakeup_task and not _run_wakeup_task.done():
+        _run_wakeup_task.cancel()
+    _run_wakeup_task = None
     _rate_limit_windows.clear()
 
 
@@ -216,7 +220,15 @@ def get_run_service(agent: Any | None = None) -> RunService:
     store = getattr(agent, "store", None)
     if not store:
         raise HTTPException(status_code=503, detail="Durable run store not available")
-    service = RunService(store, event_schema=SERVICE_EVENT_SCHEMA_VERSION)
+    service_config = getattr(getattr(agent, "_config", None), "service", None) or _service_config
+    service = RunService(
+        store,
+        lease_seconds=float(getattr(service_config, "run_lease_seconds", 300.0) or 300.0),
+        max_attempts=int(getattr(service_config, "run_max_attempts", 3) or 3),
+        retry_base_seconds=float(getattr(service_config, "run_retry_base_seconds", 5.0) or 5.0),
+        retry_max_seconds=float(getattr(service_config, "run_retry_max_seconds", 300.0) or 300.0),
+        event_schema=SERVICE_EVENT_SCHEMA_VERSION,
+    )
     setattr(agent, "runs", service)
     return service
 
@@ -412,7 +424,7 @@ async def execute_background_run(run_id: str) -> None:
     record = runs.mark_running(run_id)
     started_at = time.perf_counter()
     parent_event_id = None
-    sequence = 0
+    sequence = runs.next_sequence(run_id)
     try:
         async for event in agent.run_event_stream(
             record["query"],
@@ -475,9 +487,65 @@ async def execute_background_run(run_id: str) -> None:
             "metadata": {"error_type": type(exc).__name__},
         }
         runs.append_event(run_id, payload)
-        runs.fail(run_id, str(exc))
+        runs.fail(run_id, str(exc), retryable=True)
     finally:
         _run_tasks.pop(run_id, None)
+        schedule_queued_runs(agent)
+
+
+def configured_run_concurrency(agent: Any) -> int:
+    service_config = getattr(getattr(agent, "_config", None), "service", None) or _service_config
+    return max(0, int(getattr(service_config, "run_concurrency", 4) or 0))
+
+
+def active_background_run_count() -> int:
+    return sum(1 for task in _run_tasks.values() if not task.done())
+
+
+def schedule_queued_runs(agent: Any | None = None) -> int:
+    global _run_wakeup_task
+    agent = agent or get_agent()
+    runs = get_run_service(agent)
+    limit = configured_run_concurrency(agent)
+    available = max(0, limit - active_background_run_count()) if limit else len(runs.queued_for_recovery())
+    scheduled = 0
+    for record in runs.queued_for_recovery():
+        run_id = str(record.get("run_id") or "")
+        if not run_id or run_id in _run_tasks:
+            continue
+        if available <= 0:
+            break
+        task = asyncio.create_task(execute_background_run(run_id))
+        _run_tasks[run_id] = task
+        scheduled += 1
+        available -= 1
+    if scheduled == 0 and available > 0:
+        delay = next_queued_retry_delay_seconds(runs)
+        if delay is not None and (_run_wakeup_task is None or _run_wakeup_task.done()):
+            _run_wakeup_task = asyncio.create_task(wake_queued_runs_after(delay))
+    return scheduled
+
+
+async def wake_queued_runs_after(delay_seconds: float) -> None:
+    await asyncio.sleep(max(0.0, delay_seconds))
+    schedule_queued_runs()
+
+
+def next_queued_retry_delay_seconds(runs: RunService) -> float | None:
+    delays: list[float] = []
+    now = datetime.now(timezone.utc)
+    for run in runs.list(status="queued", limit=0):
+        retry_after = run.get("retry_after")
+        if not retry_after:
+            return 0.0
+        try:
+            parsed = datetime.fromisoformat(str(retry_after))
+        except ValueError:
+            return 0.0
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        delays.append(max(0.0, (parsed - now).total_seconds()))
+    return min(delays) if delays else None
 
 
 def readiness_payload(agent: Agent) -> dict[str, Any]:
@@ -635,6 +703,9 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
             "approval_timeout_seconds": 300,
             "run_lease_seconds": 300,
             "run_max_attempts": 3,
+            "run_retry_base_seconds": 5,
+            "run_retry_max_seconds": 300,
+            "run_concurrency": 4,
             "recover_queued_runs": True,
         },
         "paths": {
@@ -937,10 +1008,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:  # type: ignore[valid-typ
         runs.recover_stale()
         service_config = getattr(getattr(agent, "_config", None), "service", None)
         if getattr(service_config, "recover_queued_runs", True):
-            for record in runs.queued_for_recovery():
-                run_id = record["run_id"]
-                if run_id not in _run_tasks:
-                    _run_tasks[run_id] = asyncio.create_task(execute_background_run(run_id))
+            schedule_queued_runs(agent)
     except Exception:
         # Readiness and metrics will report degraded dependency state.
         pass
@@ -1042,6 +1110,10 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "auth_required": configured_service_token() is not None,
                 "approval_timeout_seconds": getattr(service, "approval_timeout_seconds", None),
                 "run_lease_seconds": getattr(service, "run_lease_seconds", None),
+                "run_max_attempts": getattr(service, "run_max_attempts", None),
+                "run_retry_base_seconds": getattr(service, "run_retry_base_seconds", None),
+                "run_retry_max_seconds": getattr(service, "run_retry_max_seconds", None),
+                "run_concurrency": getattr(service, "run_concurrency", None),
                 "recover_queued_runs": getattr(service, "recover_queued_runs", None),
                 "rate_limit_per_hour": getattr(service, "rate_limit_per_hour", 0),
                 "blocked_user_count": len(getattr(service, "blocked_user_keys", []) or []),
@@ -1246,8 +1318,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             user_key=chat_request.user_key,
             metadata=dict(chat_request.metadata or {}),
         )
-        task = asyncio.create_task(execute_background_run(run_id))
-        _run_tasks[run_id] = task
+        schedule_queued_runs(get_agent())
         return {"type": "run", **(runs.snapshot(run_id) or run_snapshot(record))}
 
     @app.get("/v1/runs")

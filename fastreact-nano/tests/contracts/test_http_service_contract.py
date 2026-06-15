@@ -125,6 +125,10 @@ class FakeWorkspaceAgent(FakeAgent):
                 port=9000,
                 approval_timeout_seconds=300,
                 run_lease_seconds=600,
+                run_max_attempts=3,
+                run_retry_base_seconds=5,
+                run_retry_max_seconds=300,
+                run_concurrency=4,
                 recover_queued_runs=True,
             ),
             mcp=SimpleNamespace(servers=[]),
@@ -995,6 +999,8 @@ def test_setup_presets_and_config_draft_are_safe_and_pska_aware(monkeypatch, tmp
     assert payload["service_token"] == "local-token"
     assert payload["config"]["llm"]["api_key_file"] == "~/api_key.txt"
     assert "api_key" not in payload["config"]["llm"]
+    assert payload["config"]["service"]["run_concurrency"] == 4
+    assert payload["config"]["service"]["run_retry_base_seconds"] == 5
     assert payload["config"]["mcp"]["servers"][0]["name"] == "pska"
     assert payload["config"]["policy"]["tenant_rules"]["pska"]["tools"]["exec"] == "require_approval"
 

@@ -43,11 +43,15 @@ class RunService:
         *,
         lease_seconds: float = 300.0,
         max_attempts: int = 3,
+        retry_base_seconds: float = 5.0,
+        retry_max_seconds: float = 300.0,
         event_schema: str = "fastreact.agent_event.v1",
     ):
         self._store = store
         self.lease_seconds = float(lease_seconds)
         self.max_attempts = int(max_attempts)
+        self.retry_base_seconds = float(retry_base_seconds)
+        self.retry_max_seconds = float(retry_max_seconds)
         self.event_schema = event_schema
 
     def create(
@@ -182,9 +186,24 @@ class RunService:
         self.persist_trace(run_id)
         return saved
 
-    def fail(self, run_id: str, error: str, *, status: str = "failed") -> dict[str, Any]:
+    def fail(self, run_id: str, error: str, *, status: str = "failed", retryable: bool = False) -> dict[str, Any]:
         record = self._require(run_id)
         now = utc_iso()
+        attempts = int(record.get("attempts") or 0)
+        if retryable and attempts < self.max_attempts:
+            retry_seconds = self.retry_delay_seconds(attempts)
+            record.update({
+                "status": "queued",
+                "error": None,
+                "last_error": error,
+                "retry_after": _utc_after(retry_seconds),
+                "updated_at": now,
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "worker_id": None,
+                "event_count": self.event_count(run_id),
+            })
+            return self._save(record)
         record.update({
             "status": status,
             "error": error,
@@ -193,6 +212,7 @@ class RunService:
             "updated_at": now,
             "lease_owner": None,
             "lease_expires_at": None,
+            "retry_after": None,
             "event_count": self.event_count(run_id),
         })
         record["duration_ms"] = self._duration_ms(record)
@@ -218,7 +238,7 @@ class RunService:
                 record.update({
                     "status": "queued",
                     "updated_at": utc_iso(),
-                    "retry_after": utc_iso(),
+                    "retry_after": _utc_after(self.retry_delay_seconds(int(record.get("attempts") or 0))),
                     "last_error": "Recovered stale running lease",
                     "lease_owner": None,
                     "lease_expires_at": None,
@@ -242,7 +262,11 @@ class RunService:
         return {"recovered": recovered, "failed": failed}
 
     def queued_for_recovery(self) -> list[dict[str, Any]]:
-        return [run for run in self.list(limit=0) if run.get("status") == "queued"]
+        return [run for run in self.list(limit=0) if run.get("status") == "queued" and self.is_retry_ready(run)]
+
+    def is_retry_ready(self, record: dict[str, Any]) -> bool:
+        retry_after = _parse_iso(record.get("retry_after"))
+        return retry_after is None or retry_after <= _utc_now()
 
     def append_event(self, run_id: str, event: dict[str, Any]) -> dict[str, Any]:
         record = self._require(run_id)
@@ -267,6 +291,10 @@ class RunService:
 
     def event_count(self, run_id: str) -> int:
         return len(self.events(run_id))
+
+    def next_sequence(self, run_id: str) -> int:
+        events = self.events(run_id)
+        return self.event_sequence(events[-1]) + 1 if events else 0
 
     def persist_trace(self, run_id: str) -> Optional[dict[str, Any]]:
         record = self.get(run_id)
@@ -334,6 +362,8 @@ class RunService:
             "total_count": len(runs),
             "status_counts": status_counts,
             "queued_count": status_counts.get("queued", 0),
+            "ready_queued_count": sum(1 for run in runs if run.get("status") == "queued" and self.is_retry_ready(run)),
+            "delayed_queued_count": sum(1 for run in runs if run.get("status") == "queued" and not self.is_retry_ready(run)),
             "running_count": status_counts.get("running", 0),
             "stale_lease_count": stale_lease_count,
             "replay_event_count": len(self._store.read("run_events", limit=0)),
@@ -385,6 +415,11 @@ class RunService:
             return None
         encoded = repr(policy_snapshot).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()[:16]
+
+    def retry_delay_seconds(self, attempts: int) -> float:
+        exponent = max(0, int(attempts) - 1)
+        delay = self.retry_base_seconds * (2**exponent)
+        return min(self.retry_max_seconds, max(0.0, delay))
 
     def _duration_ms(self, record: dict[str, Any]) -> float | None:
         started = _parse_iso(record.get("started_at") or record.get("created_at"))

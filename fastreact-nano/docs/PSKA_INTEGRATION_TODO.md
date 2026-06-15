@@ -118,9 +118,10 @@ just feature-rich.
 
 - Productize run/job contracts for durable background execution.
   Durable JSONL run snapshots, leases, stale-run recovery, cancellation, and
-  replay events now exist for the single-process daemon. Remaining work is
-  clearer retry/backoff policy, concurrency limits, and multi-worker leasing
-  semantics before treating it as a high-concurrency daemon.
+  replay events now exist for the single-process daemon. Retry/backoff,
+  `retry_after` readiness, and per-daemon concurrency limits are now explicit.
+  Remaining work is multi-worker leasing semantics before treating it as a
+  high-concurrency daemon.
 
 - Formalize the first run/trace implementation.
   The `/v1/runs/*` and `/v1/traces/*` contracts now read durable replay events

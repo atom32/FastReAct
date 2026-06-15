@@ -288,6 +288,9 @@ class ServiceConfig:
     approval_timeout_seconds: float = 300.0
     run_lease_seconds: float = 300.0
     run_max_attempts: int = 3
+    run_retry_base_seconds: float = 5.0
+    run_retry_max_seconds: float = 300.0
+    run_concurrency: int = 4
     recover_queued_runs: bool = True
     rate_limit_per_hour: int = 0
     blocked_user_keys: list[str] = field(default_factory=list)
@@ -304,6 +307,9 @@ class ServiceConfig:
             approval_timeout_seconds=float(os.getenv("FASTREACT_APPROVAL_TIMEOUT_SECONDS", "300")),
             run_lease_seconds=float(os.getenv("FASTREACT_RUN_LEASE_SECONDS", "300")),
             run_max_attempts=int(os.getenv("FASTREACT_RUN_MAX_ATTEMPTS", "3")),
+            run_retry_base_seconds=float(os.getenv("FASTREACT_RUN_RETRY_BASE_SECONDS", "5")),
+            run_retry_max_seconds=float(os.getenv("FASTREACT_RUN_RETRY_MAX_SECONDS", "300")),
+            run_concurrency=int(os.getenv("FASTREACT_RUN_CONCURRENCY", "4")),
             recover_queued_runs=os.getenv("FASTREACT_RECOVER_QUEUED_RUNS", "true").lower() == "true",
             rate_limit_per_hour=int(os.getenv("FASTREACT_RATE_LIMIT_PER_HOUR", "0")),
             blocked_user_keys=_csv_env_list("FASTREACT_BLOCKED_USER_KEYS"),
@@ -321,6 +327,9 @@ class ServiceConfig:
             approval_timeout_seconds=float(data.get("approval_timeout_seconds", 300.0)),
             run_lease_seconds=float(data.get("run_lease_seconds", 300.0)),
             run_max_attempts=int(data.get("run_max_attempts", 3)),
+            run_retry_base_seconds=float(data.get("run_retry_base_seconds", 5.0)),
+            run_retry_max_seconds=float(data.get("run_retry_max_seconds", 300.0)),
+            run_concurrency=int(data.get("run_concurrency", 4)),
             recover_queued_runs=bool(data.get("recover_queued_runs", True)),
             rate_limit_per_hour=int(data.get("rate_limit_per_hour", 0)),
             blocked_user_keys=list(data.get("blocked_user_keys", []) or []),

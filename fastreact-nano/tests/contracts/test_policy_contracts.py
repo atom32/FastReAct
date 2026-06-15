@@ -68,6 +68,30 @@ def test_config_loads_policy_block(tmp_path):
     assert config.policy.to_safety_policy()["tool_rules"]["exec"] == "require_approval"
 
 
+def test_config_loads_run_retry_and_concurrency_settings(tmp_path):
+    config_file = tmp_path / "fastreact.json"
+    config_file.write_text(
+        """
+{
+  "service": {
+    "run_max_attempts": 5,
+    "run_retry_base_seconds": 2,
+    "run_retry_max_seconds": 30,
+    "run_concurrency": 2
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    config = Config.load(config_file)
+
+    assert config.service.run_max_attempts == 5
+    assert config.service.run_retry_base_seconds == 2
+    assert config.service.run_retry_max_seconds == 30
+    assert config.service.run_concurrency == 2
+
+
 def test_policy_config_rejects_invalid_action():
     pytest = __import__("pytest")
 
