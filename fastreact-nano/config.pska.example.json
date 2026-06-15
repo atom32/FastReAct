@@ -54,9 +54,10 @@
     "tenant_rules": {
       "pska": {
         "tools": {
-          "exec": "require_approval",
-          "write_file": "require_approval",
-          "edit_file": "require_approval",
+          "exec": "deny",
+          "read_file": "deny",
+          "write_file": "deny",
+          "edit_file": "deny",
           "pska_pska_search": "allow",
           "pska_pska_agentic_search": "allow",
           "pska_pska_index_status": "allow",

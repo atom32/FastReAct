@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -41,6 +42,8 @@ class DigestWorkerConfig:
     batch_limit: int = 20
     represented_user_id: str = "user_primary"
     timeout_seconds: float = 90.0
+    run_timeout_seconds: float = 900.0
+    run_poll_interval_seconds: float = 2.0
 
 
 class JsonHttpClient:
@@ -183,43 +186,161 @@ def _run_fastreact_digest(
     *,
     http: JsonHttpClient,
 ) -> dict[str, Any]:
+    compact_batch = _compact_batch_for_prompt(batch)
     prompt = (
-        "Execute one PSKA digest batch.\n"
+        "Execute exactly one PSKA digest batch and then stop.\n"
         f"PSKA job_id: {job_id}\n"
         f"Batch cursor: {batch.get('cursor')}\n"
-        "Use PSKA MCP tools only. Prefer pska_pska_job_context for context verification and "
-        "pska_pska_write_candidates for grounded writes. Any write must include "
-        "schema_version='pska.candidates.v1', job_id, source_refs, confidence, and producer='fastreact'. "
-        "Low-confidence, sensitive, or high-impact suggestions must be review_items, not direct memory writes.\n\n"
-        f"Batch context JSON:\n{json.dumps(batch, ensure_ascii=False)}"
+        "Allowed tools: pska_pska_write_candidates only, plus pska_pska_job_context only if the batch context is missing. "
+        "Do not use built-in tools such as exec, read_file, write_file, or edit_file. "
+        "Do not inspect local code, local files, package modules, or environment state.\n"
+        "If there is useful grounded knowledge, call pska_pska_write_candidates at most once. "
+        "Every candidate must include schema_version='pska.candidates.v1', job_id, source_refs, confidence, and producer='fastreact'. "
+        "Low-confidence, sensitive, or high-impact suggestions must be review_items, not direct memory writes. "
+        "If there is no useful candidate, do not call tools; return a short final JSON summary. "
+        "After the optional write call, return a short final JSON summary and stop.\n\n"
+        f"Batch context JSON:\n{json.dumps(compact_batch, ensure_ascii=False)}"
     )
-    return http.request_json(
-        "POST",
-        f"{config.fastreact_url.rstrip('/')}/v1/chat/completions",
-        payload={
-            "messages": [
-                {"role": "system", "content": "You are FastReAct executing a PSKA digest worker loop."},
-                {"role": "user", "content": prompt},
-            ],
-            "stream": False,
-            "skills": ["pska_digest"],
-            "user_key": f"pska:{config.represented_user_id}",
-            "metadata": {
-                "caller": "pska_digest_worker",
-                "purpose": "digest",
-                "pska_user_id": config.represented_user_id,
-                "pska_job_id": job_id,
-                "scope": {"job_id": job_id, "cursor": batch.get("cursor")},
+    payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are FastReAct executing a constrained PSKA digest worker. "
+                    "Use only PSKA MCP tools named in the user message. Never use local shell or file tools."
+                ),
             },
+            {"role": "user", "content": prompt},
+        ],
+        "stream": False,
+        "skills": ["pska_digest"],
+        "user_key": f"pska:{config.represented_user_id}",
+        "metadata": {
+            "caller": "pska_digest_worker",
+            "purpose": "digest",
+            "pska_user_id": config.represented_user_id,
+            "pska_job_id": job_id,
+            "scope": {"job_id": job_id, "cursor": batch.get("cursor")},
         },
+    }
+    created = http.request_json(
+        "POST",
+        f"{config.fastreact_url.rstrip('/')}/v1/runs",
+        payload=payload,
         headers=_fastreact_headers(config),
     )
+    run_id = str(created.get("run_id") or "")
+    if not run_id:
+        raise WorkerError("FastReAct /v1/runs response missing run_id")
+    snapshot = _wait_for_run(config, run_id, http=http)
+    events_payload = http.request_json(
+        "GET",
+        f"{config.fastreact_url.rstrip('/')}/v1/runs/{run_id}/events",
+        headers=_fastreact_headers(config),
+    )
+    events = events_payload.get("events") if isinstance(events_payload.get("events"), list) else []
+    return {
+        "type": "run",
+        "run_id": run_id,
+        "status": snapshot.get("status"),
+        "content": _final_content(events),
+        "events": events,
+        "tool_calls": _summarize_tool_calls(events),
+        "metadata": snapshot.get("metadata") or {},
+    }
+
+
+def _compact_batch_for_prompt(batch: dict[str, Any]) -> dict[str, Any]:
+    """Keep the prompt focused so the agent writes grounded candidates instead of exploring."""
+    compact = {
+        "cursor": batch.get("cursor"),
+        "next_cursor": batch.get("next_cursor"),
+        "has_more": batch.get("has_more"),
+        "job": batch.get("job"),
+        "source_items": batch.get("source_items") or [],
+        "chunks": [],
+    }
+    for chunk in batch.get("chunks") or []:
+        if not isinstance(chunk, dict):
+            continue
+        text = str(chunk.get("text") or chunk.get("content") or "")
+        compact["chunks"].append(
+            {
+                "chunk_id": chunk.get("chunk_id"),
+                "source_item_id": chunk.get("source_item_id"),
+                "document_id": chunk.get("document_id"),
+                "text": text[:4000],
+            }
+        )
+    return compact
 
 
 def _raise_on_fastreact_error(response: dict[str, Any]) -> None:
+    if response.get("status") in {"failed", "cancelled", "expired"}:
+        raise WorkerError(f"FastReAct run ended with status {response.get('status')}")
     errors = [event for event in response.get("events") or [] if isinstance(event, dict) and event.get("type") == "error"]
     if errors:
         raise WorkerError(str(errors[-1].get("content") or "FastReAct digest run failed"))
+    forbidden = [
+        str(event.get("tool_name"))
+        for event in response.get("events") or []
+        if isinstance(event, dict)
+        and event.get("type") == "tool_call"
+        and str(event.get("tool_name") or "") in {"exec", "read_file", "write_file", "edit_file"}
+    ]
+    if forbidden:
+        raise WorkerError(f"FastReAct digest used forbidden tools: {', '.join(forbidden)}")
+
+
+def _wait_for_run(config: DigestWorkerConfig, run_id: str, *, http: JsonHttpClient) -> dict[str, Any]:
+    deadline = time.monotonic() + config.run_timeout_seconds
+    while time.monotonic() < deadline:
+        snapshot = http.request_json(
+            "GET",
+            f"{config.fastreact_url.rstrip('/')}/v1/runs/{run_id}",
+            headers=_fastreact_headers(config),
+        )
+        status = snapshot.get("status")
+        if status in {"completed", "failed", "cancelled", "expired"}:
+            return snapshot
+        time.sleep(config.run_poll_interval_seconds)
+    raise WorkerError(f"FastReAct run {run_id} timed out after {config.run_timeout_seconds:g}s")
+
+
+def _final_content(events: list[Any]) -> str:
+    for event in reversed(events):
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") in {"session_end", "step_end"} and event.get("content"):
+            return str(event["content"])
+    return ""
+
+
+def _summarize_tool_calls(events: list[Any]) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict) or event.get("type") != "tool_call":
+            continue
+        args = event.get("tool_args") if isinstance(event.get("tool_args"), dict) else {}
+        summaries.append(
+            {
+                "sequence": event.get("sequence"),
+                "tool_name": event.get("tool_name"),
+                "tool_call_id": event.get("tool_call_id"),
+                "schema": event.get("schema"),
+                "run_id": event.get("run_id"),
+                "request_id": args.get("request_id"),
+                "job_id": args.get("job_id"),
+                "source_ref_count": len(args.get("source_refs") or []) if isinstance(args.get("source_refs"), list) else 0,
+                "entity_count": len(args.get("entities") or []) if isinstance(args.get("entities"), list) else 0,
+                "hyperedge_count": len(args.get("hyperedges") or []) if isinstance(args.get("hyperedges"), list) else 0,
+                "review_item_count": len(args.get("review_items") or []) if isinstance(args.get("review_items"), list) else 0,
+                "memory_candidate_count": len(args.get("memory_candidates") or [])
+                if isinstance(args.get("memory_candidates"), list)
+                else 0,
+            }
+        )
+    return summaries
 
 
 def _is_ready_digest_job(job: Any) -> bool:
@@ -264,6 +385,8 @@ def main() -> int:
     parser.add_argument("--lease-seconds", type=int, default=300)
     parser.add_argument("--batch-limit", type=int, default=20)
     parser.add_argument("--timeout-seconds", type=float, default=90)
+    parser.add_argument("--run-timeout-seconds", type=float, default=900)
+    parser.add_argument("--run-poll-interval-seconds", type=float, default=2)
     parser.add_argument("--service-token")
     parser.add_argument("--pska-service-token")
     parser.add_argument("--fastreact-service-token")
@@ -281,6 +404,8 @@ def main() -> int:
         batch_limit=args.batch_limit,
         represented_user_id=args.represented_user_id,
         timeout_seconds=args.timeout_seconds,
+        run_timeout_seconds=args.run_timeout_seconds,
+        run_poll_interval_seconds=args.run_poll_interval_seconds,
     )
     result = run_once(config, job_id=args.job_id)
     print(json.dumps(result, ensure_ascii=False, indent=2))

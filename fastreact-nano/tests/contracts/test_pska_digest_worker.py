@@ -75,7 +75,27 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
                 "source_items": [{"source_item_id": "src_1", "title": "One"}],
                 "chunks": [{"chunk_id": "chk_1", "source_item_id": "src_1", "text": "one"}],
             },
-            {"type": "chat.completion", "run_id": "run_1", "content": "batch one", "events": [], "tool_calls": []},
+            {"type": "run", "run_id": "run_1", "status": "queued"},
+            {"type": "run", "run_id": "run_1", "status": "completed"},
+            {
+                "events": [
+                    {
+                        "schema": "fastreact.agent_event.v1",
+                        "type": "tool_call",
+                        "sequence": 1,
+                        "run_id": "run_1",
+                        "tool_name": "pska_pska_write_candidates",
+                        "tool_call_id": "call_1",
+                        "tool_args": {
+                            "job_id": "job_digest",
+                            "request_id": "batch-0",
+                            "source_refs": [{"source_item_id": "src_1"}],
+                            "entities": [{"entity_id": "ent_1"}],
+                        },
+                    },
+                    {"type": "session_end", "content": "batch one"},
+                ]
+            },
             {
                 "cursor": "1",
                 "next_cursor": None,
@@ -83,7 +103,9 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
                 "source_items": [{"source_item_id": "src_2", "title": "Two"}],
                 "chunks": [{"chunk_id": "chk_2", "source_item_id": "src_2", "text": "two"}],
             },
-            {"type": "chat.completion", "run_id": "run_2", "content": "batch two", "events": [], "tool_calls": []},
+            {"type": "run", "run_id": "run_2", "status": "queued"},
+            {"type": "run", "run_id": "run_2", "status": "completed"},
+            {"events": [{"type": "session_end", "content": "batch two"}]},
             {"job": {"job_id": "job_digest", "status": "succeeded"}},
         ]
     )
@@ -100,14 +122,20 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
 
     assert result["ok"] is True
     assert result["result"]["batch_count"] == 2
-    chat_calls = [call for call in http.calls if call["url"].endswith("/v1/chat/completions")]
-    assert len(chat_calls) == 2
-    assert chat_calls[0]["payload"]["skills"] == ["pska_digest"]
-    assert chat_calls[0]["payload"]["metadata"]["pska_job_id"] == "job_digest"
-    assert "pska.candidates.v1" in chat_calls[0]["payload"]["messages"][1]["content"]
+    run_calls = [call for call in http.calls if call["url"].endswith("/v1/runs") and call["method"] == "POST"]
+    assert len(run_calls) == 2
+    assert run_calls[0]["payload"]["skills"] == ["pska_digest"]
+    assert run_calls[0]["payload"]["user_key"] == "pska:user_primary"
+    assert run_calls[0]["payload"]["metadata"]["pska_job_id"] == "job_digest"
+    assert "pska.candidates.v1" in run_calls[0]["payload"]["messages"][1]["content"]
+    assert "Do not use built-in tools" in run_calls[0]["payload"]["messages"][1]["content"]
     complete_call = http.calls[-1]
     assert complete_call["url"] == "http://pska.test/jobs/job_digest/complete"
     assert complete_call["payload"]["result"]["fastreact_runs"][0]["run_id"] == "run_1"
+    tool_summary = complete_call["payload"]["result"]["fastreact_runs"][0]["tool_calls"][0]
+    assert tool_summary["tool_name"] == "pska_pska_write_candidates"
+    assert tool_summary["entity_count"] == 1
+    assert "tool_args" not in tool_summary
 
 
 def test_run_digest_job_fails_pska_when_fastreact_errors():
@@ -121,7 +149,9 @@ def test_run_digest_job_fails_pska_when_fastreact_errors():
                 "source_items": [{"source_item_id": "src_1"}],
                 "chunks": [],
             },
-            {"type": "chat.completion", "run_id": "run_bad", "content": "", "events": [{"type": "error", "content": "boom"}]},
+            {"type": "run", "run_id": "run_bad", "status": "queued"},
+            {"type": "run", "run_id": "run_bad", "status": "completed"},
+            {"events": [{"type": "error", "content": "boom"}]},
             {"job": {"job_id": "job_digest", "status": "queued", "error": "boom"}},
         ]
     )
@@ -132,3 +162,28 @@ def test_run_digest_job_fails_pska_when_fastreact_errors():
     assert http.calls[-1]["url"] == "http://pska.test/jobs/job_digest/fail"
     assert http.calls[-1]["payload"]["retryable"] is True
     assert "boom" in http.calls[-1]["payload"]["error"]
+
+
+def test_run_digest_job_fails_pska_when_fastreact_uses_forbidden_tool():
+    http = FakeHttp(
+        [
+            {"job": {"job_id": "job_digest", "status": "running"}},
+            {
+                "cursor": "0",
+                "next_cursor": None,
+                "has_more": False,
+                "source_items": [{"source_item_id": "src_1"}],
+                "chunks": [],
+            },
+            {"type": "run", "run_id": "run_bad", "status": "queued"},
+            {"type": "run", "run_id": "run_bad", "status": "completed"},
+            {"events": [{"type": "tool_call", "tool_name": "exec", "tool_args": {"command": "pwd"}}]},
+            {"job": {"job_id": "job_digest", "status": "queued", "error": "forbidden"}},
+        ]
+    )
+
+    result = worker.run_digest_job(worker.DigestWorkerConfig(pska_url="http://pska.test", fastreact_url="http://fastreact.test"), "job_digest", http=http)
+
+    assert result["ok"] is False
+    assert http.calls[-1]["url"] == "http://pska.test/jobs/job_digest/fail"
+    assert "forbidden tools: exec" in http.calls[-1]["payload"]["error"]
