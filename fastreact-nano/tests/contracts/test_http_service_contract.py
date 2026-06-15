@@ -335,6 +335,63 @@ def test_chat_completions_rate_limit_returns_429():
     assert "Rate limit exceeded" in second.json()["detail"]
 
 
+def test_chat_completions_blocks_configured_user():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    set_agent_for_testing(FakeAgent())
+    set_service_config(ServiceConfig(blocked_user_keys=["web:blocked"]))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "user_key": "web:blocked",
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+        set_service_config(ServiceConfig())
+
+    assert response.status_code == 403
+    assert "blocked" in response.json()["detail"]
+
+
+def test_chat_completions_allowed_user_list_rejects_others():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    set_agent_for_testing(FakeAgent())
+    set_service_config(ServiceConfig(allowed_user_keys=["web:alice"]))
+    try:
+        client = testclient.TestClient(create_app())
+        denied = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "user_key": "web:bob",
+            },
+        )
+        allowed = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "user_key": "web:alice",
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+        set_service_config(ServiceConfig())
+
+    assert denied.status_code == 403
+    assert "not allowed" in denied.json()["detail"]
+    assert allowed.status_code == 200
+
+
 def test_background_run_create_rate_limit_returns_429(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")

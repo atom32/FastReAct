@@ -22,6 +22,7 @@ from fastreact.core.config import (
     LLMConfig,
     ToolConfig,
     ReactConfig,
+    ServiceConfig,
     MCPConfig,
     MCPServerConfig,
 )
@@ -867,3 +868,29 @@ class TestMCPConfiguration:
         assert server.per_user_args_template is None
         assert server.idle_timeout == 300
         assert server.max_instances == 10
+
+
+class TestServiceConfiguration:
+    """Test headless service configuration."""
+
+    def test_service_config_loads_access_lists_from_dict(self, clean_env):
+        config = ServiceConfig.from_dict(
+            {
+                "rate_limit_per_hour": 25,
+                "blocked_user_keys": ["web:blocked"],
+                "allowed_user_keys": ["web:alice", "pska:user_primary"],
+            }
+        )
+
+        assert config.rate_limit_per_hour == 25
+        assert config.blocked_user_keys == ["web:blocked"]
+        assert config.allowed_user_keys == ["web:alice", "pska:user_primary"]
+
+    def test_service_config_loads_access_lists_from_env(self, clean_env):
+        os.environ["FASTREACT_BLOCKED_USER_KEYS"] = "web:blocked, pska:blocked"
+        os.environ["FASTREACT_ALLOWED_USER_KEYS"] = "web:alice"
+
+        config = ServiceConfig.from_env()
+
+        assert config.blocked_user_keys == ["web:blocked", "pska:blocked"]
+        assert config.allowed_user_keys == ["web:alice"]

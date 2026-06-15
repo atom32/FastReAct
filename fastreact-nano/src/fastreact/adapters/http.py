@@ -196,6 +196,17 @@ def require_rate_limit(user_key: Optional[str]) -> None:
     window["count"] = count + 1
 
 
+def require_user_access(user_key: Optional[str]) -> None:
+    identity = user_key or "anonymous"
+    blocked = set(getattr(_service_config, "blocked_user_keys", []) or [])
+    if identity in blocked:
+        raise HTTPException(status_code=403, detail=f"User '{identity}' is blocked")
+
+    allowed = set(getattr(_service_config, "allowed_user_keys", []) or [])
+    if allowed and identity not in allowed:
+        raise HTTPException(status_code=403, detail=f"User '{identity}' is not allowed")
+
+
 def get_run_service(agent: Any | None = None) -> RunService:
     agent = agent or get_agent()
     service = getattr(agent, "runs", None)
@@ -961,6 +972,8 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 "run_lease_seconds": getattr(service, "run_lease_seconds", None),
                 "recover_queued_runs": getattr(service, "recover_queued_runs", None),
                 "rate_limit_per_hour": getattr(service, "rate_limit_per_hour", 0),
+                "blocked_user_count": len(getattr(service, "blocked_user_keys", []) or []),
+                "allowed_user_count": len(getattr(service, "allowed_user_keys", []) or []),
             },
             "workspace": {
                 "path": str(workspace_profile_root(agent)),
@@ -1017,6 +1030,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request, chat_request: ChatRequest) -> Any:  # type: ignore[valid-type]
         require_service_auth(request)
+        require_user_access(chat_request.user_key)
         require_rate_limit(chat_request.user_key)
         if not chat_request.messages:
             raise HTTPException(status_code=400, detail="No messages provided")
@@ -1137,6 +1151,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     @app.post("/v1/runs")
     async def create_run(request: Request, chat_request: ChatRequest) -> dict[str, Any]:
         require_service_auth(request)
+        require_user_access(chat_request.user_key)
         require_rate_limit(chat_request.user_key)
         if not chat_request.messages:
             raise HTTPException(status_code=400, detail="No messages provided")

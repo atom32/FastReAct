@@ -99,6 +99,11 @@ def _service_token_from_api_key_file(path: Optional[Path]) -> Optional[str]:
     return data.get("service_token") or data.get("fastreact_service_token")
 
 
+def _csv_env_list(name: str) -> list[str]:
+    value = os.getenv(name, "")
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 @dataclass
 class ToolConfig:
     """Tool configuration"""
@@ -285,6 +290,8 @@ class ServiceConfig:
     run_max_attempts: int = 3
     recover_queued_runs: bool = True
     rate_limit_per_hour: int = 0
+    blocked_user_keys: list[str] = field(default_factory=list)
+    allowed_user_keys: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls, api_key_file: Optional[Path] = None) -> "ServiceConfig":
@@ -299,6 +306,8 @@ class ServiceConfig:
             run_max_attempts=int(os.getenv("FASTREACT_RUN_MAX_ATTEMPTS", "3")),
             recover_queued_runs=os.getenv("FASTREACT_RECOVER_QUEUED_RUNS", "true").lower() == "true",
             rate_limit_per_hour=int(os.getenv("FASTREACT_RATE_LIMIT_PER_HOUR", "0")),
+            blocked_user_keys=_csv_env_list("FASTREACT_BLOCKED_USER_KEYS"),
+            allowed_user_keys=_csv_env_list("FASTREACT_ALLOWED_USER_KEYS"),
         )
 
     @classmethod
@@ -314,6 +323,8 @@ class ServiceConfig:
             run_max_attempts=int(data.get("run_max_attempts", 3)),
             recover_queued_runs=bool(data.get("recover_queued_runs", True)),
             rate_limit_per_hour=int(data.get("rate_limit_per_hour", 0)),
+            blocked_user_keys=list(data.get("blocked_user_keys", []) or []),
+            allowed_user_keys=list(data.get("allowed_user_keys", []) or []),
         )
 
 
