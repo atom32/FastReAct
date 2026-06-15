@@ -296,6 +296,15 @@ def _raise_on_fastreact_error(response: dict[str, Any]) -> None:
     ]
     if forbidden:
         raise WorkerError(f"FastReAct digest used forbidden tools: {', '.join(forbidden)}")
+    budget = _digest_tool_budget_summary(response)
+    if budget["tool_budget_exceeded"]:
+        raise WorkerError(
+            "FastReAct digest exceeded tool budget: "
+            f"pska_pska_write_candidates={budget['write_call_count']} "
+            f"(max {budget['tool_budget']['pska_pska_write_candidates']}), "
+            f"pska_pska_job_context={budget['job_context_call_count']} "
+            f"(max {budget['tool_budget']['pska_pska_job_context']})"
+        )
 
 
 def _wait_for_run(config: DigestWorkerConfig, run_id: str, *, http: JsonHttpClient) -> dict[str, Any]:

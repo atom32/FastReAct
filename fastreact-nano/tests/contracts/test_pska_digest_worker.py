@@ -196,6 +196,38 @@ def test_run_digest_job_fails_pska_when_fastreact_uses_forbidden_tool():
     assert "forbidden tools: exec" in http.calls[-1]["payload"]["error"]
 
 
+def test_run_digest_job_fails_pska_when_fastreact_exceeds_tool_budget():
+    http = FakeHttp(
+        [
+            {"job": {"job_id": "job_digest", "status": "running"}},
+            {
+                "cursor": "0",
+                "next_cursor": None,
+                "has_more": False,
+                "source_items": [{"source_item_id": "src_1"}],
+                "chunks": [],
+            },
+            {"type": "run", "run_id": "run_noisy", "status": "queued"},
+            {"type": "run", "run_id": "run_noisy", "status": "completed"},
+            {
+                "events": [
+                    {"type": "tool_call", "tool_name": "pska_pska_write_candidates", "tool_args": {"job_id": "job_digest"}},
+                    {"type": "tool_call", "tool_name": "pska_pska_write_candidates", "tool_args": {"job_id": "job_digest"}},
+                ]
+            },
+            {"job": {"job_id": "job_digest", "status": "queued", "error": "tool budget"}},
+        ]
+    )
+
+    result = worker.run_digest_job(worker.DigestWorkerConfig(pska_url="http://pska.test", fastreact_url="http://fastreact.test"), "job_digest", http=http)
+
+    assert result["ok"] is False
+    assert http.calls[-1]["url"] == "http://pska.test/jobs/job_digest/fail"
+    assert http.calls[-1]["payload"]["retryable"] is True
+    assert "exceeded tool budget" in http.calls[-1]["payload"]["error"]
+    assert "pska_pska_write_candidates=2" in http.calls[-1]["payload"]["error"]
+
+
 def test_digest_tool_budget_summary_marks_duplicate_writes():
     summary = worker._digest_tool_budget_summary(
         {

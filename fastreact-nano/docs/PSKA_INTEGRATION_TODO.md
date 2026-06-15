@@ -104,9 +104,9 @@ Live PSKA digest gate on 2026-06-15 passed against current HEAD:
   FastReAct durable run `7205eac5-b6eb-499d-9e09-aa906c986b85`.
 - PSKA search recovered the canary phrase with the same source citation.
 - Observation: the model made two `pska_pska_write_candidates` calls in one
-  batch. This is not a gate blocker, but the digest worker now records
-  per-run tool-budget counters so future tuning can detect and eventually
-  enforce one write per batch.
+  batch. This is not a gate blocker, and the digest worker now enforces the
+  per-run tool budget: duplicate write calls fail the PSKA job as retryable
+  instead of silently completing.
 
 ## Product Polish Before Release
 
