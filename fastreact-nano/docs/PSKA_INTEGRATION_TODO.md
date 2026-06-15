@@ -106,7 +106,9 @@ Live PSKA digest gate on 2026-06-15 passed against current HEAD:
 - Observation: the model made two `pska_pska_write_candidates` calls in one
   batch. This is not a gate blocker, and the digest worker now enforces the
   per-run tool budget: duplicate write calls fail the PSKA job as retryable
-  instead of silently completing.
+  instead of silently completing. Trace summaries expose `tool_name_counts`
+  and `pska_digest_tool_budget`; `/v1/metrics` aggregates these under
+  `integrations.pska_digest`.
 
 ## Product Polish Before Release
 
