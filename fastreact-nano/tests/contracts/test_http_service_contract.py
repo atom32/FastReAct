@@ -467,6 +467,22 @@ def test_metrics_payload_summarizes_headless_service_state(tmp_path):
         },
     )
     fake_agent.store.append(
+        "traces",
+        {
+            "run_id": "run-pska-digest",
+            "session_id": "session-pska-digest",
+            "status": "completed",
+            "metadata": {"caller": "pska_digest_worker", "purpose": "digest", "pska_job_id": "job-digest"},
+            "tool_name_counts": {"pska_pska_job_context": 1, "pska_pska_write_candidates": 2},
+            "pska_digest_tool_budget": {
+                "write_call_count": 2,
+                "job_context_call_count": 1,
+                "tool_budget": {"pska_pska_write_candidates": 1, "pska_pska_job_context": 1},
+                "tool_budget_exceeded": True,
+            },
+        },
+    )
+    fake_agent.store.append(
         "events",
         {
             "run_id": "run-failed",
@@ -493,8 +509,8 @@ def test_metrics_payload_summarizes_headless_service_state(tmp_path):
     assert payload["schema"] == "fastreact.metrics.v1"
     assert payload["runs"]["durable"]["queued_count"] == 1
     assert payload["runs"]["durable"]["replay_event_count"] == 0
-    assert payload["runs"]["trace_count"] == 2
-    assert payload["runs"]["status_counts"]["completed"] == 1
+    assert payload["runs"]["trace_count"] == 3
+    assert payload["runs"]["status_counts"]["completed"] == 2
     assert payload["runs"]["status_counts"]["failed"] == 1
     assert payload["runs"]["avg_duration_ms"] == 100.0
     assert payload["events"]["error_count"] == 1
@@ -505,11 +521,16 @@ def test_metrics_payload_summarizes_headless_service_state(tmp_path):
         "completion_tokens": 7,
         "total_tokens": 20,
     }
+    assert payload["integrations"]["pska_digest"]["run_count"] == 1
+    assert payload["integrations"]["pska_digest"]["write_call_count"] == 2
+    assert payload["integrations"]["pska_digest"]["job_context_call_count"] == 1
+    assert payload["integrations"]["pska_digest"]["tool_budget_exceeded_count"] == 1
+    assert payload["integrations"]["pska_digest"]["recent_budget_exceeded"][0]["pska_job_id"] == "job-digest"
     assert payload["approvals"]["count"] == 1
     assert payload["approvals"]["status_counts"]["approved"] == 1
     assert payload["approvals"]["avg_resolution_ms"] == 3000.0
     assert payload["errors"]["count"] == 2
-    assert payload["store"]["total_records"] == 5
+    assert payload["store"]["total_records"] == 6
 
 
 def test_service_auth_blocks_chat_and_readiness_when_configured(monkeypatch):

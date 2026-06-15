@@ -698,6 +698,50 @@ def _sum_llm_usage(records: list[dict[str, Any]]) -> dict[str, int]:
     return {key: value for key, value in totals.items() if value}
 
 
+def _pska_digest_metrics(traces: list[dict[str, Any]]) -> dict[str, Any]:
+    digest_traces = [
+        trace
+        for trace in traces
+        if isinstance(trace.get("pska_digest_tool_budget"), dict)
+        or trace.get("metadata", {}).get("caller") == "pska_digest_worker"
+        or trace.get("metadata", {}).get("purpose") == "digest"
+    ]
+    exceeded = []
+    write_calls = 0
+    job_context_calls = 0
+    for trace in digest_traces:
+        budget = trace.get("pska_digest_tool_budget")
+        if not isinstance(budget, dict):
+            counts = trace.get("tool_name_counts") if isinstance(trace.get("tool_name_counts"), dict) else {}
+            write_count = int(counts.get("pska_pska_write_candidates", 0) or 0)
+            job_context_count = int(counts.get("pska_pska_job_context", 0) or 0)
+            budget = {
+                "write_call_count": write_count,
+                "job_context_call_count": job_context_count,
+                "tool_budget_exceeded": write_count > 1 or job_context_count > 1,
+            }
+        write_calls += int(budget.get("write_call_count") or 0)
+        job_context_calls += int(budget.get("job_context_call_count") or 0)
+        if budget.get("tool_budget_exceeded"):
+            exceeded.append(
+                {
+                    "run_id": trace.get("run_id"),
+                    "session_id": trace.get("session_id"),
+                    "pska_job_id": trace.get("metadata", {}).get("pska_job_id"),
+                    "write_call_count": budget.get("write_call_count"),
+                    "job_context_call_count": budget.get("job_context_call_count"),
+                    "completed_at": trace.get("completed_at"),
+                }
+            )
+    return {
+        "run_count": len(digest_traces),
+        "write_call_count": write_calls,
+        "job_context_call_count": job_context_calls,
+        "tool_budget_exceeded_count": len(exceeded),
+        "recent_budget_exceeded": exceeded[-5:],
+    }
+
+
 def policy_payload_for_agent(agent: Any) -> dict[str, Any]:
     config = getattr(agent, "_config", None)
     policy = getattr(config, "policy", None)
@@ -841,6 +885,9 @@ def metrics_payload(agent: Agent) -> dict[str, Any]:
         },
         "llm": {
             "usage_total": _sum_llm_usage(traces),
+        },
+        "integrations": {
+            "pska_digest": _pska_digest_metrics(traces),
         },
         "approvals": {
             "count": len(approvals),
