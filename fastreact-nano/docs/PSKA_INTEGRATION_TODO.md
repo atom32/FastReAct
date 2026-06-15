@@ -155,9 +155,10 @@ just feature-rich.
   contexts.
 
 - Strengthen task/TODO as durable single-agent workflow state.
-  TaskService is enough for multi-step planning, but release-quality behavior
-  should define persistence, recovery, status transitions, cancellation, and how
-  tasks relate to sessions and run traces.
+  TaskService now persists task snapshots, status history, status timestamps,
+  related runs/traces, and task status metrics. Remaining work is stricter
+  dependency semantics, richer cancellation/reopen policy, and recovery
+  behavior for task-bound background runs.
 
 - Improve service observability.
   Stable health/readiness, JSONL store stats, run metrics, latency, tool

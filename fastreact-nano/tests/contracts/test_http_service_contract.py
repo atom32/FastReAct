@@ -526,6 +526,8 @@ def test_metrics_payload_summarizes_headless_service_state(tmp_path):
     assert payload["integrations"]["pska_digest"]["job_context_call_count"] == 1
     assert payload["integrations"]["pska_digest"]["tool_budget_exceeded_count"] == 1
     assert payload["integrations"]["pska_digest"]["recent_budget_exceeded"][0]["pska_job_id"] == "job-digest"
+    assert payload["tasks"]["count"] == 0
+    assert payload["tasks"]["active_count"] == 0
     assert payload["approvals"]["count"] == 1
     assert payload["approvals"]["status_counts"]["approved"] == 1
     assert payload["approvals"]["avg_resolution_ms"] == 3000.0
@@ -1040,16 +1042,24 @@ def test_task_endpoints_create_update_list_and_include_related_runs(monkeypatch,
         updated = client.patch(
             f"/v1/tasks/{task['task_id']}",
             headers=headers,
-            json={"status": "in_progress"},
+            json={"status": "in_progress", "status_reason": "operator started"},
         )
         assert updated.status_code == 200
         payload = updated.json()
         assert payload["task"]["status"] == "in_progress"
+        assert payload["task"]["started_at"]
+        assert payload["task"]["status_history"][-1]["reason"] == "operator started"
         assert payload["runs"][0]["run_id"] == "run-task-1"
 
         detail = client.get(f"/v1/tasks/{task['task_id']}", headers=headers)
         assert detail.status_code == 200
         assert detail.json()["task"]["title"] == "Review PSKA citations"
         assert detail.json()["runs"][0]["status"] == "completed"
+
+        metrics = client.get("/v1/metrics", headers=headers)
+        assert metrics.status_code == 200
+        assert metrics.json()["tasks"]["count"] == 1
+        assert metrics.json()["tasks"]["active_count"] == 1
+        assert metrics.json()["tasks"]["status_counts"]["in_progress"] == 1
     finally:
         set_agent_for_testing(None)

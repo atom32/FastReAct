@@ -106,6 +106,7 @@ class TaskUpdateRequest(BaseModel):
     owner: Optional[str] = None
     dependencies: Optional[list[str]] = None
     session_id: Optional[str] = None
+    status_reason: Optional[str] = None
 
 
 class SetupConfigDraftRequest(BaseModel):
@@ -742,6 +743,29 @@ def _pska_digest_metrics(traces: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _task_metrics(agent: Agent) -> dict[str, Any]:
+    tasks_service = getattr(agent, "tasks", None)
+    if not tasks_service:
+        return {"count": 0, "status_counts": {}, "active_count": 0, "terminal_count": 0}
+    tasks = tasks_service.list(limit=0)
+    if isinstance(tasks, dict):
+        task_list = list(tasks.values())
+    else:
+        task_list = list(tasks)
+    status_counts: dict[str, int] = {}
+    for task in task_list:
+        status = str(task.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    terminal_count = status_counts.get("completed", 0) + status_counts.get("cancelled", 0)
+    return {
+        "count": len(task_list),
+        "status_counts": status_counts,
+        "active_count": sum(status_counts.get(status, 0) for status in ("pending", "in_progress", "blocked")),
+        "terminal_count": terminal_count,
+        "blocked_count": status_counts.get("blocked", 0),
+    }
+
+
 def policy_payload_for_agent(agent: Any) -> dict[str, Any]:
     config = getattr(agent, "_config", None)
     policy = getattr(config, "policy", None)
@@ -896,6 +920,7 @@ def metrics_payload(agent: Agent) -> dict[str, Any]:
             "status_counts": approval_statuses,
             "avg_resolution_ms": _avg(approval_durations),
         },
+        "tasks": _task_metrics(agent),
         "errors": {
             "count": len(error_events) + len(failed_traces),
             "recent": recent_errors,

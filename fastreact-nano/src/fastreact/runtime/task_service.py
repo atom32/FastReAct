@@ -40,6 +40,8 @@ class TaskService:
             "session_id": session_id,
             "created_at": now,
             "updated_at": now,
+            "status_changed_at": now,
+            "status_history": [{"from": None, "to": "pending", "at": now, "reason": "created"}],
         }
         self._store.upsert_snapshot("tasks", "task_id", task)
         return task
@@ -49,9 +51,13 @@ class TaskService:
         if not current:
             raise ValueError(f"Task not found: {task_id}")
 
-        allowed = {"title", "description", "status", "priority", "owner", "dependencies", "session_id"}
+        allowed = {"title", "description", "status", "priority", "owner", "dependencies", "session_id", "status_reason"}
+        previous_status = current.get("status")
+        status_reason = str(changes.get("status_reason") or "").strip()
         for key, value in changes.items():
             if key not in allowed or value is None:
+                continue
+            if key == "status_reason":
                 continue
             if key == "status" and value not in VALID_STATUSES:
                 raise ValueError(f"Invalid status: {value}")
@@ -59,7 +65,23 @@ class TaskService:
                 raise ValueError(f"Invalid priority: {value}")
             current[key] = value
 
-        current["updated_at"] = utc_iso()
+        now = utc_iso()
+        if "status" in changes and current.get("status") != previous_status:
+            status = str(current.get("status"))
+            current["status_changed_at"] = now
+            history = current.get("status_history") if isinstance(current.get("status_history"), list) else []
+            history.append({"from": previous_status, "to": status, "at": now, "reason": status_reason or "updated"})
+            current["status_history"] = history
+            if status == "in_progress" and not current.get("started_at"):
+                current["started_at"] = now
+            if status == "completed":
+                current["completed_at"] = now
+            if status == "cancelled":
+                current["cancelled_at"] = now
+            if status == "blocked":
+                current["blocked_at"] = now
+
+        current["updated_at"] = now
         self._store.upsert_snapshot("tasks", "task_id", current)
         return current
 

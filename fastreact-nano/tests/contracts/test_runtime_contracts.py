@@ -66,6 +66,11 @@ def test_store_task_service_jsonl_roundtrip(tmp_path):
     tasks = agent.tasks.list(session_id="session-a")
 
     assert updated["status"] == "in_progress"
+    assert updated["started_at"]
+    assert updated["status_changed_at"] == updated["started_at"]
+    assert updated["status_history"][0]["to"] == "pending"
+    assert updated["status_history"][-1]["from"] == "pending"
+    assert updated["status_history"][-1]["to"] == "in_progress"
     assert tasks[0]["task_id"] == task["task_id"]
     assert "Current Task Board" in agent.tasks.prompt_context("session-a")
 
