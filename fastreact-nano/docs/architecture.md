@@ -54,7 +54,11 @@ $FASTRACT_GATEWAY_WORKSPACE/.fastreact/
   traces.jsonl
 ```
 
-This keeps Phase 1 deployable without database migrations. Long-running deployments should schedule `scripts/store_maintenance.py backup` and periodic `compact`.
+This keeps Phase 1 deployable without database migrations. Long-running
+deployments should schedule `scripts/store_maintenance.py backup` and periodic
+`compact`. Use `compact --dry-run --retain-days <days>` before enabling
+append-only retention in production; snapshot streams keep the latest record per
+id, while append-only streams are pruned by record timestamp.
 
 ## Performance Position
 

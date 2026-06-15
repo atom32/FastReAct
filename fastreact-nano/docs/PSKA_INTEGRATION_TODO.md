@@ -126,8 +126,9 @@ just feature-rich.
 - Formalize the first run/trace implementation.
   The `/v1/runs/*` and `/v1/traces/*` contracts now read durable replay events
   ordered by ascending `sequence`, with pagination through `limit`,
-  `after_sequence`, `next_after_sequence`, and `has_more`. Remaining work is
-  retention policy, migration behavior, and deeper replay consistency checks
+  `after_sequence`, `next_after_sequence`, and `has_more`. Store maintenance
+  now supports snapshot compaction plus append-only time retention with dry-run.
+  Remaining work is migration behavior and deeper replay consistency checks
   across future multi-worker deployments.
 
 - Make context compression verifiable and replayable.
@@ -139,7 +140,7 @@ just feature-rich.
 - Productize run trace persistence and replay through a public service API.
   Public trace endpoints can fetch completed run summaries and replay ordered
   events without reading internal files. Remaining work is richer operator
-  diagnosis around policy decisions, retention, and redaction previews.
+  diagnosis around policy decisions and redaction previews.
 
 - Finish approval policy at the product layer.
   The headless approval API, deny-by-timeout default, and approval metadata
