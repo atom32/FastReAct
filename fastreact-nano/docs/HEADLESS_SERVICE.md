@@ -586,12 +586,23 @@ config.pska.example.json
     "servers": [
       {
         "name": "pska",
-        "command": "/Users/xudawei/Documents/personal archive/scripts/pska",
-        "args": ["mcp-server"],
+        "transport": "http",
+        "url": "http://127.0.0.1:8765/mcp",
+        "auth_token_ref": "mcp_api_keys.pska",
         "isolation": "shared",
-        "description": "PSKA personal knowledge store tools."
+        "description": "PSKA HTTP MCP endpoint."
       }
     ]
+  }
+}
+```
+
+Credential file:
+
+```json
+{
+  "mcp_api_keys": {
+    "pska": "replace-with-pska-service-token"
   }
 }
 ```
@@ -602,10 +613,11 @@ Environment-variable form:
 export FASTRACT_MCP_SERVERS='[
   {
     "name": "pska",
-    "command": "/Users/xudawei/Documents/personal archive/scripts/pska",
-    "args": ["mcp-server"],
+    "transport": "http",
+    "url": "http://127.0.0.1:8765/mcp",
+    "auth_token_ref": "mcp_api_keys.pska",
     "isolation": "shared",
-    "description": "PSKA personal knowledge store tools."
+    "description": "PSKA HTTP MCP endpoint."
   }
 ]'
 ```
@@ -617,6 +629,21 @@ pska_pska_search
 pska_pska_agentic_search
 pska_pska_index_status
 ```
+
+## PSKA Digest Worker
+
+Run one digest job or the next ready `digest_via_fastreact` job:
+
+```bash
+python3 scripts/pska_digest_worker.py \
+  --pska-url http://127.0.0.1:8765 \
+  --fastreact-url http://127.0.0.1:8000 \
+  --batch-limit 20
+```
+
+The worker leases the PSKA job, reads digest batches through PSKA HTTP API,
+invokes `/v1/chat/completions` with the `pska_digest` skill, and marks the PSKA
+job complete or failed. It never reads the PSKA database directly.
 
 ## Local Smoke Credentials
 

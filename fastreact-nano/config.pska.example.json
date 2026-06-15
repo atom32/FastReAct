@@ -33,20 +33,20 @@
     "servers": [
       {
         "name": "pska",
-        "transport": "stdio",
-        "command": "/Users/xudawei/Documents/personal archive/scripts/pska",
-        "args": ["mcp-server"],
+        "transport": "http",
+        "url": "http://127.0.0.1:8765/mcp",
+        "auth_token_ref": "mcp_api_keys.pska",
         "isolation": "shared",
-        "description": "PSKA personal knowledge store tools."
+        "description": "PSKA HTTP MCP endpoint."
       }
     ],
-    "_example_http_mcp": {
-      "_comment": "Replace the stdio server above with this once PSKA online HTTP MCP is enabled.",
+    "_fallback_stdio_mcp": {
       "name": "pska",
-      "transport": "http",
-      "url": "http://127.0.0.1:8765/mcp",
+      "transport": "stdio",
+      "command": "/Users/xudawei/Documents/personal archive/scripts/pska",
+      "args": ["mcp-server"],
       "isolation": "shared",
-      "description": "PSKA HTTP MCP endpoint."
+      "description": "PSKA local stdio MCP fallback."
     }
   },
   "policy": {
@@ -59,7 +59,12 @@
           "edit_file": "require_approval",
           "pska_pska_search": "allow",
           "pska_pska_agentic_search": "allow",
-          "pska_pska_index_status": "allow"
+          "pska_pska_index_status": "allow",
+          "pska_pska_job_context": "allow",
+          "pska_pska_review_items": "allow",
+          "pska_pska_write_candidates": "allow",
+          "pska_pska_ingest_channel_payload": "require_approval",
+          "pska_pska_extract_all": "require_approval"
         }
       }
     }

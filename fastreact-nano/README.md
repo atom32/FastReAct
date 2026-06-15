@@ -123,12 +123,23 @@ PSKA MCP 示例：
     "servers": [
       {
         "name": "pska",
-        "command": "/Users/xudawei/Documents/personal archive/scripts/pska",
-        "args": ["mcp-server"],
+        "transport": "http",
+        "url": "http://127.0.0.1:8765/mcp",
+        "auth_token_ref": "mcp_api_keys.pska",
         "isolation": "shared",
-        "description": "PSKA personal knowledge store tools."
+        "description": "PSKA HTTP MCP endpoint."
       }
     ]
+  }
+}
+```
+
+`~/.fastreact/credentials.json` should contain the PSKA MCP service token:
+
+```json
+{
+  "mcp_api_keys": {
+    "pska": "replace-with-pska-service-token"
   }
 }
 ```
@@ -169,6 +180,19 @@ FastReAct 负责：
 - MCP server lifecycle
 
 FastReAct 不直接访问 PSKA DB，不绕过 PSKA MCP tools，也不替 PSKA 做知识 ACL 决策。
+
+Digest worker:
+
+```bash
+python3 scripts/pska_digest_worker.py \
+  --pska-url http://127.0.0.1:8765 \
+  --fastreact-url http://127.0.0.1:8000 \
+  --batch-limit 20
+```
+
+The worker leases `digest_via_fastreact` jobs from PSKA, runs the `pska_digest`
+skill through FastReAct, and completes or fails the PSKA job through PSKA HTTP
+API only.
 
 协议文档见 [`docs/PSKA_FASTREACT_PROTOCOL.md`](docs/PSKA_FASTREACT_PROTOCOL.md)。
 
