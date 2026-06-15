@@ -131,6 +131,8 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
     assert "Do not use built-in tools" in run_calls[0]["payload"]["messages"][1]["content"]
     assert "pska_pska_write_candidates <= 1" in run_calls[0]["payload"]["messages"][1]["content"]
     assert "Merge all summaries" in run_calls[0]["payload"]["messages"][1]["content"]
+    assert "memory_candidates require kind='agent_memory' and text" in run_calls[0]["payload"]["messages"][1]["content"]
+    assert "prefer exactly one memory_candidates item" in run_calls[0]["payload"]["messages"][1]["content"]
     complete_call = http.calls[-1]
     assert complete_call["url"] == "http://pska.test/jobs/job_digest/complete"
     first_run = complete_call["payload"]["result"]["fastreact_runs"][0]
