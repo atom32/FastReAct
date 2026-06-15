@@ -642,8 +642,15 @@ python3 scripts/pska_digest_worker.py \
 ```
 
 The worker leases the PSKA job, reads digest batches through PSKA HTTP API,
-invokes `/v1/chat/completions` with the `pska_digest` skill, and marks the PSKA
-job complete or failed. It never reads the PSKA database directly.
+creates durable `/v1/runs` with the `pska_digest` skill, polls run status/events,
+and marks the PSKA job complete or failed. It never reads the PSKA database
+directly.
+
+This worker intentionally lives in FastReAct, not PSKA. FastReAct owns LLM
+execution, skills, tool policy, run lifecycle, and traces. PSKA owns durable
+jobs, ACL, source refs, review, audit, and candidate persistence. Keeping the
+worker here prevents PSKA from importing FastReAct internals while still letting
+PSKA stay executor-agnostic through HTTP API/MCP contracts.
 
 ## Local Smoke Credentials
 

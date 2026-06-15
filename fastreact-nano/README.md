@@ -181,7 +181,11 @@ FastReAct 负责：
 
 FastReAct 不直接访问 PSKA DB，不绕过 PSKA MCP tools，也不替 PSKA 做知识 ACL 决策。
 
-Digest worker:
+Digest worker belongs in this FastReAct repo. It is agent-runtime code, because
+it leases PSKA jobs, invokes FastReAct skills/runs, follows FastReAct tool policy,
+and records FastReAct trace semantics. PSKA should not keep a second worker
+implementation; it should expose the HTTP API/MCP/job contract that this worker
+consumes.
 
 ```bash
 python3 scripts/pska_digest_worker.py \

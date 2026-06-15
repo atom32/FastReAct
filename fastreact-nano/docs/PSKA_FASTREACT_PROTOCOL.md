@@ -28,6 +28,12 @@ FastReAct owns:
 - session and run lifecycle
 - event streaming
 - runtime traces and tool audit
+- PSKA digest worker implementation that executes PSKA jobs through FastReAct runs
+
+PSKA digest workers belong in FastReAct, not PSKA. A worker may lease PSKA jobs
+and call PSKA HTTP API/MCP tools, but it must not access the PSKA database or
+import PSKA internals. PSKA should keep only the stable job/tool contract, so a
+future executor can replace FastReAct without changing PSKA storage or ACL code.
 
 ## What Crosses The Boundary
 
