@@ -27,7 +27,7 @@ from fastreact.core.context import ContextMonitor, FilesystemMemory
 from fastreact.core.safety import SafetyPolicy, SafetyLevel, CLIConfirmationCallback
 from fastreact.core.react import ReActCore
 from fastreact.core.events import EventType
-from fastreact.core.multitenant import MultiTenantManager, UserContext
+from fastreact.core.multitenant import MultiTenantManager, UserContext, SecurityError
 from fastreact.skills import SkillRegistry
 from fastreact.providers.litellm import LiteLLMProvider
 from fastreact.mcp.manager import MCPToolManager
@@ -278,6 +278,8 @@ class Agent:
             pass
 
         # User-specific skills (higher priority)
+        if user_context:
+            self._validate_user_skills_dir(user_context.skills_dir, user_context.workspace)
         if user_context and user_context.skills_dir.exists():
             try:
                 user_loader = SkillLoader(skills_dir=user_context.skills_dir)
@@ -363,6 +365,15 @@ class Agent:
         selected = [name for name, score in skill_scores[:max_skills] if score > 0]
 
         return selected
+
+    def _validate_user_skills_dir(self, skills_dir: Path, workspace: Path) -> None:
+        """Ensure a user skills directory cannot escape its workspace."""
+        try:
+            skills_dir.resolve().relative_to(workspace.resolve())
+        except ValueError as exc:
+            raise SecurityError(
+                f"User skills_dir '{skills_dir}' is not contained within workspace '{workspace}'"
+            ) from exc
 
     def _build_system_prompt_with_skills(self, skills: Optional[list[str]]) -> tuple[str, str]:
         """
