@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { fastReactEventsToThreadMessages } from "./fastreact-thread"
+import { buildFastReactReplay, fastReactEventsToThreadMessages, mergeFastReactEvents } from "./fastreact-thread"
 
 describe("fastReactEventsToThreadMessages", () => {
   it("merges tool_call and tool_result into one tool card", () => {
@@ -91,5 +91,68 @@ describe("fastReactEventsToThreadMessages", () => {
       expect.arrayContaining(["src_direct", "src_evidence", "src_nested"]),
     )
     expect(snapshot.events[1].metadata).toMatchObject({ result: expect.any(Object) })
+  })
+
+  it("merges paginated events by sequence and deduplicates repeats", () => {
+    const events = mergeFastReactEvents(
+      [
+        { type: "session_start", sequence: 0, event_id: "run:0" },
+        { type: "think", sequence: 1, event_id: "run:1", content: "old" },
+      ],
+      [
+        { type: "think", sequence: 1, event_id: "run:1", content: "new" },
+        { type: "session_end", sequence: 2, event_id: "run:2" },
+      ],
+    )
+
+    expect(events.map((event) => event.sequence)).toEqual([0, 1, 2])
+    expect(events[1].content).toBe("new")
+  })
+
+  it("builds replay cards with merged tool calls and failed summary", () => {
+    const replay = buildFastReactReplay([
+      { type: "session_start", sequence: 0 },
+      { type: "tool_call", sequence: 1, tool_call_id: "call_1", tool_name: "exec", tool_args: { command: "bad" } },
+      { type: "tool_result", sequence: 2, tool_call_id: "call_1", tool_name: "exec", metadata: { error: "boom" } },
+      { type: "error", sequence: 3, content: "run failed" },
+    ])
+
+    expect(replay.toolCalls).toHaveLength(1)
+    expect(replay.toolCalls[0]).toMatchObject({ tool_name: "exec", status: "failed" })
+    expect(replay.summary.error).toBe("run failed")
+    expect(replay.replayEvents.map((event) => event.sequence)).toEqual([0, 1, 2, 3])
+  })
+
+  it("keeps trace summary fields including PSKA budget and source refs", () => {
+    const replay = buildFastReactReplay(
+      [
+        {
+          type: "tool_result",
+          sequence: 0,
+          metadata: {
+            result: { source_refs: [{ source_id: "src_1", title: "Doc" }] },
+          },
+        },
+      ],
+      {
+        final_content: "done",
+        tool_call_count: 2,
+        approval_count: 1,
+        compression_count: 1,
+        policy_snapshot_hash: "policy-hash",
+        llm_usage_total: { total_tokens: 10 },
+        pska_digest_tool_budget: { ok: true },
+      },
+    )
+
+    expect(replay.summary).toMatchObject({
+      final_content: "done",
+      tool_call_count: 2,
+      approval_count: 1,
+      compression_count: 1,
+      policy_snapshot_hash: "policy-hash",
+      pska_digest_tool_budget: { ok: true },
+    })
+    expect(replay.citations.map((citation) => citation.source_id)).toContain("src_1")
   })
 })

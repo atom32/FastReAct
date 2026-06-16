@@ -19,6 +19,7 @@ import {
   truncateJson,
 } from "@/lib/service-api"
 import { AssistantRunPanel } from "@/components/service/assistant-run-panel"
+import { RunTraceWorkbench } from "@/components/service/run-trace-workbench"
 
 type RunRecord = {
   run_id: string
@@ -43,7 +44,7 @@ type EventRecord = {
   cited_source_ids?: string[]
   approval_request_id?: string
   metadata?: Record<string, unknown>
-  timestamp?: string
+  timestamp?: string | number
 }
 
 type ApprovalRecord = {
@@ -83,16 +84,6 @@ type TaskDetail = {
   traces?: RunRecord[]
 }
 
-type CitationRecord = {
-  source_id: string
-  event_type: string
-  event_id?: string
-  title?: string
-  url?: string
-  snippet?: string
-  metadata?: unknown
-}
-
 function statusTone(status?: string): string {
   if (status === "completed" || status === "ready" || status === "approved" || status === "allow") {
     return "border-emerald-300 bg-emerald-50 text-emerald-700"
@@ -115,56 +106,6 @@ function timeLabel(value?: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString()
-}
-
-function traceLabel(trace: RunRecord): string {
-  return trace.run_id || trace.session_id || "legacy-trace"
-}
-
-function collectCitations(events: EventRecord[]): CitationRecord[] {
-  const citations = new Map<string, CitationRecord>()
-  for (const event of events) {
-    const metadata = event.metadata || {}
-    const explicit = Array.isArray((metadata as any).citations) ? (metadata as any).citations : []
-    for (const citation of explicit) {
-      if (!citation) continue
-      const sourceId = String(citation.source_id || citation.id || citation.url || citation.title || "")
-      if (!sourceId) continue
-      citations.set(`${event.event_id || event.sequence}:${sourceId}`, {
-        source_id: sourceId,
-        event_type: event.type,
-        event_id: event.event_id,
-        title: citation.title,
-        url: citation.url,
-        snippet: citation.snippet || citation.text || citation.content,
-        metadata: citation,
-      })
-    }
-    for (const sourceId of event.cited_source_ids || []) {
-      citations.set(`${event.event_id || event.sequence}:${sourceId}`, {
-        source_id: sourceId,
-        event_type: event.type,
-        event_id: event.event_id,
-        metadata,
-      })
-    }
-    const evidence = Array.isArray((metadata as any).evidence) ? (metadata as any).evidence : []
-    for (const item of evidence) {
-      if (!item) continue
-      const sourceId = String(item.source_id || item.id || item.url || item.title || "")
-      if (!sourceId) continue
-      citations.set(`${event.event_id || event.sequence}:evidence:${sourceId}`, {
-        source_id: sourceId,
-        event_type: event.type,
-        event_id: event.event_id,
-        title: item.title,
-        url: item.url,
-        snippet: item.snippet || item.text || item.content,
-        metadata: item,
-      })
-    }
-  }
-  return [...citations.values()]
 }
 
 export function ServiceConsole() {
@@ -222,9 +163,6 @@ export function ServiceConsole() {
     () => taskDetail?.task || tasks.find((task) => task.task_id === selectedTaskId),
     [selectedTaskId, taskDetail, tasks],
   )
-  const citations = useMemo(() => collectCitations(events), [events])
-  const toolCalls = useMemo(() => events.filter((event) => event.type === "tool_call"), [events])
-  const approvalEvents = useMemo(() => events.filter((event) => event.type === "ask_user" || event.approval_request_id), [events])
   const approvalStart = approvalTotalCount === 0 ? 0 : approvalPage * approvalPageSize + 1
   const approvalEnd = Math.min(approvalTotalCount, approvalPage * approvalPageSize + approvals.length)
 
@@ -244,7 +182,7 @@ export function ServiceConsole() {
 
   const loadEvents = useCallback(async (runId: string) => {
     if (!runId) return
-    const payload = await serviceJson<{ events: EventRecord[] }>(`/v1/runs/${runId}/events?limit=500`)
+    const payload = await serviceJson<{ events: EventRecord[] }>(`/v1/runs/${runId}/events?limit=200`)
     setEvents(payload.events || [])
   }, [])
 
@@ -541,60 +479,24 @@ export function ServiceConsole() {
           />
         </TabsContent>
 
-        <TabsContent forceMount value="runs" className="grid gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
-          <Card>
-            <CardHeader><CardTitle>Runs</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              {runs.map((run, index) => (
-                <button
-                  key={`${run.run_id}-${index}`}
-                  onClick={() => setSelectedRunId(run.run_id)}
-                  className="w-full rounded-md border p-3 text-left text-sm hover:bg-muted"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs">{run.run_id.slice(0, 13)}</span>
-                    <StatusBadge value={run.status} />
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">{timeLabel(run.created_at)} · {run.event_count ?? 0} events</div>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
-          <div className="space-y-4">
-            {selectedRun && <RunSummary run={runDetail || selectedRun} trace={traceDetail} events={events} />}
-            <EventStream events={events} />
-            <CitationPanel citations={citations} />
-            <Card>
-              <CardHeader><CardTitle>Replay Summary</CardTitle></CardHeader>
-              <CardContent className="grid gap-2 md:grid-cols-2 text-sm">
-                <div className="rounded-md border p-2">Events: {events.length}</div>
-                <div className="rounded-md border p-2">Tool calls: {toolCalls.length}</div>
-                <div className="rounded-md border p-2">Approvals: {approvalEvents.length}</div>
-                <div className="rounded-md border p-2">Citations: {citations.length}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader><CardTitle>Trace Summaries</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
-                {traces.map((trace, index) => (
-                  <button
-                    key={`${traceLabel(trace)}-${index}`}
-                    onClick={() => trace.run_id && setSelectedRunId(trace.run_id)}
-                    disabled={!trace.run_id}
-                    className="w-full rounded-md border p-3 text-left text-sm hover:bg-muted"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs">{traceLabel(trace)}</span>
-                      <StatusBadge value={trace.status} />
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {trace.run_id ? "replayable" : "legacy summary"} · {timeLabel(trace.completed_at)} · {trace.duration_ms ?? "-"} ms
-                    </div>
-                  </button>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
+        <TabsContent forceMount value="runs">
+          <RunTraceWorkbench
+            runs={runs}
+            traces={traces}
+            selectedRunId={selectedRunId}
+            selectedRun={selectedRun || null}
+            runDetail={runDetail}
+            traceDetail={traceDetail}
+            events={events}
+            onSelectRun={setSelectedRunId}
+            onRefreshRuns={loadRuns}
+            onRefreshRun={async (runId) => {
+              await Promise.all([loadRuns(), loadEvents(runId), loadRunDetail(runId), loadApprovals()])
+            }}
+            onCancelRun={cancelRun}
+            onResolveApproval={resolveApproval}
+            onError={setError}
+          />
         </TabsContent>
 
         <TabsContent forceMount value="tasks" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
@@ -919,90 +821,6 @@ export function ServiceConsole() {
         </TabsContent>
       </Tabs>
     </main>
-  )
-}
-
-function EventStream({ events }: { events: EventRecord[] }) {
-  return (
-    <Card>
-      <CardHeader><CardTitle>Event Stream</CardTitle></CardHeader>
-      <CardContent className="max-h-[680px] space-y-2 overflow-auto">
-        {events.map((event, index) => (
-          <div key={event.event_id || `${event.type}-${event.sequence ?? index}-${index}`} className="rounded-md border p-3 text-sm">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">{event.sequence ?? "-"}</Badge>
-                <span className="font-medium">{event.type}</span>
-              </div>
-              {event.tool_name && <Badge variant="outline">{event.tool_name}</Badge>}
-            </div>
-            {event.content && <div className="whitespace-pre-wrap text-sm">{event.content}</div>}
-            {event.tool_args ? <pre className="mt-2 rounded bg-muted p-2 text-xs">{truncateJson(event.tool_args)}</pre> : null}
-            {event.cited_source_ids?.length ? <div className="mt-2 text-xs text-muted-foreground">Citations: {event.cited_source_ids.join(", ")}</div> : null}
-            {event.approval_request_id ? <div className="mt-2 text-xs text-amber-700">Approval: {event.approval_request_id}</div> : null}
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  )
-}
-
-function RunSummary({ run, trace, events }: { run: RunRecord; trace: any; events: EventRecord[] }) {
-  const error = run.error || run.last_error || trace?.error || trace?.error_summary
-  const finalContent = trace?.final_content || trace?.final_answer || events.find((event) => event.type === "session_end")?.content
-  const toolCount = trace?.tool_call_count ?? events.filter((event) => event.type === "tool_call").length
-  const approvalCount = trace?.approval_count ?? events.filter((event) => event.type === "ask_user" || event.approval_request_id).length
-  const compressionCount = trace?.compression_count ?? events.filter((event) => event.metadata?.compression).length
-  return (
-    <Card>
-      <CardHeader><CardTitle>Run Detail</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-xs">{run.run_id}</span>
-          <StatusBadge value={run.status} />
-        </div>
-        <div className="grid gap-2 md:grid-cols-2 text-sm">
-          <div className="rounded-md border p-2">Session: {run.session_id || "-"}</div>
-          <div className="rounded-md border p-2">Events: {run.event_count ?? events.length}</div>
-          <div className="rounded-md border p-2">Tools: {toolCount}</div>
-          <div className="rounded-md border p-2">Approvals: {approvalCount}</div>
-          <div className="rounded-md border p-2">Compression: {compressionCount}</div>
-          <div className="rounded-md border p-2">Duration: {run.duration_ms ?? trace?.duration_ms ?? "-"} ms</div>
-        </div>
-        {trace?.policy_snapshot_hash && (
-          <div className="rounded-md border p-2 text-xs">Policy snapshot: <span className="font-mono">{trace.policy_snapshot_hash}</span></div>
-        )}
-        {error && <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">{String(error)}</div>}
-        {finalContent && (
-          <div>
-            <div className="mb-1 text-sm font-medium">Final Content</div>
-            <div className="max-h-[220px] overflow-auto rounded-md border p-3 text-sm whitespace-pre-wrap">{finalContent}</div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function CitationPanel({ citations }: { citations: CitationRecord[] }) {
-  return (
-    <Card>
-      <CardHeader><CardTitle>Citations</CardTitle></CardHeader>
-      <CardContent className="space-y-2">
-        {citations.map((citation, index) => (
-          <div key={`${citation.event_id || citation.event_type}-${citation.source_id}-${index}`} className="rounded-md border p-3 text-sm">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{citation.title || citation.source_id}</span>
-              <Badge variant="outline">{citation.event_type}</Badge>
-            </div>
-            {citation.url && <div className="mt-1 break-all text-xs text-muted-foreground">{citation.url}</div>}
-            {citation.snippet && <div className="mt-2 whitespace-pre-wrap text-sm">{citation.snippet}</div>}
-            {!citation.snippet && citation.metadata ? <pre className="mt-2 rounded bg-muted p-2 text-xs">{truncateJson(citation.metadata, 700)}</pre> : null}
-          </div>
-        ))}
-        {!citations.length && <div className="rounded-md border p-3 text-sm text-muted-foreground">No citation or evidence metadata in this replay.</div>}
-      </CardContent>
-    </Card>
   )
 }
 

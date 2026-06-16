@@ -31,8 +31,8 @@ export type FastReactToolBlock = {
   args?: unknown
   result?: unknown
   status: "running" | "complete" | "failed"
-  started_at?: string
-  completed_at?: string
+  started_at?: string | number
+  completed_at?: string | number
   event: FastReactRunEvent
   result_event?: FastReactRunEvent
 }
@@ -69,11 +69,44 @@ export type FastReactThreadSnapshot = {
   status: "empty" | "running" | "complete" | "failed"
 }
 
-function eventKey(event: FastReactRunEvent, fallback: number): string {
+export type FastReactReplayEvent = {
+  id: string
+  sequence: number
+  type: string
+  status: "running" | "complete" | "failed" | "requires_action" | "info"
+  label: string
+  content?: string
+  event: FastReactRunEvent
+  tool?: FastReactToolBlock
+  approval?: FastReactApprovalBlock
+  citations: FastReactCitation[]
+}
+
+export type FastReactTraceSummary = {
+  final_content: string
+  error: string
+  tool_call_count: number
+  approval_count: number
+  compression_count: number
+  policy_snapshot_hash: string
+  llm_usage_total?: Record<string, unknown>
+  pska_digest_tool_budget?: unknown
+}
+
+export type FastReactReplaySnapshot = {
+  events: FastReactRunEvent[]
+  replayEvents: FastReactReplayEvent[]
+  toolCalls: FastReactToolBlock[]
+  approvals: FastReactApprovalBlock[]
+  citations: FastReactCitation[]
+  summary: FastReactTraceSummary
+}
+
+export function eventKey(event: FastReactRunEvent, fallback: number): string {
   return event.event_id || `${event.type}-${event.sequence ?? fallback}`
 }
 
-function textFromUnknown(value: unknown): string {
+export function textFromUnknown(value: unknown): string {
   if (typeof value === "string") return value
   if (value == null) return ""
   try {
@@ -204,6 +237,123 @@ function attachEvent(message: FastReactThreadMessage, event: FastReactRunEvent) 
 function matchTool(tool: FastReactToolBlock, event: FastReactRunEvent): boolean {
   if (event.tool_call_id && tool.tool_call_id === event.tool_call_id) return true
   return !tool.result_event && Boolean(event.tool_name) && tool.tool_name === event.tool_name
+}
+
+export function mergeFastReactEvents(
+  existing: readonly FastReactRunEvent[],
+  incoming: readonly FastReactRunEvent[],
+): FastReactRunEvent[] {
+  const byKey = new Map<string, FastReactRunEvent>()
+  for (const event of [...existing, ...incoming]) {
+    byKey.set(eventKey(event, byKey.size), event)
+  }
+  return [...byKey.values()].sort((left, right) => {
+    const leftSequence = typeof left.sequence === "number" ? left.sequence : Number.MAX_SAFE_INTEGER
+    const rightSequence = typeof right.sequence === "number" ? right.sequence : Number.MAX_SAFE_INTEGER
+    if (leftSequence !== rightSequence) return leftSequence - rightSequence
+    return eventKey(left, 0).localeCompare(eventKey(right, 0))
+  })
+}
+
+export function buildFastReactReplay(events: readonly FastReactRunEvent[], trace?: Record<string, unknown> | null): FastReactReplaySnapshot {
+  const ordered = mergeFastReactEvents([], events)
+  const toolCalls: FastReactToolBlock[] = []
+  const approvals: FastReactApprovalBlock[] = []
+  const replayEvents: FastReactReplayEvent[] = []
+
+  for (const [index, event] of ordered.entries()) {
+    const sequence = typeof event.sequence === "number" ? event.sequence : index
+    const citations = collectFastReactCitations([event])
+    let label = event.type
+    let status: FastReactReplayEvent["status"] = "info"
+    let tool: FastReactToolBlock | undefined
+    let approval: FastReactApprovalBlock | undefined
+
+    if (event.type === "tool_call") {
+      tool = {
+        id: eventKey(event, index),
+        tool_call_id: event.tool_call_id || findString(event.metadata || {}, ["tool_call_id", "id"]),
+        tool_name: event.tool_name || findString(event.metadata || {}, ["tool_name", "name"]) || "tool",
+        args: event.tool_args ?? event.metadata?.args,
+        status: "running",
+        started_at: event.timestamp,
+        event,
+      }
+      toolCalls.push(tool)
+      label = tool.tool_name
+      status = "running"
+    } else if (event.type === "tool_result") {
+      tool = [...toolCalls].reverse().find((item) => matchTool(item, event))
+      if (tool) {
+        tool.result = toolResultFromEvent(event)
+        tool.status = event.metadata?.is_error || event.metadata?.error ? "failed" : "complete"
+        tool.completed_at = event.timestamp
+        tool.result_event = event
+        status = tool.status === "failed" ? "failed" : "complete"
+        label = tool.tool_name
+      } else {
+        status = event.metadata?.is_error || event.metadata?.error ? "failed" : "complete"
+        label = event.tool_name || "tool_result"
+      }
+    } else if (event.type === "ask_user" || event.approval_request_id) {
+      approval = {
+        id: eventKey(event, index),
+        approval_request_id: event.approval_request_id || findString(event.metadata || {}, ["approval_request_id", "request_id", "id"]),
+        tool_name: event.tool_name,
+        tool_args: event.tool_args,
+        reason: event.content || findString(event.metadata || {}, ["reason", "message"]),
+        status: findString(event.metadata || {}, ["status"]),
+        event,
+      }
+      approvals.push(approval)
+      label = approval.tool_name || "approval"
+      status = "requires_action"
+    } else if (event.type === "error") {
+      status = "failed"
+    } else if (event.type === "session_end") {
+      status = "complete"
+    } else if (event.metadata?.compression || event.metadata?.compression_event) {
+      label = "context_compression"
+      status = "info"
+    }
+
+    replayEvents.push({
+      id: eventKey(event, index),
+      sequence,
+      type: event.type,
+      status,
+      label,
+      content: event.content,
+      event,
+      tool,
+      approval,
+      citations,
+    })
+  }
+
+  const finalEvent = [...ordered].reverse().find((event) => event.type === "session_end")
+  const errorEvent = [...ordered].reverse().find((event) => event.type === "error")
+  const compressionCount = ordered.filter((event) => event.metadata?.compression || event.metadata?.compression_event).length
+  const traceRecord = trace || {}
+  const summary: FastReactTraceSummary = {
+    final_content: textFromUnknown(traceRecord.final_content) || textFromUnknown(traceRecord.final_answer) || finalEvent?.content || "",
+    error: textFromUnknown(traceRecord.error) || textFromUnknown(traceRecord.error_summary) || errorEvent?.content || "",
+    tool_call_count: Number(traceRecord.tool_call_count ?? toolCalls.length) || 0,
+    approval_count: Number(traceRecord.approval_count ?? approvals.length) || 0,
+    compression_count: Number(traceRecord.compression_count ?? compressionCount) || 0,
+    policy_snapshot_hash: textFromUnknown(traceRecord.policy_snapshot_hash),
+    llm_usage_total: asRecord(traceRecord.llm_usage_total) || undefined,
+    pska_digest_tool_budget: traceRecord.pska_digest_tool_budget,
+  }
+
+  return {
+    events: ordered,
+    replayEvents,
+    toolCalls,
+    approvals,
+    citations: collectFastReactCitations(ordered),
+    summary,
+  }
 }
 
 function toAssistantUiMessages(messages: FastReactThreadMessage[]): ThreadMessage[] {
