@@ -16,6 +16,33 @@ if TYPE_CHECKING:
     from fastreact.core.events import AgentEvent
 
 
+class DigestToolBudgetGuard:
+    """Per-run MCP tool budget guard for constrained PSKA digest worker runs."""
+
+    DEFAULT_BUDGET = {
+        "pska_pska_write_candidates": 1,
+        "pska_pska_job_context": 1,
+    }
+
+    def __init__(self, metadata: Optional[dict] = None):
+        metadata = metadata or {}
+        self.enabled = metadata.get("caller") == "pska_digest_worker" or metadata.get("purpose") == "digest"
+        configured_budget = metadata.get("tool_budget") if isinstance(metadata.get("tool_budget"), dict) else {}
+        self.budget = {
+            name: int(configured_budget.get(name, default) or default)
+            for name, default in self.DEFAULT_BUDGET.items()
+        }
+        self.counts = {name: 0 for name in self.budget}
+
+    def allow(self, tool_name: str) -> bool:
+        if not self.enabled or tool_name not in self.budget:
+            return True
+        if self.counts.get(tool_name, 0) >= self.budget[tool_name]:
+            return False
+        self.counts[tool_name] = self.counts.get(tool_name, 0) + 1
+        return True
+
+
 class AgentRuntime:
     """
     Runtime boundary for Agent execution.
@@ -35,6 +62,7 @@ class AgentRuntime:
         session_id: Optional[str] = None,
         history: Optional[list[dict]] = None,
         user_key: Optional[str] = None,
+        run_metadata: Optional[dict] = None,
     ) -> AsyncIterator["AgentEvent"]:
         span = TimingSpan("agent.run_event_stream")
         first_event_seen = False
@@ -49,6 +77,7 @@ class AgentRuntime:
             session_id=session_id,
             history=history,
             user_key=user_key,
+            run_metadata=run_metadata,
         ):
             event_count += 1
             if not first_event_seen:
@@ -134,6 +163,7 @@ class AgentRuntime:
         session_id: Optional[str] = None,
         history: Optional[list[dict]] = None,
         user_key: Optional[str] = None,
+        run_metadata: Optional[dict] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """
         Run agent with event stream (Brain-Body Loop)
@@ -212,6 +242,7 @@ class AgentRuntime:
         from fastreact.core.events import AgentEvent, EventType
 
         agent = self._agent
+        budget_guard = DigestToolBudgetGuard(run_metadata)
 
         # Extract user_key from session_id if not provided
         if user_key is None and agent._multitenant_enabled and session_id:
@@ -420,19 +451,28 @@ class AgentRuntime:
                         session_id=session_id,
                         system_prompt=system_prompt,  # Pass skills-enhanced prompt
                     ):
-                        # Forward all events directly
-                        yield event
-
                         # Collect TOOL_CALL events for execution
                         if event.type == EventType.TOOL_CALL:
+                            if not budget_guard.allow(event.tool_name or ""):
+                                yield AgentEvent.think(
+                                    f"[TOOL_BUDGET_DENIED] {event.tool_name} exceeded per-run budget",
+                                    session_id,
+                                    tool_name=event.tool_name,
+                                    budget=budget_guard.budget.get(event.tool_name or ""),
+                                    tool_budget_denied=True,
+                                )
+                                continue
+                            # Forward allowed tool call intents only after budget filtering.
+                            yield event
                             tool_calls.append({
                                 "id": event.metadata.get("call_id", ""),
                                 "name": event.tool_name,
                                 "arguments": event.tool_args,
                             })
+                            continue
 
                         # Capture STEP_END to handle tool execution
-                        elif event.type == EventType.STEP_END:
+                        if event.type == EventType.STEP_END:
                             step_end = event
                             # CRITICAL: Add LLM response to message history
                             # Must include tool_calls if present (OpenAI format requirement)
@@ -461,7 +501,11 @@ class AgentRuntime:
                                     ]
 
                                 messages.append(assistant_msg)
+                            yield event
                             break
+
+                        # Forward all non-tool-call events directly.
+                        yield event
                     self._record_span(session_id, "llm.step", llm_span, tool_calls=len(tool_calls))
 
                     # 2. Body: Execute tools (if any)

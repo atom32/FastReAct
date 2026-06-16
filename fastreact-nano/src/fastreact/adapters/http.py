@@ -12,6 +12,7 @@ import argparse
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import inspect
 import json
 import os
 from pathlib import Path
@@ -155,6 +156,22 @@ def set_agent_for_testing(agent: Optional[Agent]) -> None:
 def set_service_config(config: Any) -> None:
     global _service_config
     _service_config = config
+
+
+def run_agent_event_stream(agent: Any, **kwargs: Any) -> AsyncIterator[AgentEvent]:
+    """Call Agent.run_event_stream while tolerating older compatible facades."""
+    try:
+        signature = inspect.signature(agent.run_event_stream)
+    except (TypeError, ValueError):
+        return agent.run_event_stream(**kwargs)
+    parameters = signature.parameters
+    supports_run_metadata = "run_metadata" in parameters or any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    if not supports_run_metadata:
+        kwargs.pop("run_metadata", None)
+    return agent.run_event_stream(**kwargs)
 
 
 def configured_service_token() -> str | None:
@@ -426,12 +443,14 @@ async def execute_background_run(run_id: str) -> None:
     parent_event_id = None
     sequence = runs.next_sequence(run_id)
     try:
-        async for event in agent.run_event_stream(
-            record["query"],
+        async for event in run_agent_event_stream(
+            agent,
+            query=record["query"],
             skills=record.get("skills"),
             session_id=record["session_id"],
             history=record.get("history"),
             user_key=record.get("user_key"),
+            run_metadata=record.get("metadata") or {},
         ):
             payload = service_event_payload(
                 event,
@@ -1194,12 +1213,14 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         async def event_generator() -> AsyncIterator[str]:
             parent_event_id = None
             try:
-                async for event in agent.run_event_stream(
-                    query,
+                async for event in run_agent_event_stream(
+                    agent,
+                    query=query,
                     skills=chat_request.skills,
                     session_id=session_id,
                     history=history,
                     user_key=chat_request.user_key,
+                    run_metadata=dict(chat_request.metadata or {}),
                 ):
                     payload = service_event_payload(
                         event,
@@ -1250,12 +1271,14 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         parent_event_id = None
         sequence = 0
         try:
-            async for event in agent.run_event_stream(
-                query,
+            async for event in run_agent_event_stream(
+                agent,
+                query=query,
                 skills=chat_request.skills,
                 session_id=session_id,
                 history=history,
                 user_key=chat_request.user_key,
+                run_metadata=dict(chat_request.metadata or {}),
             ):
                 payload = service_event_payload(
                     event,

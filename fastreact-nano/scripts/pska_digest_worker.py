@@ -197,9 +197,12 @@ def _run_fastreact_digest(
         "Do not use built-in tools such as exec, read_file, write_file, or edit_file. "
         "Do not inspect local code, local files, package modules, or environment state.\n"
         "Tool budget for this batch: pska_pska_write_candidates <= 1 and pska_pska_job_context <= 1. "
-        "If there is useful grounded knowledge, call pska_pska_write_candidates at most once. "
+        "If there is useful grounded knowledge, call pska_pska_write_candidates exactly once or not at all. "
+        "When you need to write multiple candidate categories, combine them into that single pska_pska_write_candidates payload. "
+        "The one payload may contain entities, memory_candidates, review_items, hyperedges, summaries, and source_refs together. "
         "Merge all summaries, memory_candidates, review_items, and action candidates into one pska_pska_write_candidates payload. "
         "Do not split write calls by candidate category, source, confidence, or citation group. "
+        "A second pska_pska_write_candidates call is invalid even if it writes a different candidate type. "
         "Every candidate must include schema_version='pska.candidates.v1', job_id, source_refs, confidence, and producer='fastreact'. "
         "Use valid PSKA candidate fields: entities require entity_type and label; memory_candidates require kind='agent_memory' and text; "
         "review_items require review_type, title, and proposal; hyperedges require relation_type and at least two members with entity_type, label, and role. "
@@ -217,7 +220,7 @@ def _run_fastreact_digest(
                 "content": (
                     "You are FastReAct executing a constrained PSKA digest worker. "
                     "Use only PSKA MCP tools named in the user message. Never use local shell or file tools. "
-                    "One digest batch may make at most one pska_pska_write_candidates call."
+                    "One digest batch may make at most one pska_pska_write_candidates call; all candidate categories must be merged into that one payload."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -231,6 +234,10 @@ def _run_fastreact_digest(
             "pska_user_id": config.represented_user_id,
             "pska_job_id": job_id,
             "scope": {"job_id": job_id, "cursor": batch.get("cursor")},
+            "tool_budget": {
+                "pska_pska_write_candidates": 1,
+                "pska_pska_job_context": 1,
+            },
         },
     }
     created = http.request_json(

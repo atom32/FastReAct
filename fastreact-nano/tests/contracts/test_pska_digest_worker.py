@@ -91,6 +91,9 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
                             "request_id": "batch-0",
                             "source_refs": [{"source_item_id": "src_1"}],
                             "entities": [{"entity_id": "ent_1"}],
+                            "memory_candidates": [{"kind": "agent_memory", "text": "Remember one"}],
+                            "review_items": [{"review_type": "quality", "title": "Review one", "proposal": {"note": "check"}}],
+                            "hyperedges": [{"relation_type": "mentions", "members": [{"entity_type": "source", "label": "One", "role": "subject"}]}],
                         },
                     },
                     {"type": "session_end", "content": "batch one"},
@@ -131,8 +134,14 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
     assert "Do not use built-in tools" in run_calls[0]["payload"]["messages"][1]["content"]
     assert "pska_pska_write_candidates <= 1" in run_calls[0]["payload"]["messages"][1]["content"]
     assert "Merge all summaries" in run_calls[0]["payload"]["messages"][1]["content"]
+    assert "A second pska_pska_write_candidates call is invalid" in run_calls[0]["payload"]["messages"][1]["content"]
+    assert "all candidate categories must be merged" in run_calls[0]["payload"]["messages"][0]["content"]
     assert "memory_candidates require kind='agent_memory' and text" in run_calls[0]["payload"]["messages"][1]["content"]
     assert "prefer exactly one memory_candidates item" in run_calls[0]["payload"]["messages"][1]["content"]
+    assert run_calls[0]["payload"]["metadata"]["tool_budget"] == {
+        "pska_pska_write_candidates": 1,
+        "pska_pska_job_context": 1,
+    }
     complete_call = http.calls[-1]
     assert complete_call["url"] == "http://pska.test/jobs/job_digest/complete"
     first_run = complete_call["payload"]["result"]["fastreact_runs"][0]
@@ -144,6 +153,9 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
     tool_summary = first_run["tool_calls"][0]
     assert tool_summary["tool_name"] == "pska_pska_write_candidates"
     assert tool_summary["entity_count"] == 1
+    assert tool_summary["memory_candidate_count"] == 1
+    assert tool_summary["review_item_count"] == 1
+    assert tool_summary["hyperedge_count"] == 1
     assert "tool_args" not in tool_summary
 
 

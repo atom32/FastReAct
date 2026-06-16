@@ -1183,6 +1183,7 @@ class Agent:
         session_id: Optional[str] = None,
         history: Optional[list[dict]] = None,
         user_key: Optional[str] = None,
+        run_metadata: Optional[dict] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """
         Public execution stream entrypoint.
@@ -1196,6 +1197,7 @@ class Agent:
             session_id=session_id,
             history=history,
             user_key=user_key,
+            run_metadata=run_metadata,
         ):
             yield event
 
@@ -1325,6 +1327,7 @@ class Agent:
         session_id: Optional[str] = None,
         history: Optional[list[dict]] = None,
         user_key: Optional[str] = None,
+        run_metadata: Optional[dict] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """Compatibility shim; AgentRuntime owns the execution loop."""
         async for event in self.runtime._run_event_stream_impl(
@@ -1333,6 +1336,7 @@ class Agent:
             session_id=session_id,
             history=history,
             user_key=user_key,
+            run_metadata=run_metadata,
         ):
             yield event
 
