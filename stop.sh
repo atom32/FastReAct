@@ -1,34 +1,31 @@
-#!/bin/bash
-# FastReAct Nano - Stop Script
+#!/usr/bin/env bash
+# Stop local FastReAct daemon and service console processes.
 
-set -e
+set -euo pipefail
 
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${YELLOW}Stopping FastReAct Nano services...${NC}"
+stop_pattern() {
+  local label="$1"
+  local pattern="$2"
+  local pids
+  pids="$(pgrep -f "$pattern" || true)"
+  if [[ -z "$pids" ]]; then
+    echo "$label not running"
+    return
+  fi
+  echo "Stopping $label (PIDs: $pids)..."
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  echo -e "${GREEN}✓ $label stopped${NC}"
+}
 
-# Stop Gateway
-GATEWAY_PIDS=$(ps aux | grep -E "fastreact.adapters.gateway" | grep -v grep | awk '{print $2}')
-if [ -n "$GATEWAY_PIDS" ]; then
-    echo "Stopping Gateway (PIDs: $GATEWAY_PIDS)..."
-    echo $GATEWAY_PIDS | xargs kill 2>/dev/null || true
-    echo -e "${GREEN}✓ Gateway stopped${NC}"
-else
-    echo "Gateway not running"
-fi
+echo -e "${YELLOW}Stopping FastReAct local services...${NC}"
 
-# Stop Next.js (if running in background)
-WEB_PIDS=$(ps aux | grep "next dev" | grep -v grep | awk '{print $2}')
-if [ -n "$WEB_PIDS" ]; then
-    echo "Stopping Web UI (PIDs: $WEB_PIDS)..."
-    echo $WEB_PIDS | xargs kill 2>/dev/null || true
-    echo -e "${GREEN}✓ Web UI stopped${NC}"
-else
-    echo "Web UI not running"
-fi
+stop_pattern "FastReAct daemon" "fastreact.adapters.http"
+stop_pattern "FastReAct service console" "next dev.*fastreact-nano-web|next-server.*fastreact-nano-web"
 
 echo ""
-echo -e "${GREEN}All services stopped${NC}"
+echo -e "${GREEN}Done${NC}"

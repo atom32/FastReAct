@@ -209,16 +209,18 @@ API only.
 - non-streaming summarized response。
 - ReAct loop、工具调用、工具结果回传和最终回答。
 - headless approval round trip：`ask_user` 事件和 `/v1/approvals/*` approve/deny API。
-- background run 初版协议：`/v1/runs/*` 创建、查询、事件和取消。
-- trace summary 初版协议：`/v1/traces/*` 查询 run trace。
+- durable background run 协议：`/v1/runs/*` 创建、查询、事件、取消、lease、retry/backoff。
+- trace summary/replay API：`/v1/traces/*` 查询 run trace 和事件重放。
 - policy 初版配置：per-tool / per-user / per-tenant allow/caution/approval/deny。
 - policy inspection/dry-run：`/v1/policy` 和 `/v1/policy/check`。
-- MCP stdio server 集成。
+- MCP stdio / HTTP transport 集成。
 - per-server MCP `env` 透传。
 - skills 加载和工具列表。
 - session、task、TODO、trace、context window 相关基础设施。
 - context compression / sliding window 配置能力。
 - service token 认证。
+- JSONL store backup / compaction / retention maintenance。
+- OpenClaw-like service console product shell。
 - release smoke test 读取真实 LLM API。
 
 当前版本的明确边界：
@@ -226,9 +228,8 @@ API only.
 - 仍是单 agent，不是多 agent 协作平台。
 - Web UI 不是核心服务依赖。
 - MCP server 主要是部署级绑定；request/session-scoped MCP binding 仍待定。
-- run trace 持久化和 replay 的公共服务 API 还未完整产品化。
-- `/v1/runs/*` 目前是 in-process registry，不是 durable worker queue。
-- `/v1/traces/*` 目前是 first-version summary/replay API，还缺分页、retention、redaction 和 durable event replay。
+- 多 worker leasing 语义还未产品化；当前 run queue 是单 daemon 进程调度。
+- trace redaction preview、migration/version behavior 还需要产品化。
 - PSKA/FastReAct 跨 repo E2E 还没有变成通用 CI 必跑项。
 - 生产级公网暴露还需要外层 TLS、网络隔离、token rotation、租户隔离和审计策略。
 - 危险工具的业务级自动审批策略应由调用方显式实现，不能默认放行。

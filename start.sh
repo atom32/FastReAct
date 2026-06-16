@@ -1,148 +1,132 @@
-#!/bin/bash
-# FastReAct Nano - Startup Script
-# This script starts both the HTTP daemon (backend) and Web UI (frontend)
+#!/usr/bin/env bash
+# Start the FastReAct daemon and OpenClaw-like service console.
 
-set -e  # Exit on error
+set -euo pipefail
 
-# Colors
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND="$ROOT/fastreact-nano"
+FRONTEND="$ROOT/fastreact-nano-web"
+SERVICE_HOST="${FASTREACT_SERVICE_HOST:-127.0.0.1}"
+SERVICE_PORT="${FASTREACT_SERVICE_PORT:-8000}"
+WEB_PORT="${WEB_PORT:-3000}"
+HTTP_LOG="${FASTREACT_HTTP_LOG:-/tmp/fastreact-http.log}"
+WEB_LOG="${FASTREACT_WEB_LOG:-/tmp/fastreact-web.log}"
+
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}FastReAct Nano - Startup Script${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
-
-# Check if we're in the right directory
-if [ ! -d "fastreact-nano" ] || [ ! -d "fastreact-nano-web" ]; then
-    echo -e "${RED}Error: Please run this script from the FastReAct root directory${NC}"
-    echo "Expected directories: fastreact-nano/, fastreact-nano-web/"
-    exit 1
-fi
-
-# Check Python
-if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}Error: Python 3 not found${NC}"
-    exit 1
-fi
-
-# Check Node
-if ! command -v node &> /dev/null; then
-    echo -e "${RED}Error: Node.js not found${NC}"
-    exit 1
-fi
-
-# Function to cleanup on exit
-cleanup() {
-    echo ""
-    echo -e "${YELLOW}Stopping services...${NC}"
-
-    # Kill HTTP daemon
-    if [ -n "$SERVICE_PID" ]; then
-        echo "Stopping HTTP daemon (PID: $SERVICE_PID)..."
-        kill $SERVICE_PID 2>/dev/null || true
-    fi
-
-    # Kill Web UI (if run in foreground)
-    if [ -n "$WEB_PID" ]; then
-        echo "Stopping Web UI (PID: $WEB_PID)..."
-        kill $WEB_PID 2>/dev/null || true
-    fi
-
-    echo -e "${GREEN}All services stopped${NC}"
+load_env_file() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$file"
+    set +a
+  fi
 }
 
-# Trap SIGINT and SIGTERM
-trap cleanup SIGINT SIGTERM
-
-# ============================
-# Start HTTP Daemon (Backend)
-# ============================
-echo -e "${BLUE}[1/2] Starting HTTP daemon (backend)...${NC}"
-
-cd fastreact-nano
-
-# Check if .env exists
-if [ ! -f ".env" ]; then
-    echo -e "${YELLOW}Warning: .env file not found, creating from .env.example${NC}"
-    if [ -f ".env.example" ]; then
-        cp .env.example .env
-        echo -e "${YELLOW}Please edit .env and add your API keys${NC}"
+wait_for_http() {
+  local url="$1"
+  local attempts="${2:-30}"
+  for _ in $(seq 1 "$attempts"); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      return 0
     fi
+    sleep 0.5
+  done
+  return 1
+}
+
+cleanup() {
+  echo ""
+  echo -e "${YELLOW}Stopping FastReAct services...${NC}"
+  [[ -n "${SERVICE_PID:-}" ]] && kill "$SERVICE_PID" 2>/dev/null || true
+  [[ -n "${WEB_PID:-}" ]] && kill "$WEB_PID" 2>/dev/null || true
+}
+
+trap cleanup INT TERM
+
+if [[ ! -d "$BACKEND" || ! -d "$FRONTEND" ]]; then
+  echo -e "${RED}Run this script from the FastReAct repository root.${NC}"
+  exit 1
 fi
 
-# Start HTTP daemon in background
-python3 -m fastreact.adapters.http --host 127.0.0.1 --port 8000 > /tmp/fastreact-http.log 2>&1 &
+if ! command -v python3 >/dev/null 2>&1; then
+  echo -e "${RED}python3 is required.${NC}"
+  exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  echo -e "${RED}Node.js and npm are required for the service console.${NC}"
+  exit 1
+fi
+
+if ! command -v curl >/dev/null 2>&1; then
+  echo -e "${RED}curl is required for local readiness checks.${NC}"
+  exit 1
+fi
+
+load_env_file "$BACKEND/.env"
+load_env_file "$FRONTEND/.env.local"
+
+export PYTHONPATH="$BACKEND/src:${PYTHONPATH:-}"
+export NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL="${NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL:-http://${SERVICE_HOST}:${SERVICE_PORT}}"
+export FASTREACT_CORS_ORIGINS="${FASTREACT_CORS_ORIGINS:-http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}}"
+
+echo -e "${BLUE}Starting FastReAct daemon...${NC}"
+(
+  cd "$BACKEND"
+  python3 -m fastreact.adapters.http \
+    --host "$SERVICE_HOST" \
+    --port "$SERVICE_PORT" \
+    --log-level "${FASTREACT_LOG_LEVEL:-info}"
+) >"$HTTP_LOG" 2>&1 &
 SERVICE_PID=$!
 
-echo -e "${GREEN}✓ HTTP daemon started (PID: $SERVICE_PID)${NC}"
-echo "  Logs: /tmp/fastreact-http.log"
-echo "  URL: http://localhost:8000"
-
-# Wait for HTTP daemon to be ready
-echo "Waiting for HTTP daemon to initialize..."
-sleep 3
-
-# Check if HTTP daemon is still running
-if ! ps -p $SERVICE_PID > /dev/null; then
-    echo -e "${RED}Error: HTTP daemon failed to start${NC}"
-    echo "Check logs: tail /tmp/fastreact-http.log"
-    exit 1
+if ! wait_for_http "http://${SERVICE_HOST}:${SERVICE_PORT}/health" 40; then
+  echo -e "${RED}FastReAct daemon did not become healthy.${NC}"
+  echo "Log: $HTTP_LOG"
+  tail -n 40 "$HTTP_LOG" || true
+  cleanup
+  exit 1
 fi
 
-cd ..
+echo -e "${GREEN}Daemon ready:${NC} http://${SERVICE_HOST}:${SERVICE_PORT}"
+echo "Daemon log: $HTTP_LOG"
 
-# ============================
-# Start Web UI (Frontend)
-# ============================
-echo ""
-echo -e "${BLUE}[2/2] Starting Web UI (frontend)...${NC}"
-
-cd fastreact-nano-web
-
-# Check if node_modules exists
-if [ ! -d "node_modules" ]; then
-    echo -e "${YELLOW}Installing dependencies...${NC}"
-    npm install
+if [[ ! -d "$FRONTEND/node_modules" ]]; then
+  echo -e "${YELLOW}Installing web console dependencies...${NC}"
+  (cd "$FRONTEND" && npm install)
 fi
 
-# Check if .env.local exists
-if [ ! -f ".env.local" ]; then
-    echo -e "${YELLOW}Creating .env.local...${NC}"
-    cat > .env.local << EOF
-# Next.js
-NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL=http://localhost:8000
-EOF
-fi
-
-echo -e "${GREEN}✓ Starting Web UI...${NC}"
-echo "  URL: http://localhost:3000"
-echo ""
-echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}"
-echo ""
-
-# Start Web UI in foreground
-npm run dev &
+echo -e "${BLUE}Starting FastReAct service console...${NC}"
+(
+  cd "$FRONTEND"
+  npm run dev -- -p "$WEB_PORT"
+) >"$WEB_LOG" 2>&1 &
 WEB_PID=$!
 
-# Wait for Web UI to start
-sleep 5
+if ! wait_for_http "http://127.0.0.1:${WEB_PORT}/service" 60; then
+  echo -e "${RED}Service console did not become ready.${NC}"
+  echo "Log: $WEB_LOG"
+  tail -n 60 "$WEB_LOG" || true
+  cleanup
+  exit 1
+fi
 
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}✓ All services started successfully!${NC}"
-echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}FastReAct is ready.${NC}"
+echo "Service console: http://127.0.0.1:${WEB_PORT}/service"
+echo "Daemon health:   http://${SERVICE_HOST}:${SERVICE_PORT}/health"
+echo "Daemon ready:    http://${SERVICE_HOST}:${SERVICE_PORT}/ready"
 echo ""
-echo -e "HTTP API: ${BLUE}http://localhost:8000${NC} (PID: $SERVICE_PID)"
-echo -e "Web UI:   ${BLUE}http://localhost:3000/service${NC} (PID: $WEB_PID)"
+echo "Logs:"
+echo "  daemon: $HTTP_LOG"
+echo "  web:    $WEB_LOG"
 echo ""
-echo -e "${YELLOW}Logs:${NC}"
-echo -e "  HTTP API: tail -f /tmp/fastreact-http.log"
-echo -e "  Web UI:  Check browser console"
-echo ""
+echo -e "${YELLOW}Press Ctrl+C to stop both services.${NC}"
 
-# Keep script running
-wait $WEB_PID
+wait "$WEB_PID"

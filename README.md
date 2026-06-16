@@ -143,21 +143,11 @@ python3 run_tests.py release-full
 
 ## Service 控制台
 
-需要控制台时再启动完整本地开发栈：
+需要 OpenClaw-like 本地 app 时，启动完整本地栈：
 
 ```bash
-cd fastreact-nano
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[all]"
-cp .env.example .env
-
-cd ../fastreact-nano-web
-npm install
-cp .env.example .env.local
-
-cd ..
-./fastreact-nano/scripts/dev_full.sh
+cd /Users/xudawei/FastReAct
+./start.sh
 ```
 
 Service 控制台：
@@ -170,6 +160,12 @@ HTTP daemon 健康检查：
 
 ```text
 http://localhost:8000/health
+```
+
+停止本地栈：
+
+```bash
+./stop.sh
 ```
 
 ## 文档
