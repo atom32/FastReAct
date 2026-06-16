@@ -251,6 +251,49 @@ async def test_tool_approval_timeout_marks_record_expired(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_dangerous_tool_has_no_side_effect_without_approval(tmp_path):
+    config = make_test_config(tmp_path)
+    config.react.enable_safety = True
+    config.service.approval_timeout_seconds = 0.01
+    agent = Agent(config=config, multitenant=False)
+    target = tmp_path / "danger-target.txt"
+    target.write_text("keep me\n", encoding="utf-8")
+
+    decision, event = agent.tool_executor.assess(
+        tool_name="exec",
+        tool_params={"command": "rm danger-target.txt"},
+        session_id="danger-no-side-effect-session",
+    )
+
+    assert decision is not None
+    assert event is not None
+    request_id = event.metadata["request_id"]
+
+    approved = await agent.tool_executor.wait_for_approval(request_id)
+    execution, result_event = await agent.tool_executor.execute(
+        tool_name="exec",
+        tool_params={"command": "rm danger-target.txt"},
+        session_id="danger-no-side-effect-session",
+        decision=decision,
+        approved=approved,
+        request_id=request_id,
+    )
+
+    assert approved is False
+    assert execution.blocked is True
+    assert execution.result.startswith("[SAFETY_DENIED]")
+    assert result_event.type == EventType.TOOL_RESULT
+    assert target.exists()
+    record = agent.tool_executor.list_approvals()[0]
+    assert record["request_id"] == request_id
+    assert record["status"] == "expired"
+    assert record["resolution_reason"] == "approval_timeout"
+    audit = agent.store.read("audit", session_id="danger-no-side-effect-session")
+    assert audit[-1]["approved"] is False
+    assert audit[-1]["request_id"] == request_id
+
+
+@pytest.mark.asyncio
 async def test_tool_approval_uses_configured_timeout_and_persists_record(tmp_path):
     config = make_test_config(tmp_path)
     config.react.enable_safety = True
