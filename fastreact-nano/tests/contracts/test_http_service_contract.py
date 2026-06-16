@@ -4,6 +4,7 @@ from fastreact.adapters.http import (
     create_app,
     extract_history,
     extract_query,
+    get_agent,
     metrics_payload,
     readiness_payload,
     service_event_payload,
@@ -594,6 +595,8 @@ def test_headless_approval_endpoints_list_get_and_resolve(monkeypatch):
         assert listed_payload["schema"] == "fastreact.approvals.v1"
         assert listed_payload["count"] == 1
         assert listed_payload["total_count"] == 1
+        assert listed_payload["offset"] == 0
+        assert listed_payload["order"] == "desc"
         assert listed_payload["pending_count"] == 1
         assert listed_payload["summary"]["status_counts"]["pending"] == 1
         assert listed_payload["summary"]["policy_action_counts"]["none"] == 1
@@ -605,6 +608,31 @@ def test_headless_approval_endpoints_list_get_and_resolve(monkeypatch):
         assert filtered.status_code == 200
         assert filtered.json()["count"] == 0
         assert filtered.json()["filters"]["status"] == "approved"
+
+        agent = get_agent()
+        agent.tool_executor.records["approval-older"] = {
+            **agent.tool_executor.records["approval-123"],
+            "request_id": "approval-older",
+            "created_at": "2025-12-31T00:00:00+00:00",
+        }
+        agent.tool_executor.records["approval-newer"] = {
+            **agent.tool_executor.records["approval-123"],
+            "request_id": "approval-newer",
+            "created_at": "2026-01-02T00:00:00+00:00",
+        }
+
+        desc_page = client.get("/v1/approvals?limit=2&offset=1&order=desc", headers=headers)
+        assert desc_page.status_code == 200
+        assert [item["request_id"] for item in desc_page.json()["approvals"]] == ["approval-123", "approval-older"]
+        assert desc_page.json()["next_offset"] is None
+
+        asc_page = client.get("/v1/approvals?limit=2&order=asc", headers=headers)
+        assert asc_page.status_code == 200
+        assert [item["request_id"] for item in asc_page.json()["approvals"]] == ["approval-older", "approval-123"]
+        assert asc_page.json()["next_offset"] == 2
+
+        bad_order = client.get("/v1/approvals?order=sideways", headers=headers)
+        assert bad_order.status_code == 400
 
         fetched = client.get("/v1/approvals/approval-123", headers=headers)
         assert fetched.status_code == 200

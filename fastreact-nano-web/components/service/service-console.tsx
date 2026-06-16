@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Activity, CheckCircle2, ClipboardCheck, FileText, Hammer, ListTodo, Play, RefreshCw, Save, Search, Settings2, ShieldCheck, StopCircle } from "lucide-react"
+import { Activity, ArrowDownUp, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, FileText, Hammer, ListTodo, Play, RefreshCw, Save, Search, Settings2, ShieldCheck, StopCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -196,6 +196,11 @@ export function ServiceConsole() {
   const [approvalSessionFilter, setApprovalSessionFilter] = useState("")
   const [approvalRunFilter, setApprovalRunFilter] = useState("")
   const [approvalTaskFilter, setApprovalTaskFilter] = useState("")
+  const [approvalOrder, setApprovalOrder] = useState<"desc" | "asc">("desc")
+  const [approvalPage, setApprovalPage] = useState(0)
+  const [approvalPageSize, setApprovalPageSize] = useState(10)
+  const [approvalTotalCount, setApprovalTotalCount] = useState(0)
+  const [approvalHasMore, setApprovalHasMore] = useState(false)
   const [policy, setPolicy] = useState<any>(null)
   const [setup, setSetup] = useState<any>(null)
   const [policyTool, setPolicyTool] = useState("exec")
@@ -220,6 +225,8 @@ export function ServiceConsole() {
   const citations = useMemo(() => collectCitations(events), [events])
   const toolCalls = useMemo(() => events.filter((event) => event.type === "tool_call"), [events])
   const approvalEvents = useMemo(() => events.filter((event) => event.type === "ask_user" || event.approval_request_id), [events])
+  const approvalStart = approvalTotalCount === 0 ? 0 : approvalPage * approvalPageSize + 1
+  const approvalEnd = Math.min(approvalTotalCount, approvalPage * approvalPageSize + approvals.length)
 
   const saveSettings = useCallback(() => {
     setServiceHttpBase(baseUrl)
@@ -260,7 +267,9 @@ export function ServiceConsole() {
 
   const loadApprovals = useCallback(async () => {
     const params = new URLSearchParams()
-    params.set("limit", "100")
+    params.set("limit", String(approvalPageSize))
+    params.set("offset", String(approvalPage * approvalPageSize))
+    params.set("order", approvalOrder)
     if (approvalStatusFilter) params.set("status", approvalStatusFilter)
     if (approvalSessionFilter) params.set("session_id", approvalSessionFilter)
     if (approvalRunFilter) params.set("run_id", approvalRunFilter)
@@ -268,7 +277,9 @@ export function ServiceConsole() {
     const payload = await serviceJson<any>(`/v1/approvals?${params.toString()}`)
     setApprovals(payload.approvals || [])
     setApprovalSummary(payload.summary || null)
-  }, [approvalRunFilter, approvalSessionFilter, approvalStatusFilter, approvalTaskFilter])
+    setApprovalTotalCount(payload.total_count ?? 0)
+    setApprovalHasMore(Boolean(payload.has_more))
+  }, [approvalOrder, approvalPage, approvalPageSize, approvalRunFilter, approvalSessionFilter, approvalStatusFilter, approvalTaskFilter])
 
   const loadTaskDetail = useCallback(async (taskId: string) => {
     if (!taskId) return
@@ -319,6 +330,15 @@ export function ServiceConsole() {
       setSelectedTaskId(tasks[0].task_id)
     }
   }, [selectedTaskId, tasks])
+
+  useEffect(() => {
+    setApprovalPage(0)
+  }, [approvalOrder, approvalPageSize, approvalRunFilter, approvalSessionFilter, approvalStatusFilter, approvalTaskFilter])
+
+  useEffect(() => {
+    if (!hydrated) return
+    loadApprovals().catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }, [hydrated, loadApprovals])
 
   useEffect(() => {
     if (selectedRunId) {
@@ -773,6 +793,9 @@ export function ServiceConsole() {
           <Card>
             <CardHeader><CardTitle>Approval Queue</CardTitle></CardHeader>
             <CardContent className="space-y-3">
+              <div className="rounded-md border p-2 text-sm text-muted-foreground">
+                Pending approvals pause the matching tool call until an operator approves, denies, or the request expires.
+              </div>
               <div className="grid gap-2 md:grid-cols-2">
                 <select value={approvalStatusFilter} onChange={(event) => setApprovalStatusFilter(event.target.value)}>
                   <option value="">All statuses</option>
@@ -785,10 +808,54 @@ export function ServiceConsole() {
                 <Input value={approvalRunFilter} onChange={(event) => setApprovalRunFilter(event.target.value)} placeholder="Run filter" />
                 <Input value={approvalTaskFilter} onChange={(event) => setApprovalTaskFilter(event.target.value)} placeholder="Task filter" />
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <div className="text-muted-foreground">
+                  Showing {approvalStart}-{approvalEnd} of {approvalTotalCount}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={approvalPageSize}
+                    onChange={(event) => setApprovalPageSize(Number(event.target.value))}
+                    aria-label="Approval page size"
+                    className="w-[92px]"
+                  >
+                    <option value={10}>10 / page</option>
+                    <option value={25}>25 / page</option>
+                    <option value={50}>50 / page</option>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setApprovalOrder((value) => (value === "desc" ? "asc" : "desc"))}
+                    title={approvalOrder === "desc" ? "Newest first" : "Oldest first"}
+                  >
+                    <ArrowDownUp className="mr-2 h-4 w-4" />
+                    {approvalOrder === "desc" ? "Newest first" : "Oldest first"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={approvalPage === 0}
+                    onClick={() => setApprovalPage((page) => Math.max(0, page - 1))}
+                    title="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!approvalHasMore}
+                    onClick={() => setApprovalPage((page) => page + 1)}
+                    title="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
               <div className="grid gap-2 md:grid-cols-2 text-sm">
                 <div className="rounded-md border p-2">Pending: {approvalSummary?.pending_count ?? 0}</div>
                 <div className="rounded-md border p-2">Expired: {approvalSummary?.expired_count ?? 0}</div>
-                <div className="rounded-md border p-2">Total: {approvalSummary?.count ?? approvals.length}</div>
+                <div className="rounded-md border p-2">Total: {approvalSummary?.count ?? approvalTotalCount}</div>
                 <div className="rounded-md border p-2">Avg resolution: {approvalSummary?.avg_resolution_ms ?? "-"} ms</div>
               </div>
               {approvals.map((approval, index) => (

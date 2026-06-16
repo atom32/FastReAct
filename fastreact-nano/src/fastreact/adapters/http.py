@@ -881,6 +881,7 @@ def filter_approvals(
     run_id: str | None = None,
     task_id: str | None = None,
     agent: Any | None = None,
+    order: str = "desc",
 ) -> list[dict[str, Any]]:
     if status:
         approvals = [item for item in approvals if item.get("status") == status]
@@ -912,7 +913,7 @@ def filter_approvals(
             for item in approvals
             if item.get("task_id") == task_id or (item.get("session_id") in session_ids if session_ids else False)
         ]
-    approvals.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+    approvals.sort(key=lambda item: item.get("created_at", ""), reverse=order != "asc")
     return approvals
 
 
@@ -1651,6 +1652,8 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
     async def list_approvals(
         request: Request,
         limit: int = 200,
+        offset: int = 0,
+        order: str = "desc",
         status: Optional[str] = None,
         session_id: Optional[str] = None,
         tool_name: Optional[str] = None,
@@ -1660,6 +1663,8 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         task_id: Optional[str] = None,
     ) -> dict[str, Any]:
         require_service_auth(request)
+        if order not in {"asc", "desc"}:
+            raise HTTPException(status_code=400, detail="order must be 'asc' or 'desc'")
         agent = get_agent()
         executor = getattr(agent, "tool_executor", None)
         approvals = executor.list_approvals() if executor and hasattr(executor, "list_approvals") else []
@@ -1673,9 +1678,11 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             run_id=run_id,
             task_id=task_id,
             agent=agent,
+            order=order,
         )
         bounded = bounded_limit(limit)
-        page = filtered if bounded == 0 else filtered[:bounded]
+        safe_offset = max(0, int(offset or 0))
+        page = filtered[safe_offset:] if bounded == 0 else filtered[safe_offset : safe_offset + bounded]
         summary = approval_summary(filtered)
         return {
             "schema": "fastreact.approvals.v1",
@@ -1683,10 +1690,14 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             "count": len(page),
             "total_count": len(filtered),
             "limit": bounded,
-            "has_more": bounded != 0 and len(filtered) > len(page),
+            "offset": safe_offset,
+            "order": order,
+            "next_offset": safe_offset + len(page) if bounded != 0 and safe_offset + len(page) < len(filtered) else None,
+            "has_more": bounded != 0 and safe_offset + len(page) < len(filtered),
             "pending_count": summary["pending_count"],
             "summary": summary,
             "filters": {
+                "order": order,
                 "status": status,
                 "session_id": session_id,
                 "tool_name": tool_name,
