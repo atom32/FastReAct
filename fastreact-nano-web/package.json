@@ -7,9 +7,11 @@
     "dev": "next dev --turbo -H 0.0.0.0",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
+    "test": "vitest run",
     "lint": "next lint"
   },
   "dependencies": {
+    "@assistant-ui/react": "^0.14.22",
     "@hookform/resolvers": "^5.4.0",
     "@radix-ui/react-accordion": "^1.2.13",
     "@radix-ui/react-alert-dialog": "^1.1.16",
@@ -68,7 +70,8 @@
     "playwright": "^1.60.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.3.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   },
   "overrides": {
     "postcss": "^8.5.15"

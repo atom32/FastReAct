@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Activity, ArrowDownUp, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, FileText, Hammer, ListTodo, Play, RefreshCw, Save, Search, Settings2, ShieldCheck, StopCircle } from "lucide-react"
+import { Activity, ArrowDownUp, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, FileText, Hammer, ListTodo, Play, RefreshCw, Save, Search, Settings2, ShieldCheck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +18,7 @@ import {
   setServiceToken,
   truncateJson,
 } from "@/lib/service-api"
+import { AssistantRunPanel } from "@/components/service/assistant-run-panel"
 
 type RunRecord = {
   run_id: string
@@ -170,7 +171,6 @@ export function ServiceConsole() {
   const [baseUrl, setBaseUrl] = useState(serviceHttpBase())
   const [token, setToken] = useState(getServiceToken())
   const [error, setError] = useState("")
-  const [query, setQuery] = useState("Summarize the current FastReAct daemon status.")
   const [runs, setRuns] = useState<RunRecord[]>([])
   const [traces, setTraces] = useState<RunRecord[]>([])
   const [events, setEvents] = useState<EventRecord[]>([])
@@ -356,41 +356,10 @@ export function ServiceConsole() {
     loadApprovals().catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [loadApprovals])
 
-  async function startRun() {
-    saveSettings()
-    setError("")
-    setIsRunning(true)
-    try {
-      const payload = await serviceJson<RunRecord & { run_id: string }>("/v1/runs", {
-        method: "POST",
-        body: JSON.stringify({
-          messages: [{ role: "user", content: query }],
-          stream: true,
-          metadata: { source: "service_console" },
-        }),
-      })
-      setSelectedRunId(payload.run_id)
-      await loadRuns()
-      const timer = window.setInterval(async () => {
-        await loadRuns()
-        await loadEvents(payload.run_id)
-        const latest = await serviceJson<RunRecord>(`/v1/runs/${payload.run_id}`)
-        if (["completed", "failed", "cancelled", "expired"].includes(latest.status)) {
-          window.clearInterval(timer)
-          setIsRunning(false)
-        }
-      }, 1200)
-    } catch (err) {
-      setIsRunning(false)
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
   async function startTaskRun(task: TaskRecord) {
     const taskQuery = task.description?.trim()
       ? `${task.title}\n\n${task.description}`
       : task.title
-    setQuery(taskQuery)
     saveSettings()
     setError("")
     setIsRunning(true)
@@ -551,23 +520,25 @@ export function ServiceConsole() {
           <TabsTrigger value="setup"><Settings2 className="mr-2 h-4 w-4" />Setup</TabsTrigger>
         </TabsList>
 
-        <TabsContent forceMount value="chat" className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-          <Card>
-            <CardHeader><CardTitle>Chat Request</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea value={query} onChange={(event) => setQuery(event.target.value)} className="min-h-[220px]" />
-              <div className="flex gap-2">
-                <Button onClick={startRun} disabled={isRunning || !query.trim()}><Play className="mr-2 h-4 w-4" />Run</Button>
-                {selectedRunId && <Button variant="outline" onClick={() => cancelRun(selectedRunId)}><StopCircle className="mr-2 h-4 w-4" />Cancel</Button>}
-              </div>
-              {selectedRun && <RunSummary run={runDetail || selectedRun} trace={traceDetail} events={events} />}
-            </CardContent>
-          </Card>
-
-          <div className="space-y-4">
-            <EventStream events={events} />
-            <CitationPanel citations={citations} />
-          </div>
+        <TabsContent forceMount value="chat">
+          <AssistantRunPanel
+            selectedRunId={selectedRunId}
+            selectedRun={runDetail || selectedRun || null}
+            events={events}
+            isRunning={isRunning}
+            onRunCreated={async (run) => {
+              setSelectedRunId(run.run_id)
+              await loadRuns()
+            }}
+            onRefreshRun={async (runId) => {
+              await Promise.all([loadRuns(), loadEvents(runId), loadRunDetail(runId), loadApprovals()])
+            }}
+            onCancelRun={cancelRun}
+            onResolveApproval={resolveApproval}
+            onError={setError}
+            onRunningChange={setIsRunning}
+            onSaveSettings={saveSettings}
+          />
         </TabsContent>
 
         <TabsContent forceMount value="runs" className="grid gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
