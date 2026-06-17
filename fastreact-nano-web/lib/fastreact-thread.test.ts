@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { buildFastReactReplay, fastReactEventsToThreadMessages, mergeFastReactEvents } from "./fastreact-thread"
+import {
+  buildFastReactReplay,
+  fastReactEventsToThreadMessages,
+  fastReactThreadMessagesToChatMessages,
+  mergeFastReactEvents,
+  mergeFastReactThreadMessages,
+} from "./fastreact-thread"
 
 describe("fastReactEventsToThreadMessages", () => {
   it("merges tool_call and tool_result into one tool card", () => {
@@ -154,5 +160,36 @@ describe("fastReactEventsToThreadMessages", () => {
       pska_digest_tool_budget: { ok: true },
     })
     expect(replay.citations.map((citation) => citation.source_id)).toContain("src_1")
+  })
+
+  it("builds chat history from prior complete user and assistant turns", () => {
+    const first = fastReactEventsToThreadMessages([
+      { type: "session_start", content: "remember orchid", sequence: 0, event_id: "r1:0", timestamp: "2026-01-01T00:00:00Z" },
+      { type: "session_end", content: "I will remember orchid.", sequence: 1, event_id: "r1:1", timestamp: "2026-01-01T00:00:01Z" },
+    ])
+    const second = fastReactEventsToThreadMessages([
+      { type: "session_start", content: "what did I say?", sequence: 0, event_id: "r2:0", timestamp: "2026-01-01T00:00:02Z" },
+    ])
+    const messages = mergeFastReactThreadMessages(first.messages, second.messages)
+    const chatMessages = fastReactThreadMessagesToChatMessages(messages, "answer now")
+
+    expect(chatMessages).toEqual([
+      { role: "user", content: "remember orchid" },
+      { role: "assistant", content: "I will remember orchid." },
+      { role: "user", content: "what did I say?" },
+      { role: "user", content: "answer now" },
+    ])
+  })
+
+  it("does not include incomplete assistant turns in reusable chat history", () => {
+    const snapshot = fastReactEventsToThreadMessages([
+      { type: "session_start", content: "start", sequence: 0 },
+      { type: "think", content: "still working", sequence: 1 },
+    ])
+
+    expect(fastReactThreadMessagesToChatMessages(snapshot.messages, "next")).toEqual([
+      { role: "user", content: "start" },
+      { role: "user", content: "next" },
+    ])
   })
 })

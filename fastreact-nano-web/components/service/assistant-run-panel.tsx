@@ -8,7 +8,7 @@ import {
   type AppendMessage,
   useExternalStoreRuntime,
 } from "@assistant-ui/react"
-import { AlertTriangle, Bot, Check, Clipboard, Copy, MessageSquare, Play, RefreshCw, ShieldQuestion, Sparkles, StopCircle, Terminal, X } from "lucide-react"
+import { AlertTriangle, Bot, Check, Clipboard, Copy, MessageSquare, Play, RefreshCw, RotateCcw, ShieldQuestion, Sparkles, StopCircle, Terminal, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +18,9 @@ import { cn } from "@/lib/utils"
 import { serviceJson, truncateJson } from "@/lib/service-api"
 import {
   fastReactEventsToThreadMessages,
+  fastReactMessagesToAssistantUiMessages,
+  fastReactThreadMessagesToChatMessages,
+  mergeFastReactThreadMessages,
   type FastReactApprovalBlock,
   type FastReactCitation,
   type FastReactRunEvent,
@@ -72,7 +75,7 @@ function StatusBadge({ value }: { value?: string }) {
 function timeLabel(value?: string | number): string {
   if (!value) return "-"
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleString()
 }
 
@@ -291,14 +294,48 @@ export function AssistantRunPanel({
 }: AssistantRunPanelProps) {
   const [input, setInput] = useState("Summarize the current FastReAct daemon status.")
   const [localRunId, setLocalRunId] = useState("")
+  const [threadMessages, setThreadMessages] = useState<FastReactThreadMessage[]>([])
+  const [threadSessionId, setThreadSessionId] = useState("")
+  const [reuseSession, setReuseSession] = useState(true)
+  const [clearedRunId, setClearedRunId] = useState("")
   const pollerRef = useRef<number | null>(null)
-  const snapshot = useMemo(() => fastReactEventsToThreadMessages(events), [events])
+  const runSnapshot = useMemo(() => fastReactEventsToThreadMessages(events), [events])
+  const visibleRunMessages = useMemo(
+    () => (selectedRunId && selectedRunId === clearedRunId ? [] : runSnapshot.messages),
+    [clearedRunId, runSnapshot.messages, selectedRunId],
+  )
+  const snapshot = useMemo(() => {
+    const messages = mergeFastReactThreadMessages(threadMessages, visibleRunMessages)
+    return {
+      ...runSnapshot,
+      messages,
+      assistantUiMessages: fastReactMessagesToAssistantUiMessages(messages),
+      citations: messages.flatMap((message) => message.citations),
+      status: runSnapshot.status,
+    }
+  }, [runSnapshot, threadMessages, visibleRunMessages])
   const activeRunId = selectedRunId || localRunId
   const running = isRunning || selectedRun?.status === "running" || selectedRun?.status === "queued"
+  const historyMessages = useMemo(
+    () => fastReactThreadMessagesToChatMessages(snapshot.messages, "", { maxTurns: 12 }).filter((message) => message.content.trim()),
+    [snapshot.messages],
+  )
 
   useEffect(() => () => {
     if (pollerRef.current) window.clearInterval(pollerRef.current)
   }, [])
+
+  useEffect(() => {
+    if (visibleRunMessages.length) {
+      setThreadMessages((current) => mergeFastReactThreadMessages(current, visibleRunMessages))
+    }
+  }, [visibleRunMessages])
+
+  useEffect(() => {
+    if (selectedRun?.session_id && reuseSession) {
+      setThreadSessionId(selectedRun.session_id)
+    }
+  }, [reuseSession, selectedRun?.session_id])
 
   async function refreshUntilDone(runId: string) {
     if (pollerRef.current) window.clearInterval(pollerRef.current)
@@ -327,14 +364,25 @@ export function AssistantRunPanel({
     onError("")
     onRunningChange(true)
     try {
+      const messages = reuseSession
+        ? fastReactThreadMessagesToChatMessages(snapshot.messages, text, { maxTurns: 12 })
+        : [{ role: "user" as const, content: text }]
+      const sessionId = reuseSession && threadSessionId ? threadSessionId : undefined
+      setClearedRunId("")
       const payload = await serviceJson<RunRecord & { run_id: string }>("/v1/runs", {
         method: "POST",
         body: JSON.stringify({
-          messages: [{ role: "user", content: text }],
+          messages,
           stream: true,
-          metadata: { source: "assistant_ui_service_console" },
+          session_id: sessionId,
+          metadata: {
+            source: "assistant_ui_service_console",
+            reuse_session: reuseSession,
+            history_message_count: Math.max(0, messages.length - 1),
+          },
         }),
       })
+      if (payload.session_id) setThreadSessionId(payload.session_id)
       setLocalRunId(payload.run_id)
       await onRunCreated(payload)
       await onRefreshRun(payload.run_id)
@@ -356,6 +404,17 @@ export function AssistantRunPanel({
   async function resolveApproval(requestId: string, approved: boolean) {
     await onResolveApproval(requestId, approved)
     if (activeRunId) await onRefreshRun(activeRunId)
+  }
+
+  function startNewThread() {
+    if (pollerRef.current) window.clearInterval(pollerRef.current)
+    pollerRef.current = null
+    setThreadMessages([])
+    setThreadSessionId("")
+    setLocalRunId("")
+    setClearedRunId(selectedRunId)
+    setReuseSession(true)
+    onRunningChange(false)
   }
 
   return (
@@ -389,7 +448,19 @@ export function AssistantRunPanel({
               <Button variant="outline" onClick={cancelActiveRun} disabled={!activeRunId || !running}>
                 <StopCircle className="mr-2 h-4 w-4" />Cancel
               </Button>
+              <Button variant="outline" onClick={startNewThread} disabled={running}>
+                <RotateCcw className="mr-2 h-4 w-4" />New Session
+              </Button>
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={reuseSession}
+                onChange={(event) => setReuseSession(event.target.checked)}
+                className="h-4 w-4"
+              />
+              Reuse session and send chat history
+            </label>
             <div className="rounded-md border p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-medium">Run</span>
@@ -397,8 +468,9 @@ export function AssistantRunPanel({
               </div>
               <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{activeRunId || "No run selected"}</div>
               <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                <div>Session: {selectedRun?.session_id || "-"}</div>
+                <div>Session: {threadSessionId || selectedRun?.session_id || "-"}</div>
                 <div>Events: {events.length}</div>
+                <div>History: {reuseSession ? historyMessages.length : 0} messages</div>
                 <div>Created: {timeLabel(selectedRun?.created_at)}</div>
                 <div>Duration: {selectedRun?.duration_ms ?? "-"} ms</div>
               </div>

@@ -422,6 +422,46 @@ function toAssistantUiMessages(messages: FastReactThreadMessage[]): ThreadMessag
   })
 }
 
+export function fastReactMessagesToAssistantUiMessages(messages: FastReactThreadMessage[]): ThreadMessage[] {
+  return toAssistantUiMessages(messages)
+}
+
+export function mergeFastReactThreadMessages(
+  existing: readonly FastReactThreadMessage[],
+  incoming: readonly FastReactThreadMessage[],
+): FastReactThreadMessage[] {
+  const byId = new Map<string, FastReactThreadMessage>()
+  for (const message of [...existing, ...incoming]) {
+    byId.set(message.id, message)
+  }
+  return [...byId.values()].sort((left, right) => {
+    const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0
+    const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+      return leftTime - rightTime
+    }
+    return left.id.localeCompare(right.id)
+  })
+}
+
+export function fastReactThreadMessagesToChatMessages(
+  messages: readonly FastReactThreadMessage[],
+  nextUserText: string,
+  options: { maxTurns?: number } = {},
+): Array<{ role: "user" | "assistant"; content: string }> {
+  const maxTurns = options.maxTurns ?? 12
+  const history: Array<{ role: "user" | "assistant"; content: string }> = []
+  for (const message of messages) {
+    const content = message.content.trim()
+    if (!content) continue
+    if (message.role === "assistant" && message.status !== "complete") continue
+    history.push({ role: message.role, content })
+  }
+  const maxHistoryMessages = Math.max(0, maxTurns * 2)
+  const trimmed = maxHistoryMessages ? history.slice(-maxHistoryMessages) : []
+  return [...trimmed, { role: "user", content: nextUserText }]
+}
+
 export function fastReactEventsToThreadMessages(events: readonly FastReactRunEvent[]): FastReactThreadSnapshot {
   const messages: FastReactThreadMessage[] = []
   for (const [index, event] of events.entries()) {
