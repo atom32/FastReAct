@@ -8,7 +8,7 @@ import {
   type AppendMessage,
   useExternalStoreRuntime,
 } from "@assistant-ui/react"
-import { AlertTriangle, Bot, Check, Clipboard, Copy, MessageSquare, Play, RefreshCw, RotateCcw, ShieldQuestion, Sparkles, StopCircle, Terminal, X } from "lucide-react"
+import { AlertTriangle, Bot, Check, Clipboard, Copy, Link2, MessageSquare, Play, RefreshCw, RotateCcw, ShieldQuestion, Sparkles, StopCircle, Terminal, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -301,10 +301,12 @@ export function AssistantRunPanel({
   const [localRunId, setLocalRunId] = useState("")
   const [threadMessages, setThreadMessages] = useState<FastReactThreadMessage[]>([])
   const [threadSessionId, setThreadSessionId] = useState("")
+  const [threadRunIds, setThreadRunIds] = useState<Set<string>>(() => new Set())
   const [reuseSession, setReuseSession] = useState(true)
   const [clearedRunId, setClearedRunId] = useState("")
   const pollerRef = useRef<number | null>(null)
   const runSnapshot = useMemo(() => fastReactEventsToThreadMessages(events), [events])
+  const selectedRunInThread = Boolean(selectedRunId && threadRunIds.has(selectedRunId))
   const visibleRunMessages = useMemo(
     () => (selectedRunId && selectedRunId === clearedRunId ? [] : runSnapshot.messages),
     [clearedRunId, runSnapshot.messages, selectedRunId],
@@ -321,9 +323,12 @@ export function AssistantRunPanel({
   }, [runSnapshot, threadMessages, visibleRunMessages])
   const activeRunId = selectedRunId || localRunId
   const running = isRunning || selectedRun?.status === "running" || selectedRun?.status === "queued"
+  const reusableMessages = useMemo(() => {
+    return selectedRunInThread ? mergeFastReactThreadMessages(threadMessages, visibleRunMessages) : threadMessages
+  }, [selectedRunInThread, threadMessages, visibleRunMessages])
   const historyMessages = useMemo(
-    () => fastReactThreadMessagesToChatMessages(snapshot.messages, "", { maxTurns: 12 }).filter((message) => message.content.trim()),
-    [snapshot.messages],
+    () => fastReactThreadMessagesToChatMessages(reusableMessages, "", { maxTurns: 12 }).filter((message) => message.content.trim()),
+    [reusableMessages],
   )
 
   useEffect(() => () => {
@@ -331,16 +336,16 @@ export function AssistantRunPanel({
   }, [])
 
   useEffect(() => {
-    if (visibleRunMessages.length) {
+    if (selectedRunInThread && visibleRunMessages.length) {
       setThreadMessages((current) => mergeFastReactThreadMessages(current, visibleRunMessages))
     }
-  }, [visibleRunMessages])
+  }, [selectedRunInThread, visibleRunMessages])
 
   useEffect(() => {
-    if (selectedRun?.session_id && reuseSession) {
+    if (selectedRunInThread && selectedRun?.session_id && reuseSession) {
       setThreadSessionId(selectedRun.session_id)
     }
-  }, [reuseSession, selectedRun?.session_id])
+  }, [reuseSession, selectedRun?.session_id, selectedRunInThread])
 
   async function refreshUntilDone(runId: string) {
     if (pollerRef.current) window.clearInterval(pollerRef.current)
@@ -370,7 +375,7 @@ export function AssistantRunPanel({
     onRunningChange(true)
     try {
       const messages = reuseSession
-        ? fastReactThreadMessagesToChatMessages(snapshot.messages, text, { maxTurns: 12 })
+        ? fastReactThreadMessagesToChatMessages(reusableMessages, text, { maxTurns: 12 })
         : [{ role: "user" as const, content: text }]
       const sessionId = reuseSession && threadSessionId ? threadSessionId : undefined
       setClearedRunId("")
@@ -389,6 +394,7 @@ export function AssistantRunPanel({
       })
       if (payload.session_id) setThreadSessionId(payload.session_id)
       setLocalRunId(payload.run_id)
+      setThreadRunIds((current) => new Set(current).add(payload.run_id))
       await onRunCreated(payload)
       await onRefreshRun(payload.run_id)
       await refreshUntilDone(payload.run_id)
@@ -416,10 +422,20 @@ export function AssistantRunPanel({
     pollerRef.current = null
     setThreadMessages([])
     setThreadSessionId("")
+    setThreadRunIds(new Set())
     setLocalRunId("")
     setClearedRunId(selectedRunId)
     setReuseSession(true)
     onRunningChange(false)
+  }
+
+  function continueSelectedRun() {
+    if (!selectedRunId) return
+    setThreadRunIds((current) => new Set(current).add(selectedRunId))
+    setThreadMessages((current) => mergeFastReactThreadMessages(current, visibleRunMessages))
+    if (selectedRun?.session_id) setThreadSessionId(selectedRun.session_id)
+    setClearedRunId("")
+    setReuseSession(true)
   }
 
   return (
@@ -456,6 +472,9 @@ export function AssistantRunPanel({
               <Button variant="outline" onClick={startNewThread} disabled={running}>
                 <RotateCcw className="mr-2 h-4 w-4" />New Session
               </Button>
+              <Button variant="outline" onClick={continueSelectedRun} disabled={running || !selectedRunId || selectedRunInThread}>
+                <Link2 className="mr-2 h-4 w-4" />Continue Selected
+              </Button>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -478,6 +497,7 @@ export function AssistantRunPanel({
                 <div>History: {reuseSession ? historyMessages.length : 0} messages</div>
                 <div>Created: {timeLabel(selectedRun?.created_at)}</div>
                 <div>Duration: {selectedRun?.duration_ms ?? "-"} ms</div>
+                <div>Selected run in history: {selectedRunInThread ? "yes" : "no"}</div>
               </div>
               {(selectedRun?.last_error || selectedRun?.error) && (
                 <div className="mt-2 flex gap-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700">
