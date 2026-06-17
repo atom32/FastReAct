@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { serviceJson, truncateJson } from "@/lib/service-api"
+import { serviceJson, stringifyJson, truncateJson } from "@/lib/service-api"
 import {
   fastReactEventsToThreadMessages,
   fastReactMessagesToAssistantUiMessages,
@@ -88,7 +88,7 @@ function appendMessageText(message: AppendMessage): string {
 
 function copyText(value: unknown) {
   if (typeof navigator === "undefined") return
-  const text = typeof value === "string" ? value : truncateJson(value, 4000)
+  const text = stringifyJson(value)
   navigator.clipboard?.writeText(text).catch(() => undefined)
 }
 

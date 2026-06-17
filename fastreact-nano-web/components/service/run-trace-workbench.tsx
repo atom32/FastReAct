@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { serviceJson, truncateJson } from "@/lib/service-api"
+import { serviceJson, stringifyJson, truncateJson } from "@/lib/service-api"
 import {
   buildFastReactReplay,
   eventKey,
@@ -83,7 +83,7 @@ function timeLabel(value?: string | number): string {
 
 function copyText(value: unknown) {
   if (typeof navigator === "undefined") return
-  const text = typeof value === "string" ? value : truncateJson(value, 6000)
+  const text = stringifyJson(value)
   navigator.clipboard?.writeText(text).catch(() => undefined)
 }
 

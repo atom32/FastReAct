@@ -71,7 +71,12 @@ export async function serviceJson<T>(path: string, init: RequestInit = {}): Prom
 }
 
 export function truncateJson(value: unknown, maxLength = 900): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2)
+  const text = stringifyJson(value)
   if (!text) return ""
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
+}
+
+export function stringifyJson(value: unknown): string {
+  if (typeof value === "string") return value
+  return JSON.stringify(value, null, 2)
 }
