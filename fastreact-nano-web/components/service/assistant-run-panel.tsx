@@ -194,6 +194,7 @@ function MessageBubble({
   onResolveApproval: (requestId: string, approved: boolean) => Promise<void> | void
 }) {
   const isUser = message.role === "user"
+  const statusEventCount = message.events.filter((event) => event.type === "think" || event.type === "step_end").length
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div className={cn(
@@ -237,9 +238,13 @@ function MessageBubble({
         </div>
         {!isUser && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-            <span>{message.events.length} events</span>
+            <span>
+              {message.events.length} raw events
+              {message.tool_calls.length ? ` · ${message.tool_calls.length} tool calls` : ""}
+              {statusEventCount ? ` · ${statusEventCount} status updates` : ""}
+            </span>
             <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => copyText(message.raw_events)}>
-              <Copy className="h-3 w-3" />Copy raw
+              <Copy className="h-3 w-3" />Copy events JSON
             </button>
           </div>
         )}
@@ -469,7 +474,7 @@ export function AssistantRunPanel({
               <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{activeRunId || "No run selected"}</div>
               <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
                 <div>Session: {threadSessionId || selectedRun?.session_id || "-"}</div>
-                <div>Events: {events.length}</div>
+                <div>Raw events: {events.length}</div>
                 <div>History: {reuseSession ? historyMessages.length : 0} messages</div>
                 <div>Created: {timeLabel(selectedRun?.created_at)}</div>
                 <div>Duration: {selectedRun?.duration_ms ?? "-"} ms</div>
@@ -493,7 +498,7 @@ export function AssistantRunPanel({
           <CardHeader>
             <CardTitle className="flex items-center justify-between gap-3">
               <span>Run Thread</span>
-              <Badge variant="outline">{snapshot.messages.length} messages</Badge>
+              <Badge variant="outline">{snapshot.messages.length} turns</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>

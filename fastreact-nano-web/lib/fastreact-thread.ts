@@ -3,6 +3,8 @@ import type { ThreadMessage } from "@assistant-ui/react"
 export type FastReactRunEvent = {
   event_id?: string
   sequence?: number
+  run_id?: string
+  session_id?: string
   type: string
   content?: string
   tool_name?: string
@@ -12,6 +14,7 @@ export type FastReactRunEvent = {
   approval_request_id?: string
   metadata?: Record<string, unknown>
   timestamp?: string | number
+  created_at?: string | number
 }
 
 export type FastReactCitation = {
@@ -209,16 +212,40 @@ function toolResultFromEvent(event: FastReactRunEvent): unknown {
   return metadata
 }
 
+function eventTimeValue(event: Pick<FastReactRunEvent, "created_at" | "timestamp">): string | number | undefined {
+  return event.created_at || event.timestamp
+}
+
+function timeMs(value?: string | number): number {
+  if (typeof value === "number") {
+    const millis = value > 0 && value < 10_000_000_000 ? value * 1000 : value
+    return Number.isFinite(millis) ? millis : 0
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value).getTime()
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function eventTurnId(event: FastReactRunEvent, fallback: number): string {
+  return event.run_id || findString(event.metadata || {}, ["run_id"]) || event.session_id || eventKey(event, fallback)
+}
+
 function ensureAssistant(messages: FastReactThreadMessage[], event: FastReactRunEvent, fallback: number): FastReactThreadMessage {
+  const hasDurableTurnId = Boolean(event.run_id || event.session_id || findString(event.metadata || {}, ["run_id"]))
   const last = messages[messages.length - 1]
-  if (last?.role === "assistant") return last
+  if (!hasDurableTurnId && last?.role === "assistant") return last
+  const id = `assistant-${eventTurnId(event, fallback)}`
+  const existing = messages.find((message) => message.id === id)
+  if (existing) return existing
   const message: FastReactThreadMessage = {
-    id: `assistant-${eventKey(event, fallback)}`,
+    id,
     role: "assistant",
     content: "",
     reasoning: [],
     status: "running",
-    created_at: event.timestamp,
+    created_at: eventTimeValue(event),
     events: [],
     tool_calls: [],
     approvals: [],
@@ -358,7 +385,7 @@ export function buildFastReactReplay(events: readonly FastReactRunEvent[], trace
 
 function toAssistantUiMessages(messages: FastReactThreadMessage[]): ThreadMessage[] {
   return messages.map((message) => {
-    const createdAt = message.created_at ? new Date(message.created_at) : new Date()
+    const createdAt = message.created_at ? new Date(timeMs(message.created_at)) : new Date()
     const custom = {
       fastreact: {
         events: message.raw_events,
@@ -435,9 +462,9 @@ export function mergeFastReactThreadMessages(
     byId.set(message.id, message)
   }
   return [...byId.values()].sort((left, right) => {
-    const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0
-    const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0
-    if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+    const leftTime = timeMs(left.created_at)
+    const rightTime = timeMs(right.created_at)
+    if (leftTime !== rightTime) {
       return leftTime - rightTime
     }
     return left.id.localeCompare(right.id)
@@ -471,12 +498,12 @@ export function fastReactEventsToThreadMessages(events: readonly FastReactRunEve
         textFromUnknown(event.metadata?.input || event.metadata?.messages || event.metadata?.request) ||
         "Run started"
       const user: FastReactThreadMessage = {
-        id: `user-${eventKey(event, index)}`,
+        id: `user-${eventTurnId(event, index)}`,
         role: "user",
         content: userContent,
         reasoning: [],
         status: "complete",
-        created_at: event.timestamp,
+        created_at: eventTimeValue(event),
         events: [event],
         tool_calls: [],
         approvals: [],

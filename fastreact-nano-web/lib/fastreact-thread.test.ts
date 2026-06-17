@@ -59,6 +59,21 @@ describe("fastReactEventsToThreadMessages", () => {
     expect(assistant?.reasoning).toEqual(["thinking"])
   })
 
+  it("keeps one assistant turn for all events from the same durable run", () => {
+    const snapshot = fastReactEventsToThreadMessages([
+      { type: "session_start", run_id: "run_1", content: "inspect", sequence: 0 },
+      { type: "think", run_id: "run_1", content: "checking", sequence: 1 },
+      { type: "tool_call", run_id: "run_1", tool_call_id: "call_1", tool_name: "exec", sequence: 2 },
+      { type: "tool_result", run_id: "run_1", tool_call_id: "call_1", tool_name: "exec", content: "ok", sequence: 3 },
+      { type: "session_end", run_id: "run_1", content: "final answer", sequence: 4 },
+    ])
+
+    expect(snapshot.messages.map((message) => message.role)).toEqual(["user", "assistant"])
+    const assistant = snapshot.messages[1]
+    expect(assistant.content).toBe("final answer")
+    expect(assistant.events.map((event) => event.type)).toEqual(["think", "tool_call", "tool_result", "session_end"])
+  })
+
   it("marks error events as failed assistant state", () => {
     const snapshot = fastReactEventsToThreadMessages([
       { type: "session_start", content: "break", sequence: 1 },
@@ -178,6 +193,24 @@ describe("fastReactEventsToThreadMessages", () => {
       { role: "assistant", content: "I will remember orchid." },
       { role: "user", content: "what did I say?" },
       { role: "user", content: "answer now" },
+    ])
+  })
+
+  it("orders merged thread messages with epoch-second timestamps and ISO timestamps", () => {
+    const first = fastReactEventsToThreadMessages([
+      { type: "session_start", run_id: "r1", content: "first", sequence: 0, timestamp: 1781670600 },
+      { type: "session_end", run_id: "r1", content: "first answer", sequence: 1, timestamp: 1781670601 },
+    ])
+    const second = fastReactEventsToThreadMessages([
+      { type: "session_start", run_id: "r2", content: "second", sequence: 0, created_at: "2026-06-17T04:31:37.831467+00:00" },
+      { type: "session_end", run_id: "r2", content: "second answer", sequence: 1, created_at: "2026-06-17T04:31:38.831467+00:00" },
+    ])
+
+    expect(mergeFastReactThreadMessages(second.messages, first.messages).map((message) => message.content)).toEqual([
+      "first",
+      "first answer",
+      "second",
+      "second answer",
     ])
   })
 
