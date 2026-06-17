@@ -311,25 +311,28 @@ export function AssistantRunPanel({
     () => (selectedRunId && selectedRunId === clearedRunId ? [] : runSnapshot.messages),
     [clearedRunId, runSnapshot.messages, selectedRunId],
   )
+  const activeMessages = useMemo(() => {
+    return selectedRunInThread ? mergeFastReactThreadMessages(threadMessages, visibleRunMessages) : threadMessages
+  }, [selectedRunInThread, threadMessages, visibleRunMessages])
   const snapshot = useMemo(() => {
-    const messages = mergeFastReactThreadMessages(threadMessages, visibleRunMessages)
+    const messages = activeMessages
+    const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant")
     return {
       ...runSnapshot,
       messages,
       assistantUiMessages: fastReactMessagesToAssistantUiMessages(messages),
       citations: messages.flatMap((message) => message.citations),
-      status: runSnapshot.status,
+      status: !messages.length ? "empty" as const : lastAssistant?.status || "complete" as const,
     }
-  }, [runSnapshot, threadMessages, visibleRunMessages])
+  }, [activeMessages, runSnapshot])
   const activeRunId = selectedRunId || localRunId
   const running = isRunning || selectedRun?.status === "running" || selectedRun?.status === "queued"
-  const reusableMessages = useMemo(() => {
-    return selectedRunInThread ? mergeFastReactThreadMessages(threadMessages, visibleRunMessages) : threadMessages
-  }, [selectedRunInThread, threadMessages, visibleRunMessages])
   const historyMessages = useMemo(
-    () => fastReactThreadMessagesToChatMessages(reusableMessages, "", { maxTurns: 12 }).filter((message) => message.content.trim()),
-    [reusableMessages],
+    () => fastReactThreadMessagesToChatMessages(activeMessages, "", { maxTurns: 12 }).filter((message) => message.content.trim()),
+    [activeMessages],
   )
+  const previewAssistant = [...runSnapshot.messages].reverse().find((message) => message.role === "assistant")
+  const previewUser = runSnapshot.messages.find((message) => message.role === "user")
 
   useEffect(() => () => {
     if (pollerRef.current) window.clearInterval(pollerRef.current)
@@ -375,7 +378,7 @@ export function AssistantRunPanel({
     onRunningChange(true)
     try {
       const messages = reuseSession
-        ? fastReactThreadMessagesToChatMessages(reusableMessages, text, { maxTurns: 12 })
+        ? fastReactThreadMessagesToChatMessages(activeMessages, text, { maxTurns: 12 })
         : [{ role: "user" as const, content: text }]
       const sessionId = reuseSession && threadSessionId ? threadSessionId : undefined
       setClearedRunId("")
@@ -429,7 +432,7 @@ export function AssistantRunPanel({
     onRunningChange(false)
   }
 
-  function continueSelectedRun() {
+  function importSelectedRun() {
     if (!selectedRunId) return
     setThreadRunIds((current) => new Set(current).add(selectedRunId))
     setThreadMessages((current) => mergeFastReactThreadMessages(current, visibleRunMessages))
@@ -445,84 +448,64 @@ export function AssistantRunPanel({
       onSubmit={submitFastReactRun}
       onCancel={cancelActiveRun}
     >
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-        <Card>
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 460px), 1fr))" }}
+      >
+        <div className="min-w-0 space-y-4">
+          <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5" />Assistant Chat
+            <CardTitle className="flex flex-wrap items-center justify-between gap-3">
+              <span className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5" />Chat Workspace
+              </span>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-normal text-muted-foreground">
+                <Badge variant="outline">{snapshot.messages.length} turns</Badge>
+                <Badge variant="outline">{reuseSession ? `${historyMessages.length} history messages` : "history off"}</Badge>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              className="min-h-[190px]"
+              className="min-h-[132px]"
               placeholder="Send a durable FastReAct run"
             />
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => submitFastReactRun(input)} disabled={running || !input.trim()}>
-                <Play className="mr-2 h-4 w-4" />Run
-              </Button>
-              <Button variant="outline" onClick={() => activeRunId && onRefreshRun(activeRunId)} disabled={!activeRunId}>
-                <RefreshCw className="mr-2 h-4 w-4" />Refresh
-              </Button>
-              <Button variant="outline" onClick={cancelActiveRun} disabled={!activeRunId || !running}>
-                <StopCircle className="mr-2 h-4 w-4" />Cancel
-              </Button>
-              <Button variant="outline" onClick={startNewThread} disabled={running}>
-                <RotateCcw className="mr-2 h-4 w-4" />New Session
-              </Button>
-              <Button variant="outline" onClick={continueSelectedRun} disabled={running || !selectedRunId || selectedRunInThread}>
-                <Link2 className="mr-2 h-4 w-4" />Continue Selected
-              </Button>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={reuseSession}
-                onChange={(event) => setReuseSession(event.target.checked)}
-                className="h-4 w-4"
-              />
-              Reuse session and send chat history
-            </label>
-            <div className="rounded-md border p-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium">Run</span>
-                <StatusBadge value={selectedRun?.status || snapshot.status} />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => submitFastReactRun(input)} disabled={running || !input.trim()}>
+                  <Play className="mr-2 h-4 w-4" />Run
+                </Button>
+                <Button variant="outline" onClick={startNewThread} disabled={running}>
+                  <RotateCcw className="mr-2 h-4 w-4" />New Chat
+                </Button>
+                <Button variant="outline" onClick={cancelActiveRun} disabled={!activeRunId || !running}>
+                  <StopCircle className="mr-2 h-4 w-4" />Cancel
+                </Button>
               </div>
-              <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{activeRunId || "No run selected"}</div>
-              <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                <div>Session: {threadSessionId || selectedRun?.session_id || "-"}</div>
-                <div>Raw events: {events.length}</div>
-                <div>History: {reuseSession ? historyMessages.length : 0} messages</div>
-                <div>Created: {timeLabel(selectedRun?.created_at)}</div>
-                <div>Duration: {selectedRun?.duration_ms ?? "-"} ms</div>
-                <div>Selected run in history: {selectedRunInThread ? "yes" : "no"}</div>
-              </div>
-              {(selectedRun?.last_error || selectedRun?.error) && (
-                <div className="mt-2 flex gap-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>{selectedRun.last_error || selectedRun.error}</span>
-                </div>
-              )}
-            </div>
-            <div className="rounded-md border p-3">
-              <div className="mb-2 text-sm font-medium">Citations</div>
-              <CitationChips citations={snapshot.citations} />
-              {!snapshot.citations.length && <div className="text-sm text-muted-foreground">No citations in the current event stream.</div>}
+              <label className="flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={reuseSession}
+                  onChange={(event) => setReuseSession(event.target.checked)}
+                  className="h-4 w-4"
+                />
+                Send chat history
+              </label>
             </div>
           </CardContent>
-        </Card>
+          </Card>
 
-        <Card>
+          <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between gap-3">
-              <span>Run Thread</span>
-              <Badge variant="outline">{snapshot.messages.length} turns</Badge>
+              <span>Conversation</span>
+              <StatusBadge value={snapshot.status} />
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[680px] pr-4">
+            <ScrollArea className="h-[620px] pr-4">
               <div className="space-y-3">
                 {snapshot.messages.map((message) => (
                   <MessageBubble
@@ -539,7 +522,87 @@ export function AssistantRunPanel({
               </div>
             </ScrollArea>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
+
+        <div className="min-w-0 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-3">
+                <span>Context</span>
+                <StatusBadge value={selectedRun?.status || "idle"} />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="rounded-md border p-3">
+                <div className="text-xs font-medium uppercase text-muted-foreground">Selected run</div>
+                <div className="mt-2 break-all font-mono text-xs">{selectedRunId || "None"}</div>
+                <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                  <div>In chat history: {selectedRunInThread ? "yes" : "no"}</div>
+                  <div>Chat session: {threadSessionId || "-"}</div>
+                  <div>Selected session: {selectedRun?.session_id || "-"}</div>
+                  <div>Raw events loaded: {events.length}</div>
+                  <div>Created: {timeLabel(selectedRun?.created_at)}</div>
+                  <div>Duration: {selectedRun?.duration_ms ?? "-"} ms</div>
+                </div>
+                {(selectedRun?.last_error || selectedRun?.error) && (
+                  <div className="mt-3 flex gap-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>{selectedRun.last_error || selectedRun.error}</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => activeRunId && onRefreshRun(activeRunId)} disabled={!activeRunId}>
+                  <RefreshCw className="mr-2 h-4 w-4" />Refresh Run
+                </Button>
+                <Button variant="outline" onClick={importSelectedRun} disabled={running || !selectedRunId || selectedRunInThread || !visibleRunMessages.length}>
+                  <Link2 className="mr-2 h-4 w-4" />Import Run to Chat
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Selected Run Preview</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {selectedRunId ? (
+                <>
+                  {previewUser?.content && (
+                    <div className="rounded-md border p-3 text-sm">
+                      <div className="mb-1 text-xs font-medium text-muted-foreground">User</div>
+                      <div className="line-clamp-4 whitespace-pre-wrap">{previewUser.content}</div>
+                    </div>
+                  )}
+                  {previewAssistant && (
+                    <div className="rounded-md border p-3 text-sm">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">Assistant</span>
+                        <StatusBadge value={previewAssistant.status} />
+                      </div>
+                      <div className="line-clamp-6 whitespace-pre-wrap">{previewAssistant.content || previewAssistant.reasoning.at(-1) || "No final content yet."}</div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span>{previewAssistant.tool_calls.length} tool calls</span>
+                        <span>{previewAssistant.events.length} raw events</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="rounded-md border p-3">
+                    <div className="mb-2 text-sm font-medium">Citations</div>
+                    <CitationChips citations={runSnapshot.citations} />
+                    {!runSnapshot.citations.length && <div className="text-sm text-muted-foreground">No citations in the selected run.</div>}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  Select a run in Runs/Trace or create a new chat run to preview it here.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </AssistantUiRuntimeBoundary>
   )

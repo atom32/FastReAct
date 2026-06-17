@@ -258,12 +258,6 @@ export function ServiceConsole() {
   }, [loadWorkspace, refreshAll])
 
   useEffect(() => {
-    if (!selectedRunId && runs[0]?.run_id) {
-      setSelectedRunId(runs[0].run_id)
-    }
-  }, [runs, selectedRunId])
-
-  useEffect(() => {
     if (!selectedTaskId && tasks[0]?.task_id) {
       setSelectedTaskId(tasks[0].task_id)
     }
