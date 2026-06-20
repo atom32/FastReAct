@@ -134,7 +134,7 @@ try:
     snapshot2 = tracemalloc.take_snapshot()
 
     # 计算内存差异
-    top_stats = snapshot2.compare_to(snapshot1)[:5]
+    top_stats = snapshot2.compare_to(snapshot1, key_type='lineno')[:5]
 
     print(f"[OK] Agent 创建成功")
     print(f"\n[内存] Agent 创建后的内存分配 (Top 5):")

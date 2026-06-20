@@ -45,6 +45,7 @@ fastreact-nano/workspace/
 fastreact-nano/workspaces/
 fastreact-nano/relative/
 fastreact-nano/.fastreact/
+fastreact-nano/*.db
 fastreact-nano/.pytest_cache/
 fastreact-nano/src/*.egg-info/
 .claude/settings.local.json

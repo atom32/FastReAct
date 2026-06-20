@@ -11,6 +11,8 @@ SERVICE_PORT="${FASTREACT_SERVICE_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-3000}"
 HTTP_LOG="${FASTREACT_HTTP_LOG:-/tmp/fastreact-http.log}"
 WEB_LOG="${FASTREACT_WEB_LOG:-/tmp/fastreact-web.log}"
+PSKA_ARCHIVE="${PSKA_ARCHIVE:-/Users/xudawei/Documents/personal archive}"
+PSKA_FASTREACT_CONFIG="${PSKA_FASTREACT_CONFIG:-$PSKA_ARCHIVE/.pska/fastreact-pska-http.json}"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -72,6 +74,19 @@ fi
 load_env_file "$BACKEND/.env"
 load_env_file "$FRONTEND/.env.local"
 
+if [[ -x "$PSKA_ARCHIVE/scripts/fastreact-pska-service-config" ]]; then
+  echo -e "${YELLOW}Refreshing PSKA FastReAct config...${NC}"
+  "$PSKA_ARCHIVE/scripts/fastreact-pska-service-config"     --mcp-transport http     --output "$PSKA_FASTREACT_CONFIG" >/dev/null
+elif [[ ! -f "$PSKA_FASTREACT_CONFIG" ]]; then
+  echo -e "${RED}Missing PSKA FastReAct config and generator:${NC} $PSKA_FASTREACT_CONFIG"
+  exit 1
+fi
+
+if grep -q "pska_pska_agentic_search" "$PSKA_FASTREACT_CONFIG"; then
+  echo -e "${RED}PSKA FastReAct config still references removed tool pska_pska_agentic_search.${NC}"
+  exit 1
+fi
+
 export PYTHONPATH="$BACKEND/src:${PYTHONPATH:-}"
 export NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL="${NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL:-http://${SERVICE_HOST}:${SERVICE_PORT}}"
 export FASTREACT_CORS_ORIGINS="${FASTREACT_CORS_ORIGINS:-http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}}"
@@ -80,6 +95,7 @@ echo -e "${BLUE}Starting FastReAct daemon...${NC}"
 (
   cd "$BACKEND"
   python3 -m fastreact.adapters.http \
+    --config "$PSKA_FASTREACT_CONFIG" \
     --host "$SERVICE_HOST" \
     --port "$SERVICE_PORT" \
     --log-level "${FASTREACT_LOG_LEVEL:-info}"
@@ -96,6 +112,7 @@ fi
 
 echo -e "${GREEN}Daemon ready:${NC} http://${SERVICE_HOST}:${SERVICE_PORT}"
 echo "Daemon log: $HTTP_LOG"
+echo "PSKA config: $PSKA_FASTREACT_CONFIG"
 
 if [[ ! -d "$FRONTEND/node_modules" ]]; then
   echo -e "${YELLOW}Installing web console dependencies...${NC}"
