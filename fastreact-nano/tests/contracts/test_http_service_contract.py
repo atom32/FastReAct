@@ -1,3 +1,5 @@
+import pytest
+
 from fastreact.adapters.http import (
     SERVICE_EVENT_SCHEMA_VERSION,
     configured_service_token,
@@ -16,6 +18,13 @@ from fastreact.adapters.http import (
 from fastreact.core.config import ServiceConfig
 from fastreact.core.events import AgentEvent
 from fastreact.runtime.run_service import RunService
+
+
+@pytest.fixture(autouse=True)
+def reset_service_config():
+    set_service_config(ServiceConfig())
+    yield
+    set_service_config(ServiceConfig())
 
 
 class FakeAgent:
@@ -429,8 +438,8 @@ def test_background_run_create_rate_limit_returns_429(tmp_path):
     assert second.status_code == 429
 
 
-def test_readiness_payload_has_deployment_contract_fields(monkeypatch):
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+def test_readiness_payload_has_deployment_contract_fields():
+    set_service_config(ServiceConfig(service_token="service-secret"))
     payload = readiness_payload(FakeAgent())
 
     assert payload["service_contract"] == SERVICE_EVENT_SCHEMA_VERSION
@@ -540,10 +549,10 @@ def test_metrics_payload_summarizes_headless_service_state(tmp_path):
     assert payload["store"]["total_records"] == 6
 
 
-def test_service_auth_blocks_chat_and_readiness_when_configured(monkeypatch):
+def test_service_auth_blocks_chat_and_readiness_when_configured():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     set_agent_for_testing(FakeAgent())
     try:
         client = testclient.TestClient(create_app())
@@ -579,10 +588,10 @@ def test_service_auth_blocks_chat_and_readiness_when_configured(monkeypatch):
         set_agent_for_testing(None)
 
 
-def test_headless_approval_endpoints_list_get_and_resolve(monkeypatch):
+def test_headless_approval_endpoints_list_get_and_resolve():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     set_agent_for_testing(FakeApprovalAgent())
     headers = {"X-FastReAct-Service-Token": "service-secret"}
     try:
@@ -665,10 +674,10 @@ def test_headless_approval_endpoints_list_get_and_resolve(monkeypatch):
         set_agent_for_testing(None)
 
 
-def test_skill_diagnostics_endpoint_reports_dependencies(monkeypatch):
+def test_skill_diagnostics_endpoint_reports_dependencies():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     set_agent_for_testing(FakeSkillAgent())
     try:
         client = testclient.TestClient(create_app())
@@ -687,14 +696,14 @@ def test_skill_diagnostics_endpoint_reports_dependencies(monkeypatch):
     assert payload["skills"][0]["mcp_servers"] == ["pska"]
 
 
-def test_background_run_endpoints_create_query_events_cancel_and_trace(monkeypatch, tmp_path):
+def test_background_run_endpoints_create_query_events_cancel_and_trace(tmp_path):
     import time
 
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
     from fastreact.runtime.store_service import StoreService
 
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     fake_agent = FakeAgent()
     fake_agent.store = StoreService(tmp_path / "store")
     set_agent_for_testing(fake_agent)
@@ -802,12 +811,12 @@ def test_background_run_endpoints_create_query_events_cancel_and_trace(monkeypat
         set_agent_for_testing(None)
 
 
-def test_background_run_events_replay_from_durable_store(monkeypatch, tmp_path):
+def test_background_run_events_replay_from_durable_store(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
     from fastreact.runtime.store_service import StoreService
 
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     fake_agent = FakeAgent()
     fake_agent.store = StoreService(tmp_path / "durable-store")
     fake_agent.runs = RunService(fake_agent.store)
@@ -876,14 +885,14 @@ def test_run_service_recovers_stale_running_run(tmp_path):
     assert snapshot["last_error"] == "Recovered stale running lease"
 
 
-def test_lifespan_recovers_queued_run_from_durable_store(monkeypatch, tmp_path):
+def test_lifespan_recovers_queued_run_from_durable_store(tmp_path):
     import time
 
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
     from fastreact.runtime.store_service import StoreService
 
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     fake_agent = FakeAgent()
     fake_agent.store = StoreService(tmp_path / "lifespan-recovery")
     fake_agent.runs = RunService(fake_agent.store)
@@ -931,11 +940,11 @@ def test_lifespan_recovers_queued_run_from_durable_store(monkeypatch, tmp_path):
         set_agent_for_testing(None)
 
 
-def test_workspace_profile_endpoint_reads_and_updates_profile(monkeypatch, tmp_path):
+def test_workspace_profile_endpoint_reads_and_updates_profile(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
 
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     workspace = tmp_path / "workspace-profile"
     workspace.mkdir()
     (workspace / "AGENTS.md").write_text("Use project rules.", encoding="utf-8")
@@ -967,11 +976,11 @@ def test_workspace_profile_endpoint_reads_and_updates_profile(monkeypatch, tmp_p
         set_agent_for_testing(None)
 
 
-def test_setup_status_summarizes_service_workspace_and_pska_preset(monkeypatch, tmp_path):
+def test_setup_status_summarizes_service_workspace_and_pska_preset(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
 
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     fake_agent = FakeWorkspaceAgent(tmp_path / "setup-workspace")
 
     set_agent_for_testing(fake_agent)
@@ -989,11 +998,11 @@ def test_setup_status_summarizes_service_workspace_and_pska_preset(monkeypatch, 
     assert payload["presets"]["pska"]["protocol_only"] is True
 
 
-def test_setup_presets_and_config_draft_are_safe_and_pska_aware(monkeypatch, tmp_path):
+def test_setup_presets_and_config_draft_are_safe_and_pska_aware(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
 
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     fake_agent = FakeWorkspaceAgent(tmp_path / "setup-draft-workspace")
 
     set_agent_for_testing(fake_agent)
@@ -1033,11 +1042,11 @@ def test_setup_presets_and_config_draft_are_safe_and_pska_aware(monkeypatch, tmp
     assert payload["config"]["policy"]["tenant_rules"]["pska"]["tools"]["exec"] == "require_approval"
 
 
-def test_task_endpoints_create_update_list_and_include_related_runs(monkeypatch, tmp_path):
+def test_task_endpoints_create_update_list_and_include_related_runs(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
 
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     fake_agent = FakeTaskAgent(tmp_path / "task-workspace")
 
     set_agent_for_testing(fake_agent)

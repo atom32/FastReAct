@@ -98,7 +98,33 @@
     "approval_timeout_seconds": 300,
     "run_lease_seconds": 300,
     "run_max_attempts": 3,
-    "recover_queued_runs": true
+    "recover_queued_runs": true,
+    "cors_origins": [
+      "http://127.0.0.1:3000",
+      "http://localhost:3000"
+    ]
+  },
+
+  "web": {
+    "_comment": "Local service console launched by ../start.sh",
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 3000
+  },
+
+  "logs": {
+    "_comment": "Local logs used by ../start.sh",
+    "http": "/tmp/fastreact-http.log",
+    "web": "/tmp/fastreact-web.log"
+  },
+
+  "pska": {
+    "_comment": "Optional PSKA linkage for ../start.sh. Keep refresh_config false when this file itself contains the PSKA MCP config.",
+    "enabled": false,
+    "archive": "/Users/xudawei/Documents/personal archive",
+    "refresh_config": false,
+    "config_file": null,
+    "mcp_transport": "http"
   },
 
   "mcp": {

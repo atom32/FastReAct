@@ -33,7 +33,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
     "messages": [
       {"role": "user", "content": "Say hello from FastReAct."}
@@ -252,18 +252,18 @@ index/replay、policy hot path、MCP transport supervision 等高并发或高
 需要本地控制台时：
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[all]"
-cp .env.example .env
+cd /Users/xudawei/FastReAct
+mkdir -p .fastreact
+cp fastreact-nano/config.pska.example.json .fastreact/config.json
+
+cd fastreact-nano
+python3 -m pip install -e ".[all]"
 
 cd ../fastreact-nano-web
 npm install
-cp .env.example .env.local
 
 cd ..
-./fastreact-nano/scripts/dev_full.sh
+./start.sh
 ```
 
 启动后访问：
@@ -272,12 +272,8 @@ cd ..
 - HTTP daemon 健康检查：http://localhost:8000/health
 - HTTP daemon 状态：http://localhost:8000/ready
 
-控制面鉴权：
-
-```bash
-FASTREACT_ADMIN_API_AUTH=true
-GATEWAY_ADMIN_KEY=replace-me
-```
+控制面鉴权、daemon token、console port、PSKA MCP、日志路径都应写在
+`.fastreact/config.json` 中，不通过启动环境变量配置。
 
 启用后，Admin HTTP API 需要 `X-Admin-Key`。
 

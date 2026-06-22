@@ -15,22 +15,34 @@ or `$FASTRACT_GATEWAY_WORKSPACE/.fastreact/`.
 For long-running service deployments, prefer an explicit JSON config:
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
-mkdir -p ~/.fastreact
-cp config.example.json ~/.fastreact/config.json
+cd /Users/xudawei/FastReAct
+mkdir -p .fastreact
+cp fastreact-nano/config.example.json .fastreact/config.json
 ```
 
-Then start with:
+Then start the local stack with:
 
 ```bash
-python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
+./start.sh
 ```
 
-When no `--config` is provided, FastReAct looks for config in this order:
+For daemon-only operation:
+
+```bash
+cd /Users/xudawei/FastReAct/fastreact-nano
+python3 -m fastreact.adapters.http --config /Users/xudawei/FastReAct/.fastreact/config.json
+```
+
+When no `--config` is provided, the daemon itself looks for config in this order:
 
 - `~/.fastreact/config.json`
 - `./.fastreact/config.json`
 - `./config.json`
+
+The root `./start.sh` is intentionally stricter for local product startup: it
+reads `/Users/xudawei/FastReAct/.fastreact/config.json` first, then
+`~/.fastreact/config.json`, and every startup setting should be declared in that
+JSON file.
 
 Important settings:
 
@@ -40,6 +52,11 @@ Important settings:
 - `service.host`: bind host, usually `127.0.0.1` for local PSKA integration.
 - `service.port`: daemon port, usually `8000`.
 - `service.service_token`: shared secret required by PSKA and operator clients.
+- `service.cors_origins`: local console origins allowed by the daemon.
+- `web.enabled`, `web.host`, `web.port`: service console startup settings.
+- `logs.http`, `logs.web`: local log files for `./start.sh`.
+- `pska.enabled`, `pska.archive`, `pska.refresh_config`, `pska.config_file`:
+  PSKA linkage and optional generated-config refresh.
 - `paths.gateway_workspace`: workspace and JSONL store root.
 - `mcp.servers`: external MCP servers exposed to the agent.
 - `policy`: per-tool, per-tenant, and per-user execution policy.
@@ -62,19 +79,10 @@ cd ..
 ./start.sh
 ```
 
-The root `start.sh` script refreshes the PSKA FastReAct config when the PSKA
-generator exists, starts the daemon, waits for `/health`, starts the service
-console, and waits for `/service`.
-
-Useful overrides:
-
-```bash
-export PSKA_ARCHIVE="/Users/xudawei/Documents/personal archive"
-export PSKA_FASTREACT_CONFIG="$PSKA_ARCHIVE/.pska/fastreact-pska-http.json"
-export FASTREACT_SERVICE_HOST="127.0.0.1"
-export FASTREACT_SERVICE_PORT="8000"
-export WEB_PORT="3000"
-```
+The root `start.sh` script reads startup settings from JSON config, optionally
+refreshes the PSKA FastReAct config when `pska.refresh_config=true`, starts the
+daemon, waits for `/health`, starts the service console, and waits for
+`/service`.
 
 ## PSKA-Linked Run
 
@@ -85,11 +93,15 @@ cd /Users/xudawei/FastReAct
 ./start.sh
 ```
 
-`./start.sh` expects either:
+`./start.sh` expects PSKA settings to be declared under the `pska` object in the
+same config file. If `pska.refresh_config=true`, it calls:
 
-- `$PSKA_ARCHIVE/scripts/fastreact-pska-service-config`, which generates the
-  current PSKA MCP HTTP config; or
-- an existing `$PSKA_FASTREACT_CONFIG` file.
+```text
+{pska.archive}/scripts/fastreact-pska-service-config
+```
+
+and writes the result to `pska.config_file`. If `pska.refresh_config=false`, the
+daemon uses the main config file directly.
 
 The generated config should point FastReAct to the PSKA MCP HTTP endpoint,
 usually:
@@ -108,7 +120,7 @@ Use this mode when PSKA or another caller manages its own UI:
 
 ```bash
 cd /Users/xudawei/FastReAct/fastreact-nano
-python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
+python3 -m fastreact.adapters.http --config /Users/xudawei/FastReAct/.fastreact/config.json
 ```
 
 ## Health Checks
@@ -117,7 +129,7 @@ Public:
 
 - `GET /health`
 
-Authenticated when `service.service_token` or `FASTREACT_SERVICE_TOKEN` is set:
+Authenticated when `service.service_token` is set:
 
 - `GET /ready`
 - `GET /v1/tools`
@@ -127,8 +139,10 @@ Authenticated when `service.service_token` or `FASTREACT_SERVICE_TOKEN` is set:
 Example:
 
 ```bash
+SERVICE_TOKEN="replace-with-local-service-token"
+
 curl -fsS http://127.0.0.1:8000/ready \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 ## Release Checklist

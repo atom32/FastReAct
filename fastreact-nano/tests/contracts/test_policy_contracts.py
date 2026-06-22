@@ -1,6 +1,6 @@
 from fastreact import Agent
-from fastreact.adapters.http import create_app, set_agent_for_testing
-from fastreact.core.config import Config, LLMConfig, PolicyConfig
+from fastreact.adapters.http import create_app, set_agent_for_testing, set_service_config
+from fastreact.core.config import Config, LLMConfig, PolicyConfig, ServiceConfig
 from fastreact.core.safety import SafetyLevel, SafetyPolicy
 
 
@@ -129,10 +129,10 @@ def test_safety_policy_decision_includes_policy_metadata():
     assert decision.policy_action == "require_approval"
 
 
-def test_headless_policy_inspection_and_dry_run_endpoints(monkeypatch):
+def test_headless_policy_inspection_and_dry_run_endpoints():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
-    monkeypatch.setenv("FASTREACT_SERVICE_TOKEN", "service-secret")
+    set_service_config(ServiceConfig(service_token="service-secret"))
     config = Config(
         llm=LLMConfig(api_key="test-key", api_base="http://localhost:8000"),
         policy=PolicyConfig(
@@ -181,3 +181,4 @@ def test_headless_policy_inspection_and_dry_run_endpoints(monkeypatch):
         assert operator.json()["policy_action"] == "require_approval"
     finally:
         set_agent_for_testing(None)
+        set_service_config(ServiceConfig())

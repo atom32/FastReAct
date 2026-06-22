@@ -88,8 +88,8 @@ GET /v1/traces/{run_id}/events
 
 ## Service Authentication
 
-If `FASTREACT_SERVICE_TOKEN` or `service.service_token` is configured, clients
-must include a service token header. Without the header, FastReAct returns:
+If `service.service_token` is configured, clients must include a service token
+header. Without the header, FastReAct returns:
 
 ```json
 {"detail":"FastReAct service token required"}
@@ -107,10 +107,10 @@ or:
 Authorization: Bearer replace-with-local-service-token
 ```
 
-Shell helper:
+Shell helper for curl examples:
 
 ```bash
-export FASTREACT_SERVICE_TOKEN='replace-with-local-service-token'
+export SERVICE_TOKEN='replace-with-local-service-token'
 ```
 
 ## Minimal Requests
@@ -133,7 +133,7 @@ Non-streaming with service auth:
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
     "messages": [
       {"role": "user", "content": "Say hello from FastReAct."}
@@ -147,7 +147,7 @@ Streaming with service auth:
 ```bash
 curl -N http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
     "messages": [
       {"role": "system", "content": "Use PSKA MCP tools and cite evidence."},
@@ -212,14 +212,14 @@ List pending and historical approval requests:
 
 ```bash
 curl http://127.0.0.1:8000/v1/approvals \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 Inspect one approval request:
 
 ```bash
 curl http://127.0.0.1:8000/v1/approvals/approval-123 \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 Approve:
@@ -227,7 +227,7 @@ Approve:
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/approvals/approval-123/approve \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{"reason":"operator approved"}'
 ```
 
@@ -236,7 +236,7 @@ Deny:
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/approvals/approval-123/deny \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{"reason":"unsafe command"}'
 ```
 
@@ -293,7 +293,7 @@ Inspect active policy:
 
 ```bash
 curl http://127.0.0.1:8000/v1/policy \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 Dry-run a tool decision without executing the tool:
@@ -301,7 +301,7 @@ Dry-run a tool decision without executing the tool:
 ```bash
 curl http://127.0.0.1:8000/v1/policy/check \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
     "tool_name": "exec",
     "tool_args": {"command": "ls"},
@@ -323,7 +323,7 @@ Create a run:
 ```bash
 curl http://127.0.0.1:8000/v1/runs \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
     "messages": [
       {"role": "user", "content": "Generate the PSKA report."}
@@ -340,14 +340,14 @@ Inspect status:
 
 ```bash
 curl http://127.0.0.1:8000/v1/runs/optional-run-id \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 Fetch collected events:
 
 ```bash
 curl 'http://127.0.0.1:8000/v1/runs/optional-run-id/events?limit=200&after_sequence=0' \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 Run and trace event APIs return events ordered by ascending `sequence`. Use
@@ -358,14 +358,14 @@ Fetch trace summary:
 
 ```bash
 curl http://127.0.0.1:8000/v1/traces/optional-run-id \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 Cancel:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/runs/optional-run-id/cancel \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 Background runs are backed by JSONL snapshots and append-only replay events.
@@ -401,7 +401,7 @@ Use `/v1/metrics` for headless service diagnostics:
 
 ```bash
 curl http://127.0.0.1:8000/v1/metrics \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 The first metrics contract is `fastreact.metrics.v1`. It summarizes run status,
@@ -416,7 +416,7 @@ recommended tools, MCP server requirements, and missing runtime dependencies:
 
 ```bash
 curl http://127.0.0.1:8000/v1/skills/diagnostics \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 The endpoint is read-only and returns `fastreact.skill_diagnostics.v1`.
@@ -432,7 +432,7 @@ Create a task:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/tasks \
-  -H "Authorization: Bearer $FASTREACT_SERVICE_TOKEN" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Review PSKA citations",
@@ -446,10 +446,10 @@ List and update tasks:
 
 ```bash
 curl http://127.0.0.1:8000/v1/tasks?status=in_progress \
-  -H "Authorization: Bearer $FASTREACT_SERVICE_TOKEN"
+  -H "Authorization: Bearer $SERVICE_TOKEN"
 
 curl -X PATCH http://127.0.0.1:8000/v1/tasks/task-abc123 \
-  -H "Authorization: Bearer $FASTREACT_SERVICE_TOKEN" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"status":"completed"}'
 ```
@@ -473,14 +473,22 @@ operator a practical UI for:
 - Draft-only configuration wizard for model, service token, workspace, MCP
   servers, and PSKA policy preset.
 
-Start the HTTP service and the console separately:
+For the local product stack, prefer the root config-driven launcher:
+
+```bash
+cd /Users/xudawei/FastReAct
+./start.sh
+```
+
+For manual daemon-only development, start the HTTP service and the console
+separately:
 
 ```bash
 cd /Users/xudawei/FastReAct/fastreact-nano
-python3 -m fastreact.adapters.http
+python3 -m fastreact.adapters.http --config /Users/xudawei/FastReAct/.fastreact/config.json
 
 cd /Users/xudawei/FastReAct/fastreact-nano-web
-NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL=http://127.0.0.1:8000 npm run dev
+npm run dev -- -H 127.0.0.1 -p 3000
 ```
 
 Open:
@@ -494,7 +502,7 @@ token is stored in browser local storage for local operator use.
 
 The setup wizard intentionally generates a config draft only. It does not write
 `~/.fastreact/config.json`, and it does not accept or emit raw LLM API keys. Use
-`api_key_file` or environment variables for provider secrets.
+`api_key_file` or a local config file for provider secrets.
 
 ## Workspace Profile
 
@@ -522,7 +530,6 @@ Use a formal runtime config for normal service deployments:
 1. `~/.fastreact/config.json`
 2. `./.fastreact/config.json`
 3. `./config.json`
-4. `FASTRACT_*` environment variables
 
 Recommended user-level config:
 
@@ -560,15 +567,6 @@ Recommended user-level config:
     "servers": []
   }
 }
-```
-
-Equivalent minimal environment variables:
-
-```bash
-export FASTRACT_MODEL='deepseek-v4-flash'
-export FASTRACT_API_BASE='https://api.deepseek.com'
-export FASTRACT_API_KEY='replace-with-real-key'
-export FASTREACT_SERVICE_TOKEN='replace-with-local-service-token'
 ```
 
 ## PSKA MCP Configuration

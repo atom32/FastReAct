@@ -12,17 +12,35 @@ POST /v1/chat/completions
 
 ## 当前服务形态
 
-FastReAct Nano 现在可以作为无头服务器运行。最小启动方式是：
+FastReAct Nano 现在可以作为无头服务器运行。当前项目启动方式统一为：
 
-```bash
-cd fastreact-nano
-python3 -m fastreact.adapters.http
-```
+1. 把所有启动设置写进一个 JSON config。
+2. 运行仓库根目录的 `./start.sh`。
 
-默认地址：
+推荐本地配置文件：
 
 ```text
-http://127.0.0.1:8000
+/Users/xudawei/FastReAct/.fastreact/config.json
+```
+
+推荐启动命令：
+
+```bash
+cd /Users/xudawei/FastReAct
+./start.sh
+```
+
+也可以显式指定配置文件：
+
+```bash
+./start.sh /Users/xudawei/FastReAct/.fastreact/config.json
+```
+
+启动后默认地址：
+
+```text
+Service console: http://127.0.0.1:3000/service
+HTTP daemon:     http://127.0.0.1:8000
 ```
 
 常用端点：
@@ -33,7 +51,7 @@ http://127.0.0.1:8000
 - `GET /v1/tools`：列出工具。
 - `GET /v1/skills`：列出技能。
 
-如果配置了 `FASTREACT_SERVICE_TOKEN` 或 `service.service_token`，调用服务需要带：
+如果配置了 `service.service_token`，调用服务需要带：
 
 ```http
 X-FastReAct-Service-Token: replace-with-local-service-token
@@ -57,17 +75,23 @@ cd ../fastreact-nano-web
 npm install
 ```
 
-长期服务配置优先放在：
+本地完整启动只需要一个配置文件，优先放在仓库根目录：
+
+```text
+/Users/xudawei/FastReAct/.fastreact/config.json
+```
+
+长期 daemon-only 部署也可以把同一份 config 放在：
 
 ```text
 ~/.fastreact/config.json
 ```
 
-FastReAct 默认会依次尝试读取 `~/.fastreact/config.json`、仓库内 `.fastreact/config.json`、当前目录 `config.json`。发布或长期运行时建议显式传入配置文件，避免当前工作目录改变导致读错配置：
+`./start.sh` 会优先读取仓库根目录 `.fastreact/config.json`，然后再找 `~/.fastreact/config.json`。发布或长期运行时也可以显式传入配置文件，避免当前工作目录改变导致读错配置：
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
-python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
+cd /Users/xudawei/FastReAct
+./start.sh /Users/xudawei/FastReAct/.fastreact/config.json
 ```
 
 一个最小可运行配置：
@@ -83,7 +107,27 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
     "host": "127.0.0.1",
     "port": 8000,
     "log_level": "info",
-    "service_token": "replace-with-local-service-token"
+    "service_token": "replace-with-local-service-token",
+    "cors_origins": [
+      "http://127.0.0.1:3000",
+      "http://localhost:3000"
+    ]
+  },
+  "web": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 3000
+  },
+  "logs": {
+    "http": "/tmp/fastreact-http.log",
+    "web": "/tmp/fastreact-web.log"
+  },
+  "pska": {
+    "enabled": false,
+    "archive": "/Users/xudawei/Documents/personal archive",
+    "refresh_config": false,
+    "config_file": null,
+    "mcp_transport": "http"
   },
   "paths": {
     "gateway_workspace": "~/fastreact-workspace"
@@ -94,7 +138,7 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 }
 ```
 
-`~/api_key.txt` 支持 JSON 或旧的按行格式，主要用于本地 smoke test 和 credential bootstrap；长期服务仍建议把正式设置写入 config。JSON 形式可以包含：
+`~/api_key.txt` 仍支持 JSON 或旧的按行格式，主要用于本地 smoke test 和 credential bootstrap。正常启动建议直接把 `llm.api_key` 写在 config，或在 config 中用 `llm.api_key_file` 明确指向 key 文件。JSON key 文件形式可以包含：
 
 ```json
 {
@@ -115,7 +159,39 @@ FastReAct 和 PSKA 的边界是服务层协议，而不是代码互相 import。
 
 互联协议见 [`fastreact-nano/docs/PSKA_FASTREACT_PROTOCOL.md`](fastreact-nano/docs/PSKA_FASTREACT_PROTOCOL.md)。
 
-本地和 PSKA 联动时，推荐让 PSKA 侧生成 FastReAct 配置：
+本地和 PSKA 联动时，推荐先把 PSKA 配置写进同一个 FastReAct config：
+
+```bash
+cd /Users/xudawei/FastReAct
+mkdir -p .fastreact
+cp fastreact-nano/config.pska.example.json .fastreact/config.json
+```
+
+然后编辑 `.fastreact/config.json` 里的这些字段：
+
+- `llm.*`：模型、provider base URL、API key 或 `api_key_file`。
+- `service.*`：daemon host、port、service token、CORS origins。
+- `web.*`：本地 service console 是否启动、host、port。
+- `logs.*`：daemon 和 web console 日志路径。
+- `pska.*`：是否启用 PSKA 联动、PSKA archive 路径、是否刷新生成配置。
+- `mcp.servers`：PSKA MCP HTTP endpoint，默认是 `http://127.0.0.1:8765/mcp`。
+- `policy.tenant_rules.pska.tools`：PSKA tenant 可调用的工具策略。
+
+如果 `pska.refresh_config=false`，`./start.sh` 直接使用这份 config。若要让 PSKA 侧生成最终 FastReAct config，在同一份 config 中显式设置：
+
+```json
+{
+  "pska": {
+    "enabled": true,
+    "archive": "/Users/xudawei/Documents/personal archive",
+    "refresh_config": true,
+    "config_file": "/Users/xudawei/Documents/personal archive/.pska/fastreact-pska-http.json",
+    "mcp_transport": "http"
+  }
+}
+```
+
+启动：
 
 ```bash
 cd /Users/xudawei/FastReAct
@@ -124,30 +200,18 @@ cd /Users/xudawei/FastReAct
 
 `./start.sh` 会做这些事：
 
-- 读取 `PSKA_ARCHIVE`，默认是 `/Users/xudawei/Documents/personal archive`。
-- 调用 `$PSKA_ARCHIVE/scripts/fastreact-pska-service-config` 生成 FastReAct 配置。
-- 默认把生成结果写到 `$PSKA_ARCHIVE/.pska/fastreact-pska-http.json`。
-- 用这份配置启动 FastReAct HTTP daemon。
-- 启动 `fastreact-nano-web` service console。
-
-可覆盖的常用环境变量：
-
-```bash
-export PSKA_ARCHIVE="/Users/xudawei/Documents/personal archive"
-export PSKA_FASTREACT_CONFIG="$PSKA_ARCHIVE/.pska/fastreact-pska-http.json"
-export FASTREACT_SERVICE_HOST="127.0.0.1"
-export FASTREACT_SERVICE_PORT="8000"
-export WEB_PORT="3000"
-
-./start.sh
-```
+- 从 `.fastreact/config.json` 或你传入的 config 路径读取所有启动设置。
+- 按 `pska.refresh_config` 决定是否调用 PSKA 生成器。
+- 用 config 中的 `service.*` 启动 FastReAct HTTP daemon。
+- 用 config 中的 `web.*` 启动 `fastreact-nano-web` service console。
+- 用 config 中的 `logs.*` 写入本地日志。
 
 如果不使用 PSKA 自动生成器，可以从示例配置开始：
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
-mkdir -p ~/.fastreact
-cp config.pska.example.json ~/.fastreact/config.json
+cd /Users/xudawei/FastReAct
+mkdir -p .fastreact
+cp fastreact-nano/config.pska.example.json .fastreact/config.json
 ```
 
 然后确认：
@@ -184,6 +248,12 @@ cd /Users/xudawei/FastReAct
 ./start.sh
 ```
 
+也可以显式传入配置文件：
+
+```bash
+./start.sh /Users/xudawei/FastReAct/.fastreact/config.json
+```
+
 启动成功后：
 
 ```text
@@ -209,14 +279,14 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 带 service token 的 smoke test：
 
 ```bash
-export FASTREACT_SERVICE_TOKEN="replace-with-local-service-token"
+export SERVICE_TOKEN="replace-with-local-service-token"
 
 curl -fsS http://127.0.0.1:8000/ready \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 
 curl -fsS http://127.0.0.1:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
     "messages": [{"role": "user", "content": "Say hello from FastReAct."}],
     "stream": false,

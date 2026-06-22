@@ -21,7 +21,6 @@ Config.load() 会按以下顺序搜索配置文件（找到第一个就停止）
 1. ~/.fastreact/config.json              ← 最高优先级（用户级配置）
 2. ./.fastreact/config.json              ← 项目级配置
 3. ./config.json                        ← 项目根目录配置
-4. 环境变量 (FASTRACT_*)                ← 最后兜底
 ```
 
 ### 查看当前生效的配置
@@ -154,24 +153,15 @@ Feishu 也使用**同一个配置文件**，但会读取额外的 Feishu 特定�
 
 ---
 
-## 环境变量（覆盖配置）
+## 临时配置
 
-**优先级**: 环境变量会覆盖配置文件中的值
+启动配置不再通过环境变量覆盖。需要临时切换模型、API base、service token
+或 PSKA 设置时，复制一份 JSON config，然后显式传给启动命令：
 
 ```bash
-# 覆盖 API Key
-export FASTRACT_API_KEY=sk-real-key
-
-# 覆盖 Model
-export FASTRACT_MODEL=gpt-4o-mini
-
-# 覆盖 API Base
-export FASTRACT_API_BASE=https://api.openai.com/v1
+cp ~/.fastreact/config.json /tmp/fastreact-test-config.json
+python3 -m fastreact.adapters.http --config /tmp/fastreact-test-config.json
 ```
-
-**适用场景**:
-- ✅ 临时切换 API Key
-- ✅ CI/CD 环境
 - ✅ Docker 容器
 
 ---
@@ -218,35 +208,33 @@ python3 diagnose_agent.py
 
 ---
 
-### 方案 2: 项目级配置 + .env
+### 方案 2: 项目级单一配置
 
 ```bash
 # 1. 创建项目配置
+mkdir -p .fastreact
 cat > .fastreact/config.json << 'EOF'
 {
   "llm": {
-    "model": "gpt-4o-mini"
+    "model": "gpt-4o-mini",
+    "api_base": "https://api.openai.com/v1",
+    "api_key": "sk-your-real-api-key"
+  },
+  "service": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "service_token": "replace-with-local-service-token"
   }
 }
 EOF
 
-# 2. 创建 .env 文件（敏感信息）
-cat > .env << 'EOF'
-FASTRACT_API_KEY=sk-your-real-api-key
-FASTRACT_API_BASE=https://api.openai.com/v1
-EOF
-
-# 3. 添加到 .gitignore
-echo ".env" >> .gitignore
+# 2. 添加到 .gitignore，避免提交本机敏感配置
 echo ".fastreact/config.json" >> .gitignore
-
-# 4. 加载环境变量
-source .env  # 或使用 direnv/pipenv 自动加载
 ```
 
 **优点**:
 - ✅ 项目配置可控
-- ✅ 敏感信息隔离
+- ✅ 启动输入唯一
 - ✅ 团队协作友好
 
 ---
@@ -339,14 +327,13 @@ EOF
 2.
 ./.fastreact/config.json       ← 项目级
 3. ./config.json                     ← 根目录（兼容）
-4. 环境变量 FASTRACT_*               ← 兜底
 ```
 
 ### 核心原则
 
 - ✅ **所有 Adapter 共用配置**（Gateway、Feishu、CLI）
 - ✅ **优先级明确**（用户级 > 项目级 > 根目录）
-- ✅ **环境变量覆盖**（临时测试方便）
+- ✅ **显式 config 文件**（临时测试复制 config，不靠环境变量覆盖）
 
 ### 推荐做法
 
@@ -355,9 +342,8 @@ EOF
 mkdir -p ~/.fastreact
 # 编辑 ~/.fastreact/config.json
 
-# 团队协作：使用项目级配置 + .env
-# .fastreact/config.json（非敏感）
-# .env（敏感信息，不提交）
+# 团队协作：提交 config.example.json，个人复制到 .fastreact/config.json
+# 敏感信息放在本机 .fastreact/config.json，或用 llm.api_key_file 显式指向本机 key 文件
 ```
 
 ---

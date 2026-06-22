@@ -49,7 +49,6 @@ from fastreact.runtime.run_service import RunService, TERMINAL_RUN_STATUSES
 
 
 SERVICE_EVENT_SCHEMA_VERSION = "fastreact.agent_event.v1"
-SERVICE_AUTH_ENV = "FASTREACT_SERVICE_TOKEN"
 MAX_PAGE_LIMIT = 1000
 
 _agent: Optional[Agent] = None
@@ -175,9 +174,6 @@ def run_agent_event_stream(agent: Any, **kwargs: Any) -> AsyncIterator[AgentEven
 
 
 def configured_service_token() -> str | None:
-    token = os.getenv(SERVICE_AUTH_ENV)
-    if token and token.strip():
-        return token.strip()
     config_token = getattr(_service_config, "service_token", None)
     return config_token.strip() if isinstance(config_token, str) and config_token.strip() else None
 
@@ -1045,11 +1041,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         version="2.4.2",
         lifespan=lifespan,
     )
-    configured_origins = [
-        origin.strip()
-        for origin in os.getenv("FASTREACT_CORS_ORIGINS", "").split(",")
-        if origin.strip()
-    ]
+    configured_origins = list(getattr(_service_config, "cors_origins", []) or [])
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[

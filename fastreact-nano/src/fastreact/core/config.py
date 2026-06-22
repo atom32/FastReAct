@@ -295,10 +295,11 @@ class ServiceConfig:
     rate_limit_per_hour: int = 0
     blocked_user_keys: list[str] = field(default_factory=list)
     allowed_user_keys: list[str] = field(default_factory=list)
+    cors_origins: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls, api_key_file: Optional[Path] = None) -> "ServiceConfig":
-        token = os.getenv("FASTREACT_SERVICE_TOKEN") or _service_token_from_api_key_file(api_key_file)
+        token = _service_token_from_api_key_file(api_key_file)
         return cls(
             host=os.getenv("FASTREACT_HOST", "0.0.0.0"),
             port=int(os.getenv("FASTREACT_PORT", "8000")),
@@ -319,6 +320,9 @@ class ServiceConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any], api_key_file: Optional[Path] = None) -> "ServiceConfig":
         token = data.get("service_token") or data.get("token") or _service_token_from_api_key_file(api_key_file)
+        cors_origins = data.get("cors_origins", []) or []
+        if isinstance(cors_origins, str):
+            cors_origins = [cors_origins]
         return cls(
             host=data.get("host", "0.0.0.0"),
             port=int(data.get("port", 8000)),
@@ -334,6 +338,7 @@ class ServiceConfig:
             rate_limit_per_hour=int(data.get("rate_limit_per_hour", 0)),
             blocked_user_keys=list(data.get("blocked_user_keys", []) or []),
             allowed_user_keys=list(data.get("allowed_user_keys", []) or []),
+            cors_origins=list(cors_origins),
         )
 
 
@@ -627,14 +632,10 @@ class Config:
             service_config = ServiceConfig()
             if "service" in data:
                 service_config = ServiceConfig.from_dict(data["service"], llm_config.api_key_file)
-            else:
-                service_config = ServiceConfig.from_env(llm_config.api_key_file)
 
             policy_config = PolicyConfig()
             if "policy" in data:
                 policy_config = PolicyConfig.from_dict(data["policy"])
-            else:
-                policy_config = PolicyConfig.from_env()
 
             return cls(
                 llm=llm_config,
@@ -646,8 +647,9 @@ class Config:
                 policy=policy_config,
             )
 
-        # Fallback to environment variables
-        return cls.from_env()
+        # No config file found: use explicit defaults. Runtime startup should be
+        # driven by a JSON config path rather than ambient environment variables.
+        return cls()
 
     def save(self, config_path: Path) -> None:
         """Save configuration to file"""

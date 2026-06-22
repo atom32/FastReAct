@@ -15,7 +15,27 @@
     "approval_timeout_seconds": 300,
     "run_lease_seconds": 300,
     "run_max_attempts": 3,
-    "recover_queued_runs": true
+    "recover_queued_runs": true,
+    "cors_origins": [
+      "http://127.0.0.1:3000",
+      "http://localhost:3000"
+    ]
+  },
+  "web": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 3000
+  },
+  "logs": {
+    "http": "/tmp/fastreact-http.log",
+    "web": "/tmp/fastreact-web.log"
+  },
+  "pska": {
+    "enabled": true,
+    "archive": "/Users/xudawei/Documents/personal archive",
+    "refresh_config": false,
+    "config_file": null,
+    "mcp_transport": "http"
   },
   "paths": {
     "gateway_workspace": "~/fastreact-pska-workspace"
