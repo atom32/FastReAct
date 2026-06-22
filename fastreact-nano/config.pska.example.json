@@ -59,7 +59,6 @@
           "write_file": "deny",
           "edit_file": "deny",
           "pska_pska_search": "allow",
-          "pska_pska_agentic_search": "allow",
           "pska_pska_index_status": "allow",
           "pska_pska_job_context": "allow",
           "pska_pska_review_items": "allow",

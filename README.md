@@ -12,7 +12,7 @@ POST /v1/chat/completions
 
 ## 当前服务形态
 
-FastReAct Nano 现在可以作为无头服务器运行：
+FastReAct Nano 现在可以作为无头服务器运行。最小启动方式是：
 
 ```bash
 cd fastreact-nano
@@ -41,25 +41,36 @@ X-FastReAct-Service-Token: replace-with-local-service-token
 
 完整手册见 [`fastreact-nano/docs/HEADLESS_SERVICE.md`](fastreact-nano/docs/HEADLESS_SERVICE.md)。
 
-## PSKA 集成
+## 初始化设置
 
-FastReAct 和 PSKA 的边界是服务层协议，而不是代码互相 import。
+首次在本机准备 FastReAct 时，建议按这个顺序做：
 
-- PSKA 负责知识库、ACL、review、jobs、citations 和 MCP tools。
-- FastReAct 负责 agent planning、LLM calls、tool orchestration、session/runtime control 和 event streaming。
-- FastReAct 不直接访问 PSKA DB，也不替 PSKA 做知识 ACL 决策。
+```bash
+cd /Users/xudawei/FastReAct
 
-互联协议见 [`fastreact-nano/docs/PSKA_FASTREACT_PROTOCOL.md`](fastreact-nano/docs/PSKA_FASTREACT_PROTOCOL.md)。
+# backend
+cd fastreact-nano
+python3 -m pip install -e ".[all]"
 
-## 正式配置
+# frontend service console
+cd ../fastreact-nano-web
+npm install
+```
 
-长期服务建议使用：
+长期服务配置优先放在：
 
 ```text
 ~/.fastreact/config.json
 ```
 
-示例：
+FastReAct 默认会依次尝试读取 `~/.fastreact/config.json`、仓库内 `.fastreact/config.json`、当前目录 `config.json`。发布或长期运行时建议显式传入配置文件，避免当前工作目录改变导致读错配置：
+
+```bash
+cd /Users/xudawei/FastReAct/fastreact-nano
+python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
+```
+
+一个最小可运行配置：
 
 ```json
 {
@@ -74,20 +85,166 @@ FastReAct 和 PSKA 的边界是服务层协议，而不是代码互相 import。
     "log_level": "info",
     "service_token": "replace-with-local-service-token"
   },
+  "paths": {
+    "gateway_workspace": "~/fastreact-workspace"
+  },
   "mcp": {
     "servers": []
   }
 }
 ```
 
-也可以显式指定配置文件：
+`~/api_key.txt` 支持 JSON 或旧的按行格式，主要用于本地 smoke test 和 credential bootstrap；长期服务仍建议把正式设置写入 config。JSON 形式可以包含：
+
+```json
+{
+  "api_key": "replace-with-real-key",
+  "model": "deepseek-v4-flash",
+  "base_url": "https://api.deepseek.com",
+  "service_token": "replace-with-local-service-token"
+}
+```
+
+## PSKA 集成
+
+FastReAct 和 PSKA 的边界是服务层协议，而不是代码互相 import。
+
+- PSKA 负责知识库、ACL、review、jobs、citations 和 MCP tools。
+- FastReAct 负责 agent planning、LLM calls、tool orchestration、session/runtime control 和 event streaming。
+- FastReAct 不直接访问 PSKA DB，也不替 PSKA 做知识 ACL 决策。
+
+互联协议见 [`fastreact-nano/docs/PSKA_FASTREACT_PROTOCOL.md`](fastreact-nano/docs/PSKA_FASTREACT_PROTOCOL.md)。
+
+本地和 PSKA 联动时，推荐让 PSKA 侧生成 FastReAct 配置：
 
 ```bash
-cd fastreact-nano
+cd /Users/xudawei/FastReAct
+./start.sh
+```
+
+`./start.sh` 会做这些事：
+
+- 读取 `PSKA_ARCHIVE`，默认是 `/Users/xudawei/Documents/personal archive`。
+- 调用 `$PSKA_ARCHIVE/scripts/fastreact-pska-service-config` 生成 FastReAct 配置。
+- 默认把生成结果写到 `$PSKA_ARCHIVE/.pska/fastreact-pska-http.json`。
+- 用这份配置启动 FastReAct HTTP daemon。
+- 启动 `fastreact-nano-web` service console。
+
+可覆盖的常用环境变量：
+
+```bash
+export PSKA_ARCHIVE="/Users/xudawei/Documents/personal archive"
+export PSKA_FASTREACT_CONFIG="$PSKA_ARCHIVE/.pska/fastreact-pska-http.json"
+export FASTREACT_SERVICE_HOST="127.0.0.1"
+export FASTREACT_SERVICE_PORT="8000"
+export WEB_PORT="3000"
+
+./start.sh
+```
+
+如果不使用 PSKA 自动生成器，可以从示例配置开始：
+
+```bash
+cd /Users/xudawei/FastReAct/fastreact-nano
+mkdir -p ~/.fastreact
+cp config.pska.example.json ~/.fastreact/config.json
+```
+
+然后确认：
+
+- `llm.api_key` 或 `llm.api_key_file` 能读到真实 LLM key。
+- `service.service_token` 和 PSKA 调用 FastReAct 时使用的 token 一致。
+- `mcp.servers[0].url` 指向 PSKA MCP HTTP endpoint，默认是 `http://127.0.0.1:8765/mcp`。
+- `policy.tenant_rules.pska.tools` 只允许 PSKA 知识工具，危险的 shell/file tools 应保持 `deny` 或 `require_approval`。
+
+PSKA 调用 FastReAct 时使用服务协议，不 import FastReAct 代码。典型请求：
+
+```json
+{
+  "messages": [
+    {"role": "system", "content": "Use PSKA MCP tools and cite evidence."},
+    {"role": "user", "content": "Question"}
+  ],
+  "stream": true,
+  "user_key": "pska:user_primary",
+  "metadata": {
+    "caller": "pska",
+    "purpose": "qa",
+    "pska_user_id": "user_primary"
+  }
+}
+```
+
+## 启动方式
+
+日常本地全栈启动：
+
+```bash
+cd /Users/xudawei/FastReAct
+./start.sh
+```
+
+启动成功后：
+
+```text
+Service console: http://127.0.0.1:3000/service
+Daemon health:   http://127.0.0.1:8000/health
+Daemon ready:    http://127.0.0.1:8000/ready
+```
+
+停止：
+
+```bash
+cd /Users/xudawei/FastReAct
+./stop.sh
+```
+
+只启动无头 daemon：
+
+```bash
+cd /Users/xudawei/FastReAct/fastreact-nano
 python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 ```
 
-`~/api_key.txt` 支持 JSON 格式，主要用于本地 smoke test 和 credential bootstrap；长期运行服务仍建议使用正式 config。
+带 service token 的 smoke test：
+
+```bash
+export FASTREACT_SERVICE_TOKEN="replace-with-local-service-token"
+
+curl -fsS http://127.0.0.1:8000/ready \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN"
+
+curl -fsS http://127.0.0.1:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "X-FastReAct-Service-Token: $FASTREACT_SERVICE_TOKEN" \
+  -d '{
+    "messages": [{"role": "user", "content": "Say hello from FastReAct."}],
+    "stream": false,
+    "user_key": "pska:smoke"
+  }'
+```
+
+## 发布检查
+
+发布前建议跑完整 release gate：
+
+```bash
+cd /Users/xudawei/FastReAct/fastreact-nano
+python3 run_tests.py quick
+python3 run_tests.py integration
+python3 run_tests.py release-llm
+python3 run_tests.py release-full
+```
+
+默认测试不会访问真实 LLM。`release-llm` 和 `release-full` 会读取 `~/api_key.txt` 做真实 LLM smoke test 和 LLM Judge。
+
+发布前还应手工确认：
+
+- `~/.fastreact/config.json` 或 PSKA 生成的 `fastreact-pska-http.json` 不含占位 token。
+- `/ready` 返回 agent、MCP server 和 MCP tool 就绪。
+- PSKA MCP HTTP endpoint 已启动，并且 FastReAct 的 `/v1/tools` 能看到 PSKA tools。
+- policy 没有放开不该给 PSKA tenant 使用的 `exec`、`read_file`、`write_file`、`edit_file`。
+- service token 只通过 header 或本地安全配置传递，不写入公开文档和 release artifact。
 
 ## 当前能力边界
 
@@ -127,46 +284,6 @@ python3 -m fastreact.adapters.http --config ~/.fastreact/config.json
 最终目标是长期稳定、高并发的 agentic service daemon。当前 Nano 阶段先保持单 agent，是为了把 headless 协议、run/job/trace/policy、approval 和 PSKA 边界打磨稳定。
 
 在这些服务契约稳定前，不急于重写或扩大架构。等 run、job、trace、policy 和并发 daemon 边界清楚后，可以逐步把事件分发、任务队列、trace replay、policy hot path、MCP transport supervision 等局部组件迁移到 Rust 或其他更高效的实现。
-
-## 开发与验证
-
-```bash
-cd fastreact-nano
-python3 run_tests.py quick
-python3 run_tests.py integration
-python3 run_tests.py all
-python3 run_tests.py release-llm
-python3 run_tests.py release-full
-```
-
-默认测试不会访问真实 LLM。`release-llm` 会读取 `~/api_key.txt` 做真实 LLM smoke test 和 LLM Judge。
-
-## Service 控制台
-
-需要 OpenClaw-like 本地 app 时，启动完整本地栈：
-
-```bash
-cd /Users/xudawei/FastReAct
-./start.sh
-```
-
-Service 控制台：
-
-```text
-http://localhost:3000/service
-```
-
-HTTP daemon 健康检查：
-
-```text
-http://localhost:8000/health
-```
-
-停止本地栈：
-
-```bash
-./stop.sh
-```
 
 ## 文档
 
