@@ -606,10 +606,25 @@ class Config:
             # Extract react configuration
             if "react" in data:
                 react_data = data["react"]
+                default_react = ReactConfig()
+                steering_file = react_data.get("steering_file")
                 react_config = ReactConfig(
-                    max_iterations=react_data.get("max_iterations", 20),
-                    enable_steering=react_data.get("enable_steering", True),
-                    enable_followup=react_data.get("enable_followup", True),
+                    max_iterations=react_data.get("max_iterations", default_react.max_iterations),
+                    enable_steering=react_data.get("enable_steering", default_react.enable_steering),
+                    enable_followup=react_data.get("enable_followup", default_react.enable_followup),
+                    steering_file=_expand_path(steering_file) if steering_file else default_react.steering_file,
+                    max_context_tokens=react_data.get("max_context_tokens", default_react.max_context_tokens),
+                    context_warning_threshold=react_data.get("context_warning_threshold", default_react.context_warning_threshold),
+                    max_tool_output_chars=react_data.get("max_tool_output_chars", default_react.max_tool_output_chars),
+                    use_tiktoken=react_data.get("use_tiktoken", default_react.use_tiktoken),
+                    tiktoken_model=react_data.get("tiktoken_model", default_react.tiktoken_model),
+                    sliding_window_size=react_data.get("sliding_window_size", default_react.sliding_window_size),
+                    enable_filesystem_memory=react_data.get("enable_filesystem_memory", default_react.enable_filesystem_memory),
+                    max_tree_depth=react_data.get("max_tree_depth", default_react.max_tree_depth),
+                    max_files_per_dir=react_data.get("max_files_per_dir", default_react.max_files_per_dir),
+                    enable_safety=react_data.get("enable_safety", default_react.enable_safety),
+                    strict_mode=react_data.get("strict_mode", default_react.strict_mode),
+                    auto_approve_safe=react_data.get("auto_approve_safe", default_react.auto_approve_safe),
                 )
 
             # Extract MCP configuration

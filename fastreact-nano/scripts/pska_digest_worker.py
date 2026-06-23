@@ -25,6 +25,14 @@ DIGEST_JOB_TYPE = "digest_via_fastreact"
 DEFAULT_PSKA_URL = "http://127.0.0.1:8765"
 DEFAULT_FASTREACT_URL = "http://127.0.0.1:8000"
 DEFAULT_KEY_FILE = Path.home() / "api_key.txt"
+PROMPT_SOURCE_ITEM_LIMIT = 3
+PROMPT_DOCUMENT_LIMIT = 3
+PROMPT_PASSAGE_LIMIT = 6
+PROMPT_CHUNK_LIMIT = 6
+PROMPT_SOURCE_TEXT_CHARS = 1200
+PROMPT_DOCUMENT_TEXT_CHARS = 12000
+PROMPT_PASSAGE_TEXT_CHARS = 8000
+PROMPT_CHUNK_TEXT_CHARS = 900
 
 
 class WorkerError(RuntimeError):
@@ -39,7 +47,7 @@ class DigestWorkerConfig:
     fastreact_service_token: str | None = None
     worker_id: str = "fastreact-pska-digest-worker"
     lease_seconds: int = 300
-    batch_limit: int = 20
+    batch_limit: int = 1
     represented_user_id: str = "user_primary"
     timeout_seconds: float = 90.0
     run_timeout_seconds: float = 900.0
@@ -193,20 +201,32 @@ def _run_fastreact_digest(
         "Execute exactly one PSKA digest batch and then stop.\n"
         f"PSKA job_id: {job_id}\n"
         f"Batch cursor: {batch.get('cursor')}\n"
-        "Allowed tools: pska_pska_write_candidates only, plus pska_pska_job_context only if the batch context is missing. "
+        "Allowed tools: pska_pska_job_context and pska_pska_write_candidates only. "
         "Do not use built-in tools such as exec, read_file, write_file, or edit_file. "
         "Do not inspect local code, local files, package modules, or environment state.\n"
         "Tool budget for this batch: pska_pska_write_candidates <= 1 and pska_pska_job_context <= 1. "
+        "Required flow: first call pska_pska_job_context with job_id, max_document_chars=48000, "
+        "max_passage_chars=24000, max_passage_windows=4, max_chunk_chars=1200, max_chunks=6. Use returned documents and "
+        "passage_windows as the primary evidence; chunks are retrieval slices only. "
+        "Then perform agentic offline processing in two phases: (1) Knowledge Extraction into readable "
+        "knowledge_claims/facts with evidence, and (2) Digest synthesis into digest_notes, actions, risks, "
+        "questions, memory suggestions, and relationship suggestions. "
         "If there is useful grounded knowledge, call pska_pska_write_candidates exactly once or not at all. "
         "When you need to write multiple candidate categories, combine them into that single pska_pska_write_candidates payload. "
-        "The one payload may contain entities, memory_candidates, review_items, hyperedges, summaries, and source_refs together. "
-        "Merge all summaries, memory_candidates, review_items, and action candidates into one pska_pska_write_candidates payload. "
+        "The one payload may contain knowledge_claims, digest_notes, entities, memory_candidates, review_items, hyperedges, summaries, and source_refs together. "
+        "Merge all digest_notes, knowledge_claims, summaries, memory_candidates, review_items, and action candidates into one pska_pska_write_candidates payload. "
         "Do not split write calls by candidate category, source, confidence, or citation group. "
         "A second pska_pska_write_candidates call is invalid even if it writes a different candidate type. "
         "Every candidate must include schema_version='pska.candidates.v1', job_id, source_refs, confidence, and producer='fastreact'. "
+        "Prefer readable knowledge_claims first: each claim needs claim_type, statement, evidence_text, source_refs, and confidence. "
+        "Use Chinese for user-facing statement/synopsis/summary fields by default. "
+        "Every claim should cite the narrowest source_refs available, ideally passage_window_id or document_id. "
+        "Do not write digest_notes, hyperedges, or relationship_suggestions unless the same payload also includes at least one knowledge_claim. "
+        "Then write digest_notes with title, synopsis, key_points, actions, open_questions, risks, memory_suggestions, relationship_suggestions, and source_refs when useful. "
         "Use valid PSKA candidate fields: entities require entity_type and label; memory_candidates require kind='agent_memory' and text; "
         "review_items require review_type, title, and proposal; hyperedges require relation_type and at least two members with entity_type, label, and role. "
-        "For simple single-fact digest batches, prefer exactly one memory_candidates item and omit entities/hyperedges. "
+        "For simple single-fact digest batches, prefer one readable knowledge_claim and one digest_note; only add memory_candidates/entities/hyperedges if they are genuinely useful. "
+        "If you write a hyperedge or relationship suggestion, also write at least one knowledge_claim that explains the source statement it formalizes. "
         "Do not use name/content/source/memory_id for memory candidates. "
         "Low-confidence, sensitive, or high-impact suggestions must be review_items, not direct memory writes. "
         "If there is no useful candidate, do not call tools; return a short final JSON summary. "
@@ -233,6 +253,7 @@ def _run_fastreact_digest(
             "purpose": "digest",
             "pska_user_id": config.represented_user_id,
             "pska_job_id": job_id,
+            "max_context_tokens": 128000,
             "scope": {"job_id": job_id, "cursor": batch.get("cursor")},
             "tool_budget": {
                 "pska_pska_write_candidates": 1,
@@ -274,10 +295,75 @@ def _compact_batch_for_prompt(batch: dict[str, Any]) -> dict[str, Any]:
         "next_cursor": batch.get("next_cursor"),
         "has_more": batch.get("has_more"),
         "job": batch.get("job"),
-        "source_items": batch.get("source_items") or [],
+        "source_items": [],
+        "documents": [],
+        "passage_windows": [],
         "chunks": [],
+        "limits": {
+            "source_items": PROMPT_SOURCE_ITEM_LIMIT,
+            "documents": PROMPT_DOCUMENT_LIMIT,
+            "passage_windows": PROMPT_PASSAGE_LIMIT,
+            "chunks": PROMPT_CHUNK_LIMIT,
+            "source_text_chars": PROMPT_SOURCE_TEXT_CHARS,
+            "document_text_chars": PROMPT_DOCUMENT_TEXT_CHARS,
+            "passage_text_chars": PROMPT_PASSAGE_TEXT_CHARS,
+            "chunk_text_chars": PROMPT_CHUNK_TEXT_CHARS,
+        },
+        "input_strategy": "document_first_agentic_digest",
     }
-    for chunk in batch.get("chunks") or []:
+    source_items = [item for item in batch.get("source_items") or [] if isinstance(item, dict)]
+    for item in source_items[:PROMPT_SOURCE_ITEM_LIMIT]:
+        text = str(item.get("content_text") or item.get("text") or item.get("content") or "")
+        compact["source_items"].append(
+            {
+                "source_item_id": item.get("source_item_id"),
+                "source_channel": item.get("source_channel"),
+                "record_type": item.get("record_type"),
+                "source_id": item.get("source_id"),
+                "title": item.get("title"),
+                "url": item.get("url"),
+                "path": _source_path(item),
+                "created_at": item.get("created_at"),
+                "content_text": _truncate(text, PROMPT_SOURCE_TEXT_CHARS),
+                "content_chars": len(text),
+            }
+        )
+    if len(source_items) > PROMPT_SOURCE_ITEM_LIMIT:
+        compact["source_items_truncated"] = len(source_items) - PROMPT_SOURCE_ITEM_LIMIT
+    documents = [document for document in batch.get("documents") or [] if isinstance(document, dict)]
+    for document in documents[:PROMPT_DOCUMENT_LIMIT]:
+        text = str(document.get("body") or document.get("text") or document.get("content") or "")
+        compact["documents"].append(
+            {
+                "document_id": document.get("document_id"),
+                "source_item_id": document.get("source_item_id"),
+                "title": document.get("title"),
+                "mime_type": document.get("mime_type"),
+                "body": _truncate(text, PROMPT_DOCUMENT_TEXT_CHARS),
+                "body_chars": len(text),
+            }
+        )
+    if len(documents) > PROMPT_DOCUMENT_LIMIT:
+        compact["documents_truncated"] = len(documents) - PROMPT_DOCUMENT_LIMIT
+    passage_windows = [window for window in batch.get("passage_windows") or [] if isinstance(window, dict)]
+    for window in passage_windows[:PROMPT_PASSAGE_LIMIT]:
+        text = str(window.get("text") or window.get("content") or "")
+        compact["passage_windows"].append(
+            {
+                "passage_window_id": window.get("passage_window_id"),
+                "source_item_id": window.get("source_item_id"),
+                "document_id": window.get("document_id"),
+                "ordinal": window.get("ordinal"),
+                "title": window.get("title"),
+                "text": _truncate(text, PROMPT_PASSAGE_TEXT_CHARS),
+                "text_chars": len(text),
+                "token_estimate": window.get("token_estimate"),
+            }
+        )
+    if len(passage_windows) > PROMPT_PASSAGE_LIMIT:
+        compact["passage_windows_truncated"] = len(passage_windows) - PROMPT_PASSAGE_LIMIT
+    chunks = [chunk for chunk in batch.get("chunks") or [] if isinstance(chunk, dict)]
+    for chunk in chunks[:PROMPT_CHUNK_LIMIT]:
         if not isinstance(chunk, dict):
             continue
         text = str(chunk.get("text") or chunk.get("content") or "")
@@ -286,10 +372,27 @@ def _compact_batch_for_prompt(batch: dict[str, Any]) -> dict[str, Any]:
                 "chunk_id": chunk.get("chunk_id"),
                 "source_item_id": chunk.get("source_item_id"),
                 "document_id": chunk.get("document_id"),
-                "text": text[:4000],
+                "ordinal": chunk.get("ordinal"),
+                "text": _truncate(text, PROMPT_CHUNK_TEXT_CHARS),
+                "text_chars": len(text),
             }
         )
+    if len(chunks) > PROMPT_CHUNK_LIMIT:
+        compact["chunks_truncated"] = len(chunks) - PROMPT_CHUNK_LIMIT
     return compact
+
+
+def _source_path(item: dict[str, Any]) -> str | None:
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    raw_paths = metadata.get("raw_paths") if isinstance(metadata.get("raw_paths"), dict) else {}
+    path = raw_paths.get("markdown") or raw_paths.get("original") or item.get("path")
+    return str(path) if path else None
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[: max(0, max_chars - 24)].rstrip() + "\n...[truncated]"
 
 
 def _raise_on_fastreact_error(response: dict[str, Any]) -> None:
@@ -316,6 +419,14 @@ def _raise_on_fastreact_error(response: dict[str, Any]) -> None:
             f"pska_pska_job_context={budget['job_context_call_count']} "
             f"(max {budget['tool_budget']['pska_pska_job_context']})"
         )
+    if _validation_rejected_call_ids(response) and not budget["write_call_count"]:
+        raise WorkerError("FastReAct candidate payload failed validation and was not repaired")
+    if budget["job_context_call_count"] and not budget["write_call_count"] and _looks_like_unresolved_context_failure(response):
+        raise WorkerError("FastReAct could not obtain usable PSKA job context and wrote no candidates")
+    if budget["write_call_count"] and _candidate_count(response) == 0:
+        raise WorkerError("FastReAct called pska_write_candidates without any candidates")
+    if _wrote_digest_or_relationship_without_claims(response):
+        raise WorkerError("FastReAct wrote digest or relationship candidates without knowledge_claims")
 
 
 def _wait_for_run(config: DigestWorkerConfig, run_id: str, *, http: JsonHttpClient) -> dict[str, Any]:
@@ -358,6 +469,12 @@ def _summarize_tool_calls(events: list[Any]) -> list[dict[str, Any]]:
                 "request_id": args.get("request_id"),
                 "job_id": args.get("job_id"),
                 "source_ref_count": len(args.get("source_refs") or []) if isinstance(args.get("source_refs"), list) else 0,
+                "knowledge_claim_count": len(args.get("knowledge_claims") or [])
+                if isinstance(args.get("knowledge_claims"), list)
+                else 0,
+                "digest_note_count": len(args.get("digest_notes") or [])
+                if isinstance(args.get("digest_notes"), list)
+                else 0,
                 "entity_count": len(args.get("entities") or []) if isinstance(args.get("entities"), list) else 0,
                 "hyperedge_count": len(args.get("hyperedges") or []) if isinstance(args.get("hyperedges"), list) else 0,
                 "review_item_count": len(args.get("review_items") or []) if isinstance(args.get("review_items"), list) else 0,
@@ -370,7 +487,7 @@ def _summarize_tool_calls(events: list[Any]) -> list[dict[str, Any]]:
 
 
 def _digest_tool_budget_summary(response: dict[str, Any]) -> dict[str, Any]:
-    write_count = _count_tool_calls(response, "pska_pska_write_candidates")
+    write_count = _count_effective_tool_calls(response, "pska_pska_write_candidates")
     job_context_count = _count_tool_calls(response, "pska_pska_job_context")
     return {
         "write_call_count": write_count,
@@ -383,8 +500,100 @@ def _digest_tool_budget_summary(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _candidate_count(response: dict[str, Any]) -> int:
+    total = 0
+    for call in response.get("tool_calls") or []:
+        if not isinstance(call, dict) or call.get("tool_name") != "pska_pska_write_candidates":
+            continue
+        for key in [
+            "knowledge_claim_count",
+            "digest_note_count",
+            "entity_count",
+            "hyperedge_count",
+            "review_item_count",
+            "memory_candidate_count",
+        ]:
+            total += int(call.get(key) or 0)
+    return total
+
+
+def _wrote_digest_or_relationship_without_claims(response: dict[str, Any]) -> bool:
+    claim_count = 0
+    digest_or_relationship_count = 0
+    for call in response.get("tool_calls") or []:
+        if not isinstance(call, dict) or call.get("tool_name") != "pska_pska_write_candidates":
+            continue
+        claim_count += int(call.get("knowledge_claim_count") or 0)
+        digest_or_relationship_count += int(call.get("digest_note_count") or 0)
+        digest_or_relationship_count += int(call.get("hyperedge_count") or 0)
+    return digest_or_relationship_count > 0 and claim_count == 0
+
+
+def _looks_like_unresolved_context_failure(response: dict[str, Any]) -> bool:
+    text_parts = [str(response.get("content") or "")]
+    for event in response.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") in {"tool_result", "error", "session_end", "step_end"}:
+            text_parts.append(str(event.get("content") or event.get("result") or ""))
+    text = "\n".join(part for part in text_parts if part).lower()
+    if not text:
+        return False
+    failure_terms = [
+        "pska_job_context",
+        "context",
+        "chunk",
+        "chunk size",
+        "separator",
+        "limit",
+        "retry",
+        "failed",
+        "failure",
+        "error",
+        "上下文",
+        "分块",
+        "块分割",
+        "失败",
+        "错误",
+        "重试",
+        "回退",
+    ]
+    return any(term in text for term in failure_terms)
+
+
 def _count_tool_calls(response: dict[str, Any], tool_name: str) -> int:
     return sum(1 for call in response.get("tool_calls") or [] if isinstance(call, dict) and call.get("tool_name") == tool_name)
+
+
+def _count_effective_tool_calls(response: dict[str, Any], tool_name: str) -> int:
+    validation_rejected_call_ids = _validation_rejected_call_ids(response)
+    count = 0
+    for call in response.get("tool_calls") or []:
+        if not isinstance(call, dict) or call.get("tool_name") != tool_name:
+            continue
+        call_id = str(call.get("tool_call_id") or "")
+        if call_id and call_id in validation_rejected_call_ids:
+            continue
+        count += 1
+    return count
+
+
+def _validation_rejected_call_ids(response: dict[str, Any]) -> set[str]:
+    rejected: set[str] = set()
+    for event in response.get("events") or []:
+        if not isinstance(event, dict) or event.get("type") != "tool_result":
+            continue
+        if not event.get("digest_validation_error"):
+            metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+            if not metadata.get("digest_validation_error"):
+                continue
+        request_id = event.get("request_id")
+        if request_id is None:
+            metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+            request_id = metadata.get("request_id")
+        if request_id:
+            rejected.add(str(request_id))
+    return rejected
 
 
 def _is_ready_digest_job(job: Any) -> bool:

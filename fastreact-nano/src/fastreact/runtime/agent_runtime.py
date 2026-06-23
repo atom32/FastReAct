@@ -42,6 +42,46 @@ class DigestToolBudgetGuard:
         self.counts[tool_name] = self.counts.get(tool_name, 0) + 1
         return True
 
+    def validate(self, tool_name: str, tool_args: Optional[dict] = None) -> str | None:
+        if not self.enabled or tool_name != "pska_pska_write_candidates":
+            return None
+        args = tool_args if isinstance(tool_args, dict) else {}
+        counts = _pska_candidate_counts(args)
+        if sum(counts.values()) == 0:
+            return (
+                "pska_pska_write_candidates requires at least one candidate. "
+                "For digest jobs, first write knowledge_claims with evidence_text and source_refs."
+            )
+        if (counts["digest_notes"] or counts["hyperedges"]) and not counts["knowledge_claims"]:
+            return (
+                "Digest notes, hyperedges, and relationship suggestions require at least one "
+                "knowledge_claim in the same pska_pska_write_candidates payload."
+            )
+        return None
+
+
+def _pska_candidate_counts(args: dict) -> dict[str, int]:
+    return {
+        "knowledge_claims": _list_count(args.get("knowledge_claims")),
+        "digest_notes": _list_count(args.get("digest_notes")),
+        "entities": _list_count(args.get("entities")),
+        "hyperedges": _list_count(args.get("hyperedges")),
+        "review_items": _list_count(args.get("review_items")),
+        "memory_candidates": _list_count(args.get("memory_candidates") or args.get("memory")),
+    }
+
+
+def _list_count(value: object) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
+def _positive_int(value: object) -> int | None:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
 
 class AgentRuntime:
     """
@@ -418,9 +458,14 @@ class AgentRuntime:
 
                     # Compress context before LLM call (each iteration)
                     compress_span = TimingSpan("context.compress")
+                    metadata_context_tokens = _positive_int((run_metadata or {}).get("max_context_tokens"))
+                    configured_context_tokens = int(getattr(agent._config.react, "max_context_tokens", 12000) or 12000)
+                    max_context_tokens = metadata_context_tokens or configured_context_tokens
+                    completion_buffer = int(getattr(agent._config.llm, "max_tokens", 0) or 0)
+                    compression_budget = max(1, max_context_tokens - completion_buffer)
                     compressed_messages = agent._compress_context(
                         messages,
-                        max_tokens=12000,  # Leave 4K buffer for GPT-4o (16K total)
+                        max_tokens=compression_budget,
                         preserve_system=True,
                         preserve_initial_query=True,
                         # recent_count defaults to config value
@@ -431,6 +476,9 @@ class AgentRuntime:
                         "context.compress",
                         compress_span,
                         message_count=len(messages),
+                        max_context_tokens=max_context_tokens,
+                        completion_buffer_tokens=completion_buffer,
+                        compression_budget_tokens=compression_budget,
                         **{key: value for key, value in compression_metadata.items() if key != "preserved_message_indices"},
                     )
                     if compression_metadata.get("compressed"):
@@ -453,6 +501,16 @@ class AgentRuntime:
                     ):
                         # Collect TOOL_CALL events for execution
                         if event.type == EventType.TOOL_CALL:
+                            validation_error = budget_guard.validate(event.tool_name or "", event.tool_args)
+                            if validation_error:
+                                yield event
+                                tool_calls.append({
+                                    "id": event.metadata.get("call_id", ""),
+                                    "name": event.tool_name,
+                                    "arguments": event.tool_args,
+                                    "validation_error": validation_error,
+                                })
+                                continue
                             if not budget_guard.allow(event.tool_name or ""):
                                 yield AgentEvent.think(
                                     f"[TOOL_BUDGET_DENIED] {event.tool_name} exceeded per-run budget",
@@ -468,6 +526,7 @@ class AgentRuntime:
                                 "id": event.metadata.get("call_id", ""),
                                 "name": event.tool_name,
                                 "arguments": event.tool_args,
+                                "validation_error": validation_error,
                             })
                             continue
 
@@ -514,6 +573,22 @@ class AgentRuntime:
                             tool_name = tool_call.get("name", "")
                             tool_params = tool_call.get("arguments", {})
                             call_id = tool_call.get("id", "")
+                            validation_error = tool_call.get("validation_error")
+
+                            if validation_error:
+                                result = f"[PSKA_DIGEST_VALIDATION_ERROR] {validation_error}"
+                                result_event = AgentEvent.tool_result(tool_name, result, session_id)
+                                result_event.metadata.update({
+                                    "request_id": call_id,
+                                    "digest_validation_error": True,
+                                })
+                                yield result_event
+                                messages.append(Message.tool(
+                                    name=tool_name,
+                                    result=result,
+                                    call_id=call_id,
+                                ).to_llm_format())
+                                continue
 
                             # User input checkpoint: check for pending messages before tool execution
                             pending = agent._session_queues.get(session_id, MessageQueue())

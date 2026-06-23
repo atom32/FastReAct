@@ -170,6 +170,47 @@ class TestConfig:
         assert config.service.service_token == "local-token"
         assert config.mcp.servers[0].env == {"PSKA_DATABASE_URL": "postgresql:///pska"}
 
+    def test_load_json_react_context_settings(self, tmp_path):
+        config_file = tmp_path / "fastreact.json"
+        config_file.write_text(
+            """
+            {
+              "react": {
+                "max_iterations": 9,
+                "max_context_tokens": 64000,
+                "context_warning_threshold": 0.7,
+                "max_tool_output_chars": 20000,
+                "use_tiktoken": false,
+                "tiktoken_model": "deepseek-chat",
+                "sliding_window_size": 30,
+                "enable_filesystem_memory": false,
+                "max_tree_depth": 2,
+                "max_files_per_dir": 25,
+                "enable_safety": false,
+                "strict_mode": true,
+                "auto_approve_safe": false
+              }
+            }
+            """,
+            encoding="utf-8",
+        )
+
+        config = Config.load(config_file)
+
+        assert config.react.max_iterations == 9
+        assert config.react.max_context_tokens == 64000
+        assert config.react.context_warning_threshold == 0.7
+        assert config.react.max_tool_output_chars == 20000
+        assert config.react.use_tiktoken is False
+        assert config.react.tiktoken_model == "deepseek-chat"
+        assert config.react.sliding_window_size == 30
+        assert config.react.enable_filesystem_memory is False
+        assert config.react.max_tree_depth == 2
+        assert config.react.max_files_per_dir == 25
+        assert config.react.enable_safety is False
+        assert config.react.strict_mode is True
+        assert config.react.auto_approve_safe is False
+
     def test_from_env(self):
         """Test creating full config from environment"""
         os.environ["FASTRACT_MODEL"] = "gpt-4"

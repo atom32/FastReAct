@@ -2,6 +2,7 @@ import pytest
 
 from fastreact import Agent, Config, LLMConfig, PolicyConfig, ReactConfig, ToolConfig
 from fastreact.core.events import EventType
+from fastreact.runtime.agent_runtime import DigestToolBudgetGuard
 from fastreact.runtime.run_service import RunService
 from fastreact.runtime.store_service import StoreService
 
@@ -111,6 +112,36 @@ def test_run_trace_records_pska_digest_tool_budget(tmp_path):
     assert trace["pska_digest_tool_budget"]["write_call_count"] == 2
     assert trace["pska_digest_tool_budget"]["job_context_call_count"] == 1
     assert trace["pska_digest_tool_budget"]["tool_budget_exceeded"] is True
+
+
+def test_pska_digest_guard_validates_candidate_payloads_before_budget_count():
+    guard = DigestToolBudgetGuard({"caller": "pska_digest_worker", "purpose": "digest"})
+
+    empty_error = guard.validate("pska_pska_write_candidates", {"source_refs": []})
+    assert "requires at least one candidate" in empty_error
+    assert guard.counts["pska_pska_write_candidates"] == 0
+
+    no_claim_error = guard.validate(
+        "pska_pska_write_candidates",
+        {
+            "source_refs": [{"source_item_id": "src_1"}],
+            "digest_notes": [{"title": "Digest", "synopsis": "No claims"}],
+        },
+    )
+    assert "require at least one knowledge_claim" in no_claim_error
+    assert guard.counts["pska_pska_write_candidates"] == 0
+
+    valid_error = guard.validate(
+        "pska_pska_write_candidates",
+        {
+            "source_refs": [{"source_item_id": "src_1"}],
+            "knowledge_claims": [{"claim_type": "fact", "statement": "A", "evidence_text": "A", "source_refs": [{"source_item_id": "src_1"}]}],
+            "digest_notes": [{"title": "Digest", "synopsis": "With claims"}],
+        },
+    )
+    assert valid_error is None
+    assert guard.allow("pska_pska_write_candidates") is True
+    assert guard.counts["pska_pska_write_candidates"] == 1
 
 
 def test_run_service_retry_backoff_and_ready_queue(tmp_path):
@@ -367,6 +398,8 @@ async def test_session_detail_replays_persisted_events(tmp_path, mock_llm_no_too
 @pytest.mark.asyncio
 async def test_context_compression_emits_auditable_event(tmp_path, mock_llm_no_tools):
     config = make_test_config(tmp_path)
+    config.react.max_context_tokens = 20000
+    config.llm.max_tokens = 1000
     agent = Agent(config=config, multitenant=False)
     agent._config.react.sliding_window_size = 1
     history = [
@@ -391,3 +424,27 @@ async def test_context_compression_emits_auditable_event(tmp_path, mock_llm_no_t
     metadata = compression_events[0].metadata["compression"]
     assert metadata["compressed"] is True
     assert metadata["dropped_count"] > 0
+
+
+@pytest.mark.asyncio
+async def test_context_compression_uses_configured_context_budget(tmp_path, mock_llm_no_tools):
+    config = make_test_config(tmp_path)
+    config.react.max_context_tokens = 50000
+    config.llm.max_tokens = 1234
+    agent = Agent(config=config, multitenant=False)
+    seen_budgets = []
+
+    def capture_compress(messages, max_tokens=12000, **kwargs):
+        seen_budgets.append(max_tokens)
+        return messages
+
+    agent._compress_context = capture_compress
+
+    async for _event in agent.run_event_stream("hello", session_id="compression-budget-session"):
+        pass
+
+    assert seen_budgets
+    assert seen_budgets[0] == 48766
+    spans = agent.store.read("runtime_spans", session_id="compression-budget-session")
+    context_spans = [span for span in spans if span["name"] == "context.compress"]
+    assert context_spans
