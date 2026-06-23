@@ -1,5 +1,10 @@
 # Gateway Adapter 重构方案 - BaseAdapter 设计
 
+> Historical analysis: this document was moved from the old root `docs/`
+> directory during the 2026-06-23 documentation cleanup. Treat it as design
+> background, not current implementation truth. For current service behavior,
+> see [../HEADLESS_SERVICE.md](../HEADLESS_SERVICE.md).
+
 **问题**: Gateway Adapter 有太多逻辑（807 行），职责混乱
 **目标**: 提取共享逻辑，设计统一的 BaseAdapter 接口
 

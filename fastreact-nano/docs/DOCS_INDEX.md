@@ -1,216 +1,127 @@
-# Documentation Index
+# FastReAct Nano Documentation Index
 
-**Last Updated**: 2025-02-27
-**Purpose**: Navigation guide for FastReAct Nano documentation
+Last updated: 2026-06-23
 
----
+This is the maintained documentation center for FastReAct Nano `2.4.2`. Current behavior is verified against the codebase; historical reports are linked only through archive indexes.
 
-## Essential (Root Level)
+## Quick Start
 
-### Core Documentation
-- **[README.md](../README.md)** - User-facing overview, features, and quick start
-- **[CLAUDE.md](../CLAUDE.md)** - Development rules, architecture patterns, iron rules
-- **[GETTING_STARTED.md](../GETTING_STARTED.md)** - Detailed installation and setup guide
-- **[QUICKSTART.md](../QUICKSTART.md)** - 5-minute tutorial
-- **[CHANGELOG.md](../CHANGELOG.md)** - Version history and release notes
+- [Repository README](../../README.md): top-level project entry and service shape.
+- [Nano README](../README.md): current backend capabilities, endpoints, and boundaries.
+- [5-minute quick start](../GETTING_STARTED.md): install, configure, start, and smoke test.
+- [Short quickstart](../QUICKSTART.md): compact local run path.
+- [Configuration file locations](CONFIG_FILE_LOCATIONS.md): config search order, recommended paths, secrets, PSKA config.
 
-**Status**: ✅ Clean and focused (5 files only)
+## Operations
 
----
+- [Headless service manual](HEADLESS_SERVICE.md): HTTP/SSE endpoints, auth, chat, runs, traces, approvals, policy, MCP diagnostics.
+- [Deployment](deployment.md): deployment notes.
+- [Security model](security.md): service auth, secrets, policy, approvals, MCP isolation, limits.
+- [MCP isolation](security/MCP_ISOLATION.md): deeper MCP user isolation guidance.
+- [Directory structure](DIRECTORY_STRUCTURE.md): current project layout and where generated state belongs.
 
-## Architecture (docs/ARCHITECTURE/)
+## Architecture
 
-### Design Documents
-- **[DESIGN.md](DESIGN.md)** - Core design principles and patterns
-- **[DESIGN_PHILOSOPHY.md](DESIGN_PHILOSOPHY.md)** - "Nano" philosophy: 4 tools + infinite Skills + exec
-- **[DIRECTORY_STRUCTURE.md](DIRECTORY_STRUCTURE.md)** - File organization and project layout
+- [Architecture](architecture.md): high-level architecture.
+- [Design](DESIGN.md): core design.
+- [Design philosophy](ARCHITECTURE/DESIGN_PHILOSOPHY.md): Nano principles.
+- [System flow](SYSTEM_FLOW.md): request and execution flow.
+- [Execution loop audit](EXECUTION_LOOP_AUDIT.md): ReAct loop review and improvements.
+- [Frontend/backend audit](FRONTEND_BACKEND_AUDIT.md): service console and backend boundary.
 
----
+Related current/historical design material:
 
-## Platform (docs/PLATFORM/)
+- [OpenClaw research](ANALYSIS/OPENCLAW_RESEARCH.md)
+- [FastReAct vs nanobot vs openclaw](ANALYSIS/COMPETITIVE_ANALYSIS.md)
+- [Layer responsibility analysis](ANALYSIS/LAYER_RESPONSIBILITY_ANALYSIS.md)
+- [Message routing comparison](ANALYSIS/MESSAGE_ROUTING_COMPARISON.md)
+- [Architecture similarity and migration](ANALYSIS/ARCHITECTURE_SIMILARITY_AND_MIGRATION.md)
+- [Adapter refactoring plan](ANALYSIS/ADAPTER_REFACTORING_PLAN.md)
+- [Improvement roadmap](ANALYSIS/IMPROVEMENT_ROADMAP.md)
 
-### Extension Systems
-- **[HEADLESS_SERVICE.md](HEADLESS_SERVICE.md)** - HTTP/SSE service entry point, runtime config, and service manual
-- **[PSKA_FASTREACT_PROTOCOL.md](PSKA_FASTREACT_PROTOCOL.md)** - Headless FastReAct service contract for PSKA integration
-- **[SKILLS_AND_MCP.md](../SKILLS_AND_MCP.md)** - Skills and MCP extension mechanisms
-- **[TOOLS_AND_EXTENSIONS.md](TOOLS_AND_EXTENSIONS.md)** - Tool system comparison and best practices
-- **[MCP_CALLING_MECHANISM.md](../MCP_CALLING_MECHANISM.md)** - MCP protocol usage guide
+The root `docs/` directory is now a pointer only. Maintained docs belong here.
 
----
+## API And Service
 
-## Analysis (docs/ANALYSIS/)
+- [Headless service manual](HEADLESS_SERVICE.md): authoritative endpoint map.
+- [Agent session API](AGENT_SESSION_API.md): session API design.
+- [Agent session API summary](AGENT_SESSION_API_SUMMARY.md): implementation summary.
+- [PSKA / FastReAct protocol](PSKA_FASTREACT_PROTOCOL.md): service boundary and event schema.
+- [PSKA integration TODO](PSKA_INTEGRATION_TODO.md): remaining PSKA integration work.
 
-### Research and Comparisons
-- **[OPENCLAW_RESEARCH.md](OPENCLAW_RESEARCH.md)** - OpenClaw architecture analysis and findings
-- **[DYNAMIC_SKILL_SELECTION.md](../DYNAMIC_SKILL_SELECTION.md)** - Advanced skill selection mechanism design
+Current endpoint families:
 
----
+- Health/readiness: `/health`, `/ready`
+- Setup/metrics: `/v1/setup`, `/v1/setup/presets`, `/v1/setup/config-draft`, `/v1/metrics`
+- Agent invocation: `/v1/chat/completions`
+- Runs/traces: `/v1/runs/*`, `/v1/traces/*`
+- Tasks: `/v1/tasks/*`
+- Approvals: `/v1/approvals/*`
+- Policy: `/v1/policy`, `/v1/policy/check`
+- Tools/skills: `/v1/tools`, `/v1/skills`, `/v1/skills/diagnostics`
+- Workspace profile: `/v1/workspace/profile`
 
-## Guides (docs/GUIDES/)
+## Integrations
 
-### User and Developer Guides
-- **[MULTITENANT_ARCHITECTURE.md](../MULTITENANT_ARCHITECTURE.md)** - Multi-tenant architecture implementation (PageIndex/OpenViking integration guide)
-- **[MULTITENANT_AUDIT_REPORT.md](../MULTITENANT_AUDIT_REPORT.md)** - Multi-tenant implementation audit report (2026-03-06)
-- **[MULTITENANT_GUIDE.md](../MULTITENANT_GUIDE.md)** - Multi-tenant deployment guide
-- **[CONFIG_FILE_LOCATIONS.md](../CONFIG_FILE_LOCATIONS.md)** - Configuration reference
+- [PSKA / FastReAct protocol](PSKA_FASTREACT_PROTOCOL.md): PSKA boundary and interop contract.
+- [Skills and MCP tools](SKILLS_AND_MCP.md): extension model and how skills differ from tools.
+- [MCP calling mechanism](MCP_CALLING_MECHANISM.md): stdio and HTTP MCP transport behavior.
+- [How to add skills and MCP](HOW_TO_ADD_SKILLS_AND_MCP.md): implementation guide.
+- [Tools and extensions](PLATFORM/TOOLS_AND_EXTENSIONS.md): tool-system notes.
+- [Dynamic skill selection](DYNAMIC_SKILL_SELECTION.md): skill routing design.
 
----
+## Multi-Tenant And Policy
 
-## Features (docs/FEATURES/)
+- [Multitenant guide](MULTITENANT_GUIDE.md): single/multi-tenant usage guidance.
+- [Multitenant architecture](MULTITENANT_ARCHITECTURE.md): architecture implementation guide.
+- [Multitenant skills/MCP audit](MULTITENANT_SKILLS_MCP_AUDIT.md): isolation audit.
+- [Multitenant audit report](MULTITENANT_AUDIT_REPORT.md): broader implementation audit.
+- [Security model](security.md): policy, auth, and approval posture.
 
-### Product Documentation
-- **[PRODUCT_ROADMAP.md](../PRODUCT_ROADMAP.md)** - Development roadmap and status
+When these docs disagree, treat code plus [HEADLESS_SERVICE.md](HEADLESS_SERVICE.md) and [security.md](security.md) as current. Audit reports may include historical findings.
 
----
+## Development
 
-## System Documentation (docs/)
+- [Development rules](../CLAUDE.md): local development rules.
+- [Changelog](../CHANGELOG.md): release history.
+- [Examples](../examples/README.md): example programs.
+- [Scripts](../scripts/README.md): helper scripts.
+- [Tests](../tests/README.md): test suite documentation.
+- [Test coverage goals](../tests/COVERAGE.md): coverage notes.
+- [Release LLM gate](../tests/release/README.md): release smoke gate.
 
-### System Architecture
-- **[SYSTEM_FLOW.md](../SYSTEM_FLOW.md)** - Complete system flow and execution loop
-- **[EXECUTION_LOOP_AUDIT.md](../EXECUTION_LOOP_AUDIT.md)** - ReAct loop audit and improvements
+## Archive
 
-### Session Management
-- **[AGENT_SESSION_API.md](../AGENT_SESSION_API.md)** - Session API reference
-- **[AGENT_SESSION_API_SUMMARY.md](../AGENT_SESSION_API_SUMMARY.md)** - Session API summary
-- **[USER_INTERRUPTION_DEBUG.md](../USER_INTERRUPTION_DEBUG.md)** - User interruption debugging
+- [Repository archive index](../../docs_archive/INDEX.md): pre-nano, v1, migration, sprint, bugfix, and temporary historical docs.
+- [Nano archive index](../docs_archive/INDEX.md): nano-era implementation reports, audits, testing reports, and historical analysis.
 
-### Feature Documentation
-- **[FRONTEND_POLISH_COMPLETE.md](../FRONTEND_POLISH_COMPLETE.md)** - Frontend improvements
-- **[MCP_DUAL_TRANSPORT_IMPLEMENTATION.md](../MCP_DUAL_TRANSPORT_IMPLEMENTATION.md)** - HTTP + SSE transport
-- **[MCP_SERVERS_STANDARD_STRUCTURE.md](../MCP_SERVERS_STANDARD_STRUCTURE.md)** - MCP server conventions
-- **[MCP_ADDITION_IMPROVEMENTS.md](../MCP_ADDITION_IMPROVEMENTS.md)** - MCP CLI tools proposal
+Archive documents are not current implementation truth. Use them for background and rationale only.
 
-### Research & Performance
-- **[CONTEXT_MANAGEMENT_RESEARCH.md](../CONTEXT_MANAGEMENT_RESEARCH.md)** - Context efficiency research
-- **[PROMPT_RESEARCH_REPORT.md](../PROMPT_RESEARCH_REPORT.md)** - Prompt system research
+## Documentation Inventory Rules
 
----
+Include:
 
-## Archive (docs_archive/)
+- `README.md`
+- `fastreact-nano/README.md`, `GETTING_STARTED.md`, `QUICKSTART.md`, `CHANGELOG.md`, `CLAUDE.md`
+- `fastreact-nano/docs/**/*.md`
+- focused README files under `examples/`, `scripts/`, `tests/`, `deploy/`, `mcp_servers/`
+- `skills/**/SKILL.md` when documenting built-in skill behavior
 
-### Historical Reference Only
+Exclude from maintained documentation inventory:
 
-#### Analysis Documents (2025-03-04)
-- **[GATEWAY_USER_INTERVENTION_FIX.md](../docs_archive/GATEWAY_USER_INTERVENTION_FIX.md)** - Gateway user intervention optimization
-- **[GATEWAY_VS_FEISHU_INTERVENTION.md](../docs_archive/GATEWAY_VS_FEISHU_INTERVENTION.md)** - API comparison analysis
-- **[FEISHU_SDK_ARCHITECTURE_ANALYSIS.md](../docs_archive/FEISHU_SDK_ARCHITECTURE_ANALYSIS.md)** - Feishu SDK architecture review
-- **[BASE_ADAPTER_ANALYSIS.md](../docs_archive/BASE_ADAPTER_ANALYSIS.md)** - BaseAdapter design problems
-- **[ADAPTERS_DEPRECATION_ANALYSIS.md](../docs_archive/ADAPTERS_DEPRECATION_ANALYSIS.md)** - Adapter deprecation recommendations
+- `node_modules`
+- `.pytest_cache`
+- `MagicMock`
+- runtime workspace memory/history such as `workspaces/*/HISTORY.md`, `workspaces/*/MEMORY.md`, `workspaces/*/SOUL.md`, `workspaces/*/AGENTS.md`
+- generated logs, test output, coverage output, and temporary reports
+- archived files except through archive indexes
 
-#### Implementation Reports (2025-03)
-- **[MULTITENANT_IMPLEMENTATION_SUMMARY.md](../docs_archive/MULTITENANT_IMPLEMENTATION_SUMMARY.md)** - Multi-tenant implementation details
-- **[MULTITENANT_TEST_GUIDE.md](../docs_archive/MULTITENANT_TEST_GUIDE.md)** - Multi-tenant testing guide
-- **[USER_INTERVENTION_ANALYSIS.md](../docs_archive/USER_INTERVENTION_ANALYSIS.md)** - User intervention mechanism analysis
-- **[USER_INTERVENTION_FIX.md](../docs_archive/USER_INTERVENTION_FIX.md)** - User intervention improvements
-- **[VERBOSE_LOGGING_SUMMARY.md](../docs_archive/VERBOSE_LOGGING_SUMMARY.md)** - Verbose logging implementation
-- **[DEPLOYMENT_STATUS.md](../docs_archive/DEPLOYMENT_STATUS.md)** - Deployment status report
+## Maintenance Rules
 
-#### Debug Scripts (Historical)
-- **[FEISHU_CONFIG_TEST.py](../docs_archive/FEISHU_CONFIG_TEST.py)** - Feishu configuration validation script
-- **[MCP_CHECK_SCRIPT.py](../docs_archive/MCP_CHECK_SCRIPT.py)** - MCP server loading check script
-- **[MCP_DEBUG_SCRIPT.py](../docs_archive/MCP_DEBUG_SCRIPT.py)** - MCP debugging utility
-
-#### sprints/
-- Phase completion reports
-- Sprint summaries
-- Historical documentation
-
-#### bug_fixes/
-- **[COMMON_PITFALLS.md](../docs_archive/bug_fixes/COMMON_PITFALLS.md)** - Historical bug fixes and lessons learned
-- Individual fix documentation (FIX_INFINITE_LOOP.md, etc.)
-
-#### analysis_raw/
-- Original analysis documents
-- Source material for consolidated docs
-- OpenClaw research raw data
-
-**Note**: These are kept for historical reference only. Current documentation is in the main `docs/` directory.
-
----
-
-## Documentation Statistics
-
-### Before Cleanup (2025-02-27)
-- CLAUDE.md: 1,061 lines
-- docs/: 86 markdown files
-- Root-level: ~15 files
-- Overlapping analysis: 11+ documents
-
-### After Cleanup (2025-02-27)
-- CLAUDE.md: 933 lines (12% reduction)
-- docs/: 79 markdown files
-- Root-level: 5 files (67% reduction)
-- Consolidated analysis: 3 comprehensive docs
-
-### Today's Cleanup (2025-03-04)
-- Root-level: 5 files (maintained)
-- docs/: +1 file (SYSTEM_FLOW.md moved from root)
-- docs_archive/: +6 files (implementation reports and analysis)
-
-### Quality Improvements
-- ✅ CLAUDE.md focused on rules only (no history)
-- ✅ docs/ organized by category
-- ✅ Overlapping content consolidated
-- ✅ All information preserved
-- ✅ Better navigation and discoverability
-- ✅ Temporary docs moved to archive
-
----
-
-## Quick Navigation
-
-### For New Users
-1. Start with [README.md](../README.md)
-2. Follow [GETTING_STARTED.md](../GETTING_STARTED.md)
-3. Reference [QUICKSTART.md](../QUICKSTART.md) for examples
-
-### For Developers
-1. Read [CLAUDE.md](../CLAUDE.md) for development rules
-2. Study [ARCHITECTURE/DESIGN_PHILOSOPHY.md](ARCHITECTURE/DESIGN_PHILOSOPHY.md)
-3. Explore [PLATFORM/TOOLS_AND_EXTENSIONS.md](PLATFORM/TOOLS_AND_EXTENSIONS.md)
-
-### For Contributors
-1. Understand [SKILLS_AND_MCP.md](../SKILLS_AND_MCP.md)
-2. Review [PLATFORM/](PLATFORM/) documentation
-3. Follow patterns in existing skills
-
----
-
-## Documentation Maintenance
-
-### Before Creating New Documentation
-
-**Decision Tree**:
-```
-Need to document something?
-  ↓
-Check DOCS_INDEX.md for similar topics
-  ↓
-  Found? ──Yes→ UPDATE existing doc
-  ↓
-   No
-  ↓
-Is it temporary/development process?
-  ↓
-  Yes→ Put in docs_archive/sprints/ or docs_archive/temp/
-  ↓
-  No
-  ↓
-Create in appropriate directory (see structure above)
-Update DOCS_INDEX.md
-```
-
-### Quality Checklist
-
-- [ ] No emojis (use [OK], [ERROR], [INFO])
-- [ ] UTF-8 encoding (for Chinese content)
-- [ ] Links work (test relative links)
-- [ ] No hardcoded paths
-- [ ] Cross-platform compatible
-- [ ] Updated DOCS_INDEX.md
-
----
-
-**Maintainer**: FastReAct Team
-**Last Updated**: 2025-03-04
-**Status**: Current
+- New current docs go under `fastreact-nano/docs/`.
+- Root `docs/` stays a pointer only.
+- Update existing docs before creating a new one.
+- Add short-lived implementation notes to the appropriate archive.
+- Update this index whenever adding, moving, or retiring a user-facing doc.
+- Validate endpoint claims against `src/fastreact/adapters/http.py`.
+- Validate version claims against `pyproject.toml`.

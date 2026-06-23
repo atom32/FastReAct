@@ -1,5 +1,10 @@
 # FastReAct Nano 多租户Skills和MCP隔离审计报告
 
+> Audit report: this document is historical analysis. For current extension and
+> MCP behavior, use [SKILLS_AND_MCP.md](SKILLS_AND_MCP.md),
+> [MCP_CALLING_MECHANISM.md](MCP_CALLING_MECHANISM.md), and
+> [security.md](security.md).
+
 **审计日期**: 2026-03-11
 **审计范围**: 多租户模式下用户自定义Skills和MCP服务器的隔离实现
 **审计类型**: 功能审计、隔离验证

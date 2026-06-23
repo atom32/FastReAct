@@ -1,5 +1,9 @@
 # 执行循环 Audit 报告
 
+> Audit report: for the current HTTP/SSE runtime surface, use
+> [HEADLESS_SERVICE.md](HEADLESS_SERVICE.md). This document remains useful for
+> design rationale and historical findings.
+
 **日期**: 2025-03-03
 **问题**: 用户实时输入处理不足
 **影响**: 用户无法及时中断或转向正在执行的任务

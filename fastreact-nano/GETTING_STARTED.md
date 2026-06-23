@@ -1,231 +1,120 @@
 # FastReAct Nano - 5-Minute Quick Start
 
-**Get started with FastReAct Nano in 5 minutes**
+This guide starts the current `fastreact-nano 2.4.2` headless service from this repository checkout.
 
----
+## 1. Install Dependencies
 
-## Choose Your Installation Method
-
-### Method 1: uv (Recommended - 1 minute) ⚡
-
-**Fastest installation, 10-100x faster than pip**
+Backend:
 
 ```bash
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install FastReAct Nano
-uv tool install fastreact-nano
-
-# Run FastReAct
-fastreact-nano
+cd /Users/xudawei/FastReAct/fastreact-nano
+python3 -m pip install -e ".[all]"
 ```
 
-### Method 2: One-Click Script (2 minutes) 🚀
-
-**Automated installation for all platforms**
-
-**Linux/macOS:**
-```bash
-curl -sSL https://raw.githubusercontent.com/atom32/FastReAct/main/fastreact-nano/deploy/install.sh | bash
-```
-
-**Windows (PowerShell):**
-```batch
-irm https://raw.githubusercontent.com/atom32/FastReAct/main/fastreact-nano/deploy/install.bat | iex
-```
-
-### Method 3: Docker Compose (5 minutes) 🐳
-
-**Production-ready deployment with all services**
+Optional local service console:
 
 ```bash
-# Navigate to deployment directory
-cd fastreact-nano/deploy
-
-# Copy environment template
-cp .env.example .env
-
-# Edit .env and add your API key
-nano .env  # Add: FASTREACT_API_KEY=sk-your-key
-
-# Start services
-docker-compose up -d
-
-# Check status
-docker-compose ps
+cd /Users/xudawei/FastReAct/fastreact-nano-web
+npm install
 ```
 
-**Access services:**
-- HTTP daemon: http://localhost:8000
-- Service console: http://localhost:3000/service
+## 2. Create A Config
 
-### Method 4: Manual Installation (3 minutes) 📦
-
-**Traditional Python package installation**
+Use the repository-level config path for local development:
 
 ```bash
-# Install from source
-cd fastreact-nano
-pip install -e ".[all]"
-
-# Run
-fastreact-nano
+cd /Users/xudawei/FastReAct
+mkdir -p .fastreact
+cp fastreact-nano/config.pska.example.json .fastreact/config.json
 ```
 
----
+Edit `.fastreact/config.json` and set:
 
-## First Steps
+- `llm.model`
+- `llm.api_base`
+- `llm.api_key` or `llm.api_key_file`
+- `service.service_token`
+- `service.cors_origins` if the web console origin changes
+- `mcp.servers` if you want stdio or HTTP MCP tools
 
-### 1. Set Your API Key
+For daemon-only deployments, `~/.fastreact/config.json` is also supported.
 
-FastReAct needs an LLM API key to work. Choose one:
+## 3. Start The Service
 
-**OpenAI:**
-```bash
-export FASTREACT_API_KEY=sk-your-openai-key
-export FASTREACT_MODEL=gpt-4o-mini
-```
-
-**Anthropic:**
-```bash
-export FASTREACT_API_KEY=sk-ant-your-anthropic-key
-export FASTREACT_MODEL=claude-3-5-sonnet-20241022
-```
-
-**DeepSeek:**
-```bash
-export FASTREACT_API_KEY=sk-your-deepseek-key
-export FASTREACT_MODEL=deepseek-chat
-```
-
-**SiliconFlow:**
-```bash
-export FASTREACT_API_KEY=sk-your-siliconflow-key
-export FASTREACT_API_BASE=https://api.siliconflow.cn/v1
-export FASTREACT_MODEL=deepseek-ai/DeepSeek-V3
-```
-
-### 2. Run Your First Query
-
-**Using CLI:**
-```bash
-fastreact "What is 2+2?" --model gpt-4o-mini
-```
-
-**Using Python API:**
-```python
-from fastreact import ask
-
-response = await ask("What is 2+2?")
-print(response)
-```
-
-**Using HTTP Daemon:**
-```bash
-# Start HTTP/SSE service daemon
-python -m fastreact.adapters.http
-
-# Connect from client
-# http://localhost:8000
-```
-
----
-
-## Explore Adapters
-
-FastReAct supports multiple adapters for different use cases:
-
-| Adapter | Use Case | Port |
-|---------|----------|------|
-| **CLI** | Command-line interface, scripting | - |
-| **HTTP** | REST API with streaming, integrations | 8000 |
-
-### Start Specific Adapter
+Recommended local start:
 
 ```bash
-# CLI (command-line interface)
-python -m fastreact.adapters.cli
-
-# HTTP API (REST + SSE)
-python -m fastreact.adapters.http
-
+cd /Users/xudawei/FastReAct
+./start.sh
 ```
 
----
-
-## Common Issues
-
-### Python Not Found
+Explicit config:
 
 ```bash
-# Install Python 3.11
-# Ubuntu/Debian:
-sudo apt-get update && sudo apt-get install python3.11
-
-# macOS:
-brew install python@3.11
-
-# Windows:
-# Download from https://www.python.org/downloads/
+./start.sh /Users/xudawei/FastReAct/.fastreact/config.json
 ```
 
-### Permission Denied
+Daemon-only:
 
 ```bash
-# Use --user flag
-pip install --user fastreact-nano
-
-# Or use virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install fastreact-nano
+cd /Users/xudawei/FastReAct/fastreact-nano
+python3 -m fastreact.adapters.http --config /Users/xudawei/FastReAct/.fastreact/config.json
 ```
 
-### Port Already in Use
+Defaults:
+
+```text
+Service console: http://127.0.0.1:3000/service
+HTTP daemon:     http://127.0.0.1:8000
+```
+
+## 4. Check Health And Readiness
 
 ```bash
-# Find and stop the conflicting service
-lsof -i :8000  # Find the process
-kill -9 <PID>  # Stop it
-
-# Or change port in .env
-echo "FASTREACT_SERVICE_PORT=8001" >> .env
+curl http://127.0.0.1:8000/health
 ```
 
-### API Key Issues
+If `service.service_token` is configured:
 
 ```bash
-# Verify API key is set
-echo $FASTREACT_API_KEY
+export SERVICE_TOKEN='replace-with-local-service-token'
 
-# Test API key
-curl https://api.openai.com/v1/models \
-  -H "Authorization: Bearer $FASTREACT_API_KEY"
+curl http://127.0.0.1:8000/ready \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
----
+## 5. Send A Request
 
-## Next Steps
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "Say hello from FastReAct."}
+    ],
+    "stream": false
+  }'
+```
 
-1. **Read full documentation**: [deploy/README.md](deploy/README.md)
-2. **Explore adapters**: [docs/ADAPTERS.md](docs/ADAPTERS.md)
-3. **Build custom tools**: [docs/TOOLS.md](docs/TOOLS.md)
-4. **Configure production**: [deploy/README.md](deploy/README.md#production-deployment)
-5. **View examples**: [examples/](examples/)
+Streaming:
 
----
+```bash
+curl -N http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "List your available tools."}
+    ],
+    "stream": true
+  }'
+```
 
-## Need Help?
+## Next Docs
 
-- [GitHub Issues](https://github.com/atom32/FastReAct/issues) - Report bugs or request features
-- [Full Documentation](../README.md) - Complete project documentation
-- [Deployment Guide](deploy/README.md) - Production deployment options
-- [Architecture](docs/ARCHITECTURE.md) - Understand how it works
-
----
-
-**Version**: 2.1.0
-**Last Updated**: 2026-02-18
-
-**Happy Hacking!**
+- [README.md](README.md)
+- [docs/DOCS_INDEX.md](docs/DOCS_INDEX.md)
+- [docs/HEADLESS_SERVICE.md](docs/HEADLESS_SERVICE.md)
+- [docs/CONFIG_FILE_LOCATIONS.md](docs/CONFIG_FILE_LOCATIONS.md)
+- [docs/PSKA_FASTREACT_PROTOCOL.md](docs/PSKA_FASTREACT_PROTOCOL.md)

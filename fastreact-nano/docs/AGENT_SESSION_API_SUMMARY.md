@@ -1,5 +1,9 @@
 # Agent 层会话管理 API - 实施总结
 
+> Implementation summary: use [AGENT_SESSION_API.md](AGENT_SESSION_API.md) for
+> the design reference and [HEADLESS_SERVICE.md](HEADLESS_SERVICE.md) for the
+> current HTTP service surface.
+
 ## ✅ 实施完成
 
 **日期**: 2025-03-03

@@ -1,5 +1,8 @@
 # Architecture
 
+> Current service API truth lives in [HEADLESS_SERVICE.md](HEADLESS_SERVICE.md).
+> This page summarizes runtime boundaries and persistence concepts.
+
 FastReAct Nano is currently a single-agent workbench, not a multi-agent platform.
 
 ## Stable Public Surface
@@ -26,16 +29,18 @@ Internal APIs may change as long as those surfaces remain compatible.
 
 ## Control Plane
 
-Admin APIs read from runtime services and JSONL records:
+Service APIs read from runtime services and JSONL records:
 
-- sessions and event replay
+- readiness, setup, and metrics
+- durable runs and run events
 - tasks
-- audit and approvals
+- approvals and policy checks
 - traces and timing spans
 - tool/MCP schema summaries
-- metrics and dependency health
+- workspace profile
 
-`FASTREACT_ADMIN_API_AUTH=true` protects control-plane APIs with `X-Admin-Key`.
+When `service.service_token` is configured, protected service APIs require
+`X-FastReAct-Service-Token` or `Authorization: Bearer ...`.
 
 ## Persistence
 

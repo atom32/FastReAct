@@ -550,9 +550,9 @@ Before deploying to production:
 ## References
 
 - [MCP Protocol Specification](https://modelcontextprotocol.io)
-- [Multi-Tenant GraphRAG Guide](../../MULTITENANT_GRAPHRAG.md)
-- [MCP Skill README](../../MCP_SKILL_README.md)
-- [Security Best Practices](./SECURITY.md)
+- [Archived Multi-Tenant GraphRAG Guide](../../docs_archive/MULTITENANT_GRAPHRAG.md)
+- [Skills and MCP Tools](../SKILLS_AND_MCP.md)
+- [Security Model](../security.md)
 
 ---
 

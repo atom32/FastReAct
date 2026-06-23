@@ -1,5 +1,10 @@
 # FastReAct Nano - 学习改进清单
 
+> Historical roadmap: this document was moved from the old root `docs/`
+> directory during the 2026-06-23 documentation cleanup. Treat it as planning
+> background, not current implementation truth. For the current documentation
+> map, see [../DOCS_INDEX.md](../DOCS_INDEX.md).
+
 **创建日期**: 2026-02-22
 **基于**: 与 nanobot、openclaw 竞品对比分析
 **状态**: 待实施

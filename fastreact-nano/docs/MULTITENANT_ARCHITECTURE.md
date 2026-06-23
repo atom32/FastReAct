@@ -1,5 +1,10 @@
 # FastReAct 多租户架构实现指南
 
+> Reference guide: this document includes historical version labels and
+> integration guidance. For current FastReAct Nano `2.4.2` service behavior, use
+> [HEADLESS_SERVICE.md](HEADLESS_SERVICE.md), [security.md](security.md), and
+> [CONFIG_FILE_LOCATIONS.md](CONFIG_FILE_LOCATIONS.md).
+
 **版本**: v2.5.0
 **日期**: 2025-03-04
 **目标**: 为集成 PageIndex、OpenViking 等系统提供多租户隔离指导

@@ -1,5 +1,10 @@
 # FastReAct vs nanobot vs openclaw - 竞品对比分析报告
 
+> Historical analysis: this document was moved from the old root `docs/`
+> directory during the 2026-06-23 documentation cleanup. Treat it as design
+> background, not current implementation truth. For current service behavior,
+> see [../HEADLESS_SERVICE.md](../HEADLESS_SERVICE.md).
+
 **分析日期**: 2026-02-22
 **分析范围**: 代码架构、功能特性、效率对比、优缺点、改进方向
 

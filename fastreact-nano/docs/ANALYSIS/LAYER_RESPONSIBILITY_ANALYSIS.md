@@ -1,5 +1,10 @@
 # 层间职责分析：FastReAct vs nanobot
 
+> Historical analysis: this document was moved from the old root `docs/`
+> directory during the 2026-06-23 documentation cleanup. Treat it as design
+> background, not current implementation truth. For current architecture docs,
+> see [../DOCS_INDEX.md](../DOCS_INDEX.md).
+
 **核心问题**：
 1. Gateway Adapter 是否有太多逻辑？
 2. core-agent-adapter 层间是否存在业务逻辑渗透？

@@ -416,23 +416,26 @@ python -m fastreact.adapters.feishu
 
 ## 监控与管理
 
-### Admin 面板
+### Service Console
 ```
-访问: http://localhost:9000/admin
+访问: http://127.0.0.1:3000/service
 功能:
-  • 实时会话列表
-  • 用户统计
-  • 系统性能指标
-  • CPU/内存监控
+  • service setup/readiness
+  • tools and skills
+  • runs/traces/tasks
+  • approvals and policy checks
 ```
 
 ### 系统状态 API
 ```
 GET /health
-→ {"status": "healthy", "active_sessions": 5}
+→ {"status": "healthy", "agent_ready": true, ...}
 
-GET /api/status
-→ {"multi_tenant": {"enabled": true}, "skills": [...], "mcp": [...]}
+GET /ready
+→ {"agent_ready": true, "mcp": {...}, ...}
+
+GET /v1/setup
+→ {"schema": "fastreact.setup_status.v1", "readiness": {...}, ...}
 ```
 
 ---

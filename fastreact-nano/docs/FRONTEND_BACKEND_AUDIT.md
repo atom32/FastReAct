@@ -1,5 +1,8 @@
 # FastReAct Nano 前后端审计报告
 
+> Audit report: for current endpoint truth and service-console boundaries, use
+> [HEADLESS_SERVICE.md](HEADLESS_SERVICE.md) and [DOCS_INDEX.md](DOCS_INDEX.md).
+
 **审计日期**: 2026-03-07
 **审计范围**: fastreact-nano (后端) + fastreact-nano-web (前端)
 **审计类型**: 代码质量、架构一致性、API兼容性

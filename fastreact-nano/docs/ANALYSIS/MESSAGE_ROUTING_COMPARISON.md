@@ -1,5 +1,10 @@
 # 消息路由机制深度对比：FastReAct vs nanobot
 
+> Historical analysis: this document was moved from the old root `docs/`
+> directory during the 2026-06-23 documentation cleanup. Treat it as design
+> background, not current implementation truth. For current service behavior,
+> see [../HEADLESS_SERVICE.md](../HEADLESS_SERVICE.md).
+
 **分析日期**: 2026-02-22
 **核心问题**: FastReAct 的消息路由真的更差吗？
 

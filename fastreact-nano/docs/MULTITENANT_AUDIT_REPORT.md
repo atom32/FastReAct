@@ -1,5 +1,11 @@
 # FastReAct 多租户实现审计报告
 
+> Audit report: this document records historical findings and may mention older
+> version numbers. For current service auth, policy, approval, and MCP isolation
+> behavior, use [security.md](security.md),
+> [HEADLESS_SERVICE.md](HEADLESS_SERVICE.md), and
+> [MCP_CALLING_MECHANISM.md](MCP_CALLING_MECHANISM.md).
+
 **审计日期**: 2026-03-06
 **版本**: v2.5.0
 **审计范围**: Workspace 隔离、Skill 隔离、MCP 隔离、配置隔离
