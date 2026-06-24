@@ -129,6 +129,14 @@ class WorkspaceProfileUpdateRequest(BaseModel):
     soul_md: Optional[str] = None
 
 
+class ExtensionReloadRequest(BaseModel):
+    skills: bool = True
+    mcp: bool = False
+    dry_run: bool = False
+    required_skills: Optional[list[str]] = None
+    user_key: Optional[str] = None
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -1539,11 +1547,15 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         for name in agent.list_skills():
             skill = agent.get_skill(name) if hasattr(agent, "get_skill") else getattr(agent, "skills", {}).get(name)
             if skill:
+                locations = agent.get_skill_locations(name) if hasattr(agent, "get_skill_locations") else []
+                source_path = next((item.get("path") for item in locations if item.get("active")), None)
                 skills.append(
                     {
                         "name": skill.name,
                         "description": skill.description,
                         "version": skill.metadata.version,
+                        "source_path": source_path,
+                        "duplicate_count": max(0, len(locations) - 1),
                     }
                 )
         return {"skills": skills}
@@ -1561,6 +1573,9 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             if not skill:
                 continue
             metadata = skill.metadata
+            locations = agent.get_skill_locations(name) if hasattr(agent, "get_skill_locations") else []
+            active_source = next((item for item in locations if item.get("active")), None)
+            duplicate_sources = [item for item in locations if not item.get("active")]
             missing_tools = [tool for tool in metadata.recommended_tools if tool not in available_tools]
             missing_mcp_servers = [
                 server_name
@@ -1579,6 +1594,9 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                     "missing_tools": missing_tools,
                     "missing_mcp_servers": missing_mcp_servers,
                     "files": skill.list_files(),
+                    "source_path": active_source.get("path") if active_source else None,
+                    "source_root": active_source.get("root") if active_source else None,
+                    "duplicate_sources": duplicate_sources,
                     "status": "ready" if not missing_tools and not missing_mcp_servers else "degraded",
                 }
             )
@@ -1596,7 +1614,69 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         return {
             "tools": agent.list_tools(),
             "mcp_tools": agent.list_mcp_tools() if hasattr(agent, "list_mcp_tools") else [],
+            "tool_summaries": agent.list_tool_schema_summary() if hasattr(agent, "list_tool_schema_summary") else [],
+            "mcp_servers": agent.list_mcp_server_status() if hasattr(agent, "list_mcp_server_status") else [],
         }
+
+    @app.post("/v1/extensions/reload")
+    async def reload_extensions(
+        request: Request,
+        reload_request: ExtensionReloadRequest,
+    ) -> dict[str, Any]:
+        require_service_auth(request)
+        require_user_access(reload_request.user_key)
+        agent = get_agent()
+        config = getattr(agent, "config", getattr(agent, "_config", None))
+        extensions = getattr(config, "extensions", None)
+
+        if not getattr(extensions, "runtime_reload_enabled", False):
+            raise HTTPException(status_code=403, detail="Runtime extension reload is disabled")
+        if reload_request.mcp and not getattr(extensions, "mcp_reload_enabled", False):
+            raise HTTPException(status_code=403, detail="Runtime MCP reload is disabled")
+
+        response: dict[str, Any] = {
+            "schema": "fastreact.extension_reload.v1",
+            "timestamp": utc_now(),
+            "dry_run": reload_request.dry_run,
+            "requested": {
+                "skills": reload_request.skills,
+                "mcp": reload_request.mcp,
+                "required_skills": reload_request.required_skills or [],
+                "user_key": reload_request.user_key,
+            },
+        }
+
+        if reload_request.dry_run:
+            response["skills"] = {
+                "would_reload": reload_request.skills,
+                "current_count": len(agent.list_skills()) if hasattr(agent, "list_skills") else None,
+                "search_paths": [str(path) for path in agent._skill_search_paths()] if hasattr(agent, "_skill_search_paths") else [],
+            }
+            response["mcp"] = {
+                "would_reload": reload_request.mcp,
+                "current_tools": agent.list_mcp_tools() if hasattr(agent, "list_mcp_tools") else [],
+                "servers": agent.list_mcp_server_status() if hasattr(agent, "list_mcp_server_status") else [],
+            }
+            return response
+
+        if reload_request.skills:
+            if not hasattr(agent, "reload_skills"):
+                raise HTTPException(status_code=503, detail="Skill reload is not available")
+            response["skills"] = agent.reload_skills()
+        else:
+            response["skills"] = {"reloaded": False}
+
+        if reload_request.mcp:
+            if not hasattr(agent, "reload_mcp_servers"):
+                raise HTTPException(status_code=503, detail="MCP reload is not available")
+            response["mcp"] = await agent.reload_mcp_servers(
+                required_skills=reload_request.required_skills,
+                user_key=reload_request.user_key,
+            )
+        else:
+            response["mcp"] = {"reloaded": False}
+
+        return response
 
     @app.get("/v1/workspace/profile")
     async def get_workspace_profile(request: Request) -> dict[str, Any]:

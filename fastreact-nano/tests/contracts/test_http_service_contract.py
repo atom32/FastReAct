@@ -15,7 +15,8 @@ from fastreact.adapters.http import (
     sse_frame,
     summarize_events,
 )
-from fastreact.core.config import ServiceConfig
+from fastreact.agent import Agent
+from fastreact.core.config import Config, ExtensionConfig, LLMConfig, PathsConfig, ReactConfig, ServiceConfig, ToolConfig
 from fastreact.core.events import AgentEvent
 from fastreact.runtime.run_service import RunService
 
@@ -80,6 +81,24 @@ class FakeSkillAgent(FakeAgent):
 
     def get_skill(self, skill_name):
         return self.skills.get(skill_name)
+
+    def get_skill_locations(self, skill_name):
+        if skill_name != "pska_demo":
+            return []
+        return [
+            {
+                "path": "/tmp/fastreact/skills/pska_demo",
+                "root": "/tmp/fastreact/skills",
+                "priority": 0,
+                "active": True,
+            },
+            {
+                "path": "/tmp/fastreact/global/pska_demo",
+                "root": "/tmp/fastreact/global",
+                "priority": 1,
+                "active": False,
+            },
+        ]
 
 
 class FakeApprovalExecutor:
@@ -155,6 +174,38 @@ class FakeTaskAgent(FakeWorkspaceAgent):
         self.store = StoreService(workspace / "store")
         self.runs = RunService(self.store)
         self.tasks = TaskService(self.store)
+
+
+def make_extension_test_agent(tmp_path, runtime_reload_enabled=False, mcp_reload_enabled=False):
+    skill_root = tmp_path / "runtime-skills"
+    skill_root.mkdir(parents=True, exist_ok=True)
+    config = Config(
+        llm=LLMConfig(api_key="test-key", api_base="http://localhost:8000"),
+        tools=ToolConfig(working_dir=tmp_path, protected_paths=[]),
+        react=ReactConfig(enable_safety=False, enable_filesystem_memory=False),
+        paths=PathsConfig(
+            global_skills_dir=skill_root,
+            gateway_workspace=tmp_path / "workspace",
+        ),
+        extensions=ExtensionConfig(
+            runtime_reload_enabled=runtime_reload_enabled,
+            mcp_reload_enabled=mcp_reload_enabled,
+        ),
+    )
+    return Agent(config=config), skill_root
+
+
+def write_test_skill(root, name, description):
+    skill_dir = root / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        f"name: {name}\n"
+        f"description: {description}\n"
+        "---\n\n"
+        "## Instructions\nUse this skill.\n",
+        encoding="utf-8",
+    )
 
 
 def test_extract_query_uses_last_user_message():
@@ -694,6 +745,84 @@ def test_skill_diagnostics_endpoint_reports_dependencies():
     assert payload["skills"][0]["name"] == "pska_demo"
     assert payload["skills"][0]["status"] == "ready"
     assert payload["skills"][0]["mcp_servers"] == ["pska"]
+    assert payload["skills"][0]["source_path"] == "/tmp/fastreact/skills/pska_demo"
+    assert payload["skills"][0]["duplicate_sources"] == [
+        {
+            "path": "/tmp/fastreact/global/pska_demo",
+            "root": "/tmp/fastreact/global",
+            "priority": 1,
+            "active": False,
+        }
+    ]
+
+
+def test_extension_reload_disabled_by_default(tmp_path):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+    agent, _skill_root = make_extension_test_agent(tmp_path, runtime_reload_enabled=False)
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_agent_for_testing(agent)
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/extensions/reload",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={"skills": True},
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Runtime extension reload is disabled"
+
+
+def test_extension_reload_rescans_skills_when_enabled(tmp_path):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+    agent, skill_root = make_extension_test_agent(tmp_path, runtime_reload_enabled=True)
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_agent_for_testing(agent)
+    try:
+        client = testclient.TestClient(create_app())
+        assert client.get("/v1/skills").json()["skills"] == []
+
+        write_test_skill(skill_root, "runtime_skill", "Runtime skill loaded after reload")
+        response = client.post(
+            "/v1/extensions/reload",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={"skills": True},
+        )
+        listed = client.get("/v1/skills")
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema"] == "fastreact.extension_reload.v1"
+    assert payload["skills"]["reloaded"] is True
+    assert payload["skills"]["skills"] == ["runtime_skill"]
+    assert listed.json()["skills"][0]["name"] == "runtime_skill"
+
+
+def test_extension_reload_requires_separate_mcp_flag(tmp_path):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+    agent, _skill_root = make_extension_test_agent(tmp_path, runtime_reload_enabled=True, mcp_reload_enabled=False)
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_agent_for_testing(agent)
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/extensions/reload",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={"skills": False, "mcp": True},
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Runtime MCP reload is disabled"
+
 
 
 def test_background_run_endpoints_create_query_events_cancel_and_trace(tmp_path):

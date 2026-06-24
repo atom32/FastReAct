@@ -23,8 +23,10 @@ from fastreact.core.config import (
     ToolConfig,
     ReactConfig,
     ServiceConfig,
+    ExtensionConfig,
     MCPConfig,
     MCPServerConfig,
+    PathsConfig,
 )
 
 
@@ -619,6 +621,48 @@ class TestConfigFileDiscovery:
 
 class TestPathValidationAndSecurity:
     """Test path validation and security checks"""
+
+    def test_paths_config_from_env_reads_user_skills_dir(self, tmp_path, clean_env):
+        """Test that user skills dir can be configured from environment."""
+        user_skills = tmp_path / "user-skills"
+        os.environ["FASTRACT_USER_SKILLS_DIR"] = str(user_skills)
+
+        paths = PathsConfig.from_env()
+
+        assert paths.user_skills_dir == user_skills
+
+    def test_extension_config_defaults_disable_runtime_reload(self, clean_env):
+        """Test that runtime reload features are opt-in."""
+        extensions = ExtensionConfig.from_env()
+
+        assert extensions.runtime_reload_enabled is False
+        assert extensions.mcp_reload_enabled is False
+
+    def test_extension_config_from_env(self, clean_env):
+        """Test extension reload flags from environment."""
+        os.environ["FASTRACT_EXTENSIONS_RUNTIME_RELOAD"] = "true"
+        os.environ["FASTRACT_EXTENSIONS_MCP_RELOAD"] = "true"
+
+        extensions = ExtensionConfig.from_env()
+
+        assert extensions.runtime_reload_enabled is True
+        assert extensions.mcp_reload_enabled is True
+
+    def test_config_loads_extensions_block(self, temp_config_file, clean_env):
+        """Test loading extension management settings from config."""
+        config_data = {
+            "extensions": {
+                "runtime_reload_enabled": True,
+                "mcp_reload_enabled": False,
+            }
+        }
+        with open(temp_config_file, "w") as f:
+            json.dump(config_data, f)
+
+        config = Config.load(temp_config_file)
+
+        assert config.extensions.runtime_reload_enabled is True
+        assert config.extensions.mcp_reload_enabled is False
 
     def test_path_conversion_in_save(self, tmp_path, clean_env):
         """Test that Path objects are converted to strings in save()"""

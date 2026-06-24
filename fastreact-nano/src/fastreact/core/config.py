@@ -270,9 +270,11 @@ class PathsConfig:
     @classmethod
     def from_env(cls) -> "PathsConfig":
         """Create paths config from environment variables"""
+        user_skills_dir = os.getenv("FASTRACT_USER_SKILLS_DIR")
         return cls(
             global_skills_dir=_expand_path(os.getenv("FASTRACT_SKILLS_DIR", str(Path.cwd() / "skills" / "builtin"))),
             user_skills_template=os.getenv("FASTRACT_USER_SKILLS_TEMPLATE", "{user_workspace}/skills"),
+            user_skills_dir=_expand_path(user_skills_dir) if user_skills_dir else None,
             gateway_workspace=_expand_path(os.getenv("FASTRACT_GATEWAY_WORKSPACE", str(Path.cwd() / "workspaces" / "default"))),
         )
 
@@ -339,6 +341,32 @@ class ServiceConfig:
             blocked_user_keys=list(data.get("blocked_user_keys", []) or []),
             allowed_user_keys=list(data.get("allowed_user_keys", []) or []),
             cors_origins=list(cors_origins),
+        )
+
+
+@dataclass
+class ExtensionConfig:
+    """Runtime extension management settings."""
+
+    runtime_reload_enabled: bool = False
+    mcp_reload_enabled: bool = False
+
+    @classmethod
+    def from_env(cls) -> "ExtensionConfig":
+        """Create extension config from environment variables."""
+        return cls(
+            runtime_reload_enabled=os.getenv("FASTRACT_EXTENSIONS_RUNTIME_RELOAD", "false").lower() == "true",
+            mcp_reload_enabled=os.getenv("FASTRACT_EXTENSIONS_MCP_RELOAD", "false").lower() == "true",
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ExtensionConfig":
+        """Create extension config from dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError("extensions must be an object")
+        return cls(
+            runtime_reload_enabled=bool(data.get("runtime_reload_enabled", False)),
+            mcp_reload_enabled=bool(data.get("mcp_reload_enabled", False)),
         )
 
 
@@ -467,8 +495,11 @@ class Config:
         FASTRACT_AUTO_APPROVE_SAFE: Auto-approve safe operations (default: true)
         FASTRACT_MCP_SERVERS: JSON array of MCP server configs (default: [])
         FASTRACT_SKILLS_DIR: Global skills directory (default: ./skills/builtin)
+        FASTRACT_USER_SKILLS_DIR: User skills directory (default: none)
         FASTRACT_USER_SKILLS_TEMPLATE: User skills path template (default: {user_workspace}/skills)
         FASTRACT_GATEWAY_WORKSPACE: Daemon workspace path (default: ./workspaces/default)
+        FASTRACT_EXTENSIONS_RUNTIME_RELOAD: Enable authenticated runtime extension reload (default: false)
+        FASTRACT_EXTENSIONS_MCP_RELOAD: Enable runtime MCP reconnect/reload (default: false)
     """
 
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -477,6 +508,7 @@ class Config:
     mcp: MCPConfig = field(default_factory=MCPConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
     service: ServiceConfig = field(default_factory=ServiceConfig)
+    extensions: ExtensionConfig = field(default_factory=ExtensionConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
 
     @classmethod
@@ -490,6 +522,7 @@ class Config:
             mcp=MCPConfig.from_env(),
             paths=PathsConfig.from_env(),
             service=ServiceConfig.from_env(llm_config.api_key_file),
+            extensions=ExtensionConfig.from_env(),
             policy=PolicyConfig.from_env(),
         )
 
@@ -648,6 +681,10 @@ class Config:
             if "service" in data:
                 service_config = ServiceConfig.from_dict(data["service"], llm_config.api_key_file)
 
+            extensions_config = ExtensionConfig()
+            if "extensions" in data:
+                extensions_config = ExtensionConfig.from_dict(data["extensions"])
+
             policy_config = PolicyConfig()
             if "policy" in data:
                 policy_config = PolicyConfig.from_dict(data["policy"])
@@ -659,6 +696,7 @@ class Config:
                 mcp=mcp_config,
                 paths=paths_config,
                 service=service_config,
+                extensions=extensions_config,
                 policy=policy_config,
             )
 

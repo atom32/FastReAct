@@ -25,7 +25,16 @@ Built-in skills live in:
 fastreact-nano/skills/builtin/
 ```
 
-Custom/user skills live under configured workspace skill paths.
+Custom/user skills live under configured workspace skill paths. FastReAct resolves skills through multiple search roots in this precedence order:
+
+```text
+explicit Agent(skills_dir=...)
+configured paths.user_skills_dir
+configured paths.global_skills_dir
+legacy ./skills fallback, only when no configured roots exist
+```
+
+In multi-tenant runs, the current user's workspace `skills/` directory is temporarily placed ahead of global skills for that request. This lets a user override a global skill without changing the global registry.
 
 List skills:
 
@@ -39,6 +48,28 @@ Diagnostics:
 curl http://127.0.0.1:8000/v1/skills/diagnostics \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
+
+Diagnostics include each skill's active `source_path`, duplicate/overridden sources, recommended tools, and missing MCP server/tool dependencies.
+
+Runtime reload is available through an authenticated admin endpoint only when explicitly enabled:
+
+```json
+{
+  "extensions": {
+    "runtime_reload_enabled": true,
+    "mcp_reload_enabled": false
+  }
+}
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/extensions/reload \
+  -H "Content-Type: application/json" \
+  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -d '{"skills": true, "mcp": false}'
+```
+
+Skill reload rescans configured skill roots without touching MCP or active sessions. MCP reload is separately gated by `mcp_reload_enabled` because it can reconnect stateful integrations such as PSKA.
 
 ## MCP Tools
 
@@ -70,6 +101,8 @@ List available tools:
 ```bash
 curl http://127.0.0.1:8000/v1/tools
 ```
+
+The tools response includes compact tool summaries and MCP server status so operators can inspect loaded tools, transport mode, isolation mode, and recent load errors without exposing secrets.
 
 ## Execution Flow
 

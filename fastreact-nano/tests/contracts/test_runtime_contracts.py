@@ -1,7 +1,9 @@
 import pytest
 
 from fastreact import Agent, Config, LLMConfig, PolicyConfig, ReactConfig, ToolConfig
+from fastreact.core.config import PathsConfig
 from fastreact.core.events import EventType
+from fastreact.core.multitenant import UserContext
 from fastreact.runtime.agent_runtime import DigestToolBudgetGuard
 from fastreact.runtime.run_service import RunService
 from fastreact.runtime.store_service import StoreService
@@ -211,6 +213,80 @@ def test_workspace_profile_context_loads_agents_and_soul_files(tmp_path):
     assert "# Workspace Profile" in variable_content
     assert "Project convention: cite sources." in variable_content
     assert "Agent profile: calm and precise." in variable_content
+
+
+def _write_skill(root, name, description, tags=None):
+    skill_dir = root / name
+    skill_dir.mkdir(parents=True)
+    tags = tags or []
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        f"name: {name}\n"
+        f"description: {description}\n"
+        f"tags: {tags}\n"
+        "---\n\n"
+        "## Instructions\n"
+        f"Use {name} carefully.\n",
+        encoding="utf-8",
+    )
+    return skill_dir
+
+
+def test_agent_discovers_global_and_configured_user_skills(tmp_path):
+    global_skills = tmp_path / "global-skills"
+    user_skills = tmp_path / "user-skills"
+    _write_skill(global_skills, "code_review", "Review code changes", ["review"])
+    _write_skill(user_skills, "pska_custom", "Answer with PSKA context", ["pska"])
+
+    config = make_test_config(tmp_path)
+    config.paths = PathsConfig(
+        global_skills_dir=global_skills,
+        user_skills_dir=user_skills,
+        gateway_workspace=tmp_path / "workspace",
+    )
+    agent = Agent(config=config, multitenant=False)
+
+    assert agent.list_skills() == ["pska_custom", "code_review"]
+    assert agent.skill_resolver.auto_select("请用 PSKA context 回答") == ["pska_custom"]
+
+    _base_prompt, variable_content = agent.skill_resolver.build_prompt(skills=["pska_custom"])
+    assert "pska_custom" in variable_content
+    assert "Answer with PSKA context" in variable_content
+
+
+def test_workspace_user_skill_can_override_global_without_leaking(tmp_path):
+    global_skills = tmp_path / "global-skills"
+    workspace = tmp_path / "tenant-workspace"
+    user_skills = workspace / "skills"
+    _write_skill(global_skills, "shared_skill", "Global version", ["global"])
+    _write_skill(user_skills, "shared_skill", "Workspace override version", ["workspace"])
+
+    config = make_test_config(tmp_path)
+    config.paths = PathsConfig(
+        global_skills_dir=global_skills,
+        gateway_workspace=tmp_path / "gateway",
+    )
+    agent = Agent(config=config, multitenant=False)
+    user_context = UserContext(
+        user_key="web:alice",
+        workspace=workspace,
+        config={},
+        skills_dir=user_skills,
+        memory_file=workspace / "memory.json",
+    )
+
+    selected = agent.skill_resolver.auto_select(
+        "Use the workspace override skill",
+        user_context=user_context,
+    )
+    _base_prompt, variable_content = agent.skill_resolver.build_prompt(
+        skills=selected,
+        user_context=user_context,
+    )
+
+    assert selected == ["shared_skill"]
+    assert "Workspace override version" in variable_content
+    assert "Global version" not in variable_content
 
 
 @pytest.mark.asyncio

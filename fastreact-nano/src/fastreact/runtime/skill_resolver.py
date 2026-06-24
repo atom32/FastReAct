@@ -25,8 +25,15 @@ class SkillResolver:
             user_context=user_context,
         )
 
-    def build_prompt(self, skills: Optional[list[str]]) -> tuple[str, str]:
-        base_prompt, variable_content = self._agent._build_system_prompt_with_skills(skills)
+    def build_prompt(
+        self,
+        skills: Optional[list[str]],
+        user_context: Optional["UserContext"] = None,
+    ) -> tuple[str, str]:
+        base_prompt, variable_content = self._agent._build_system_prompt_with_skills(
+            skills,
+            user_context=user_context,
+        )
         if hasattr(self._agent, "tasks"):
             task_context = self._agent.tasks.prompt_context()
             if task_context:
@@ -34,4 +41,4 @@ class SkillResolver:
         return base_prompt, variable_content
 
     def list_available(self) -> list[str]:
-        return self._agent._skills.list_available()
+        return self._agent._list_available_skill_names()

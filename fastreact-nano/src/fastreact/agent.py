@@ -30,7 +30,7 @@ from fastreact.core.events import EventType
 from fastreact.core.multitenant import MultiTenantManager, UserContext, SecurityError
 from fastreact.skills import SkillRegistry
 from fastreact.providers.litellm import LiteLLMProvider
-from fastreact.mcp.manager import MCPToolManager
+from fastreact.mcp.manager import MCPToolManager, MCPToolWrapper
 from fastreact.mcp.multitenant_manager import MultiTenantMCPManager
 from fastreact.mcp.discovery import MCPToolDiscovery
 
@@ -103,6 +103,7 @@ class Agent:
         """
         # Load configuration
         self._config = config or Config.load()
+        self._skills_dir_override = skills_dir
 
         # Initialize LLM provider
         self._llm = LiteLLMProvider(
@@ -121,6 +122,7 @@ class Agent:
         self._multitenant_mcp_manager = None  # Multi-tenant mode
         self._mcp_loaded_server_keys: set[str] = set()
         self._mcp_user_scoped_server_names: set[str] = set()
+        self._mcp_server_load_errors: dict[str, str] = {}
 
         # Initialize MCP tool discovery service
         self._mcp_discovery = MCPToolDiscovery()
@@ -135,55 +137,8 @@ class Agent:
             workspace_path = base_workspace or Path.cwd() / "workspace"
             self._multitenant = MultiTenantManager(workspace_path)
 
-        # Initialize skills (global skills, not user-specific)
-        from fastreact.skills import SkillLoader, SkillRegistry
-        self._skills = SkillRegistry()
-        # Always try to load skills from configured locations
-        try:
-            # Use global skills directory from config
-            global_skills_dir = self._config.paths.global_skills_dir
-            if global_skills_dir.exists():
-                loader = SkillLoader(skills_dir=global_skills_dir)
-                self._skills = SkillRegistry(loader=loader)
-                # Load all global skills
-                for skill_name in loader.list_skills():
-                    skill = loader.load_skill(skill_name)
-                    if skill:
-                        self._skills.add_skill(skill_name, skill)
-
-            # Load user skills (if configured)
-            user_skills_dir = self._config.paths.user_skills_dir
-            if user_skills_dir and user_skills_dir.exists():
-                user_loader = SkillLoader(skills_dir=user_skills_dir)
-
-                # Add user skills to existing registry
-                for skill_name in user_loader.list_skills():
-                    skill = user_loader.load_skill(skill_name)
-                    if skill:
-                        self._skills.add_skill(skill_name, skill)
-
-            # Fallback to custom skills directory parameter
-            elif skills_dir:
-                loader = SkillLoader(skills_dir=skills_dir)
-                self._skills = SkillRegistry(loader=loader)
-                for skill_name in loader.list_skills():
-                    skill = loader.load_skill(skill_name)
-                    if skill:
-                        self._skills.add_skill(skill_name, skill)
-
-            # Final fallback to legacy location
-            else:
-                legacy_skills_dir = Path.cwd() / "skills"
-                if legacy_skills_dir.exists():
-                    loader = SkillLoader(skills_dir=legacy_skills_dir)
-                    self._skills = SkillRegistry(loader=loader)
-                    for skill_name in loader.list_skills():
-                        skill = loader.load_skill(skill_name)
-                        if skill:
-                            self._skills.add_skill(skill_name, skill)
-        except Exception as e:
-            # Skills not available
-            pass
+        # Initialize skills.
+        self._skills = self._build_skill_registry()
 
         # Skills selection configuration
         self._auto_select_skills = True  # Auto-select skills when not specified
@@ -247,6 +202,93 @@ class Agent:
         self.skill_resolver = SkillResolver(self)
         self.mcp_bootstrapper = MCPBootstrapper(self)
 
+    def _skill_search_paths(self) -> list[Path]:
+        """Return configured skill search roots in precedence order."""
+        skill_search_paths = []
+        if self._skills_dir_override:
+            skill_search_paths.append(self._skills_dir_override)
+        user_skills_dir = self._config.paths.user_skills_dir
+        if user_skills_dir:
+            skill_search_paths.append(user_skills_dir)
+        global_skills_dir = self._config.paths.global_skills_dir
+        if global_skills_dir:
+            skill_search_paths.append(global_skills_dir)
+        legacy_skills_dir = Path.cwd() / "skills"
+        if not any(Path(path).exists() for path in skill_search_paths) and legacy_skills_dir.exists():
+            skill_search_paths.append(legacy_skills_dir)
+        return [Path(path).expanduser() for path in skill_search_paths]
+
+    def _build_skill_registry(self):
+        """Build a fresh skill registry from configured search paths."""
+        from fastreact.skills import MultiPathSkillLoader, SkillRegistry
+
+        return SkillRegistry(
+            loader=MultiPathSkillLoader(self._skill_search_paths())
+        )
+
+    def reload_skills(self) -> dict:
+        """Rescan configured skill roots without touching MCP or active sessions."""
+        self._skills = self._build_skill_registry()
+        skills = self.list_skills()
+        return {
+            "reloaded": True,
+            "count": len(skills),
+            "skills": skills,
+            "search_paths": [str(path) for path in self._skill_search_paths()],
+        }
+
+    def _user_skill_registry(self, user_context: Optional[UserContext]):
+        """Create a request-scoped registry for workspace skills, if present."""
+        if not user_context:
+            return None
+        self._validate_user_skills_dir(user_context.skills_dir, user_context.workspace)
+        if not user_context.skills_dir.exists():
+            return None
+        from fastreact.skills import SkillLoader, SkillRegistry
+
+        return SkillRegistry(loader=SkillLoader(skills_dir=user_context.skills_dir))
+
+    def _list_available_skill_names(
+        self,
+        user_context: Optional[UserContext] = None,
+    ) -> list[str]:
+        """List skill names with user/workspace skills taking precedence."""
+        names: list[str] = []
+        seen = set()
+        user_registry = self._user_skill_registry(user_context)
+        registries = [registry for registry in (user_registry, self._skills) if registry]
+        for registry in registries:
+            for name in registry.list_available():
+                if name not in seen:
+                    names.append(name)
+                    seen.add(name)
+        return names
+
+    def _get_skill_for_context(
+        self,
+        skill_name: str,
+        user_context: Optional[UserContext] = None,
+    ):
+        """Get the effective skill for this request, honoring user overrides."""
+        user_registry = self._user_skill_registry(user_context)
+        if user_registry:
+            skill = user_registry.get(skill_name)
+            if skill:
+                return skill
+        return self._skills.get(skill_name)
+
+    def _list_skill_objects(
+        self,
+        user_context: Optional[UserContext] = None,
+    ) -> list:
+        """Return effective skill objects in precedence order."""
+        skills = []
+        for name in self._list_available_skill_names(user_context=user_context):
+            skill = self._get_skill_for_context(name, user_context=user_context)
+            if skill:
+                skills.append(skill)
+        return skills
+
     def _select_skills_auto(
         self,
         query: str,
@@ -265,33 +307,9 @@ class Agent:
             List of selected skill names
         """
         import re
-        from fastreact.skills import Skill, SkillLoader, SkillRegistry
 
-        # Get all available skills (global + user-specific)
-        all_skills = []
-
-        # Global skills
-        try:
-            for skill_name in self._skills.list_available():
-                skill = self._skills.get(skill_name)
-                if skill:
-                    all_skills.append(skill)
-        except Exception:
-            pass
-
-        # User-specific skills (higher priority)
-        if user_context:
-            self._validate_user_skills_dir(user_context.skills_dir, user_context.workspace)
-        if user_context and user_context.skills_dir.exists():
-            try:
-                user_loader = SkillLoader(skills_dir=user_context.skills_dir)
-                user_skills = SkillRegistry(loader=user_loader)
-                for skill_name in user_skills.list_available():
-                    skill = user_skills.get(skill_name)
-                    if skill:
-                        all_skills.append(skill)
-            except Exception:
-                pass
+        # Get effective skills (user/workspace overrides global).
+        all_skills = self._list_skill_objects(user_context=user_context)
 
         if not all_skills:
             return []
@@ -377,12 +395,17 @@ class Agent:
                 f"User skills_dir '{skills_dir}' is not contained within workspace '{workspace}'"
             ) from exc
 
-    def _build_system_prompt_with_skills(self, skills: Optional[list[str]]) -> tuple[str, str]:
+    def _build_system_prompt_with_skills(
+        self,
+        skills: Optional[list[str]],
+        user_context: Optional[UserContext] = None,
+    ) -> tuple[str, str]:
         """
         Build system prompt with skills and tools injected
 
         Args:
             skills: List of skill names to inject
+            user_context: Optional user context for workspace skill overrides
 
         Returns:
             Tuple of (base_prompt, skills_content) where:
@@ -451,10 +474,10 @@ class Agent:
         skills_list_section = "\n\n# Available Skills\nThese skills are available:\n\n"
 
         # Get all available skills
-        all_skill_names = self._skills.list_available()
+        all_skill_names = self._list_available_skill_names(user_context=user_context)
         if all_skill_names:
             for skill_name in all_skill_names:
-                skill = self._skills.get(skill_name)
+                skill = self._get_skill_for_context(skill_name, user_context=user_context)
                 if skill:
                     skills_list_section += f"## {skill.name}\n"
                     skills_list_section += f"{skill.description}\n"
@@ -474,7 +497,7 @@ class Agent:
             mcp_servers_for_skills = set()
 
             for skill_name in skills:
-                skill = self._skills.get(skill_name)
+                skill = self._get_skill_for_context(skill_name, user_context=user_context)
                 if skill:
                     # Format skill info
                     skill_info = f"## {skill.name}\n{skill.description}"
@@ -502,7 +525,7 @@ class Agent:
                     mcp_section_parts = []
                     for skill_name in skills:
                         # Get MCP servers for this skill
-                        skill = self._skills.get(skill_name)
+                        skill = self._get_skill_for_context(skill_name, user_context=user_context)
                         if skill and skill.metadata.mcp_servers:
                             tools_section = self._mcp_discovery.generate_skill_tools_section(
                                 skill_name=skill_name,
@@ -958,13 +981,44 @@ class Agent:
 
             except Exception as e:
                 # Log error but continue with other servers
+                self._mcp_server_load_errors[server_name] = str(e)
                 logger.warning("Failed to load MCP server '%s': %s", server_name, e)
+            else:
+                self._mcp_server_load_errors.pop(server_name, None)
 
     async def close_mcp_servers(self) -> None:
         """Close all MCP server connections"""
+        mcp_tool_names = [
+            tool_name
+            for tool_name in self._tools.list_all()
+            if isinstance(self._tools.get(tool_name), MCPToolWrapper)
+        ]
         if self._mcp_manager:
             await self._mcp_manager.close_all()
             self._mcp_manager = None
+        for tool_name in mcp_tool_names:
+            self._tools.unregister(tool_name)
+        self._mcp_loaded_server_keys.clear()
+        self._mcp_user_scoped_server_names.clear()
+        self._mcp_discovery.clear()
+
+    async def reload_mcp_servers(
+        self,
+        required_skills: Optional[list[str]] = None,
+        user_key: Optional[str] = None,
+    ) -> dict:
+        """Reconnect configured MCP servers and refresh registered MCP tools."""
+        await self.close_mcp_servers()
+        result = await self.mcp_bootstrapper.ensure_loaded(
+            required_skills=required_skills,
+            user_key=user_key,
+        )
+        return {
+            "reloaded": True,
+            "bootstrap": result,
+            "servers": self.list_mcp_server_status(),
+            "tools": self.list_mcp_tools(),
+        }
 
     # === Session Management (NEW) ===
 
@@ -1393,6 +1447,19 @@ class Agent:
         """Return a skill by name for admin/read-only views."""
         return self._skills.get(skill_name)
 
+    def get_skill_locations(self, skill_name: str) -> list[dict]:
+        """Return discovered locations for a skill for diagnostics."""
+        locations = self._skills.locations_for(skill_name)
+        return [
+            {
+                "path": str(location.skill_dir),
+                "root": str(location.root_dir),
+                "priority": location.priority,
+                "active": location.active,
+            }
+            for location in locations
+        ]
+
     def list_tools(self) -> list[str]:
         """Return registered tool names."""
         return self._tools.list_all()
@@ -1426,14 +1493,66 @@ class Agent:
 
     def list_mcp_server_status(self) -> list[dict]:
         """Return MCP server health without exposing manager internals."""
-        if not self._mcp_manager or not hasattr(self._mcp_manager, "_servers"):
-            return []
+        manager_by_server = {}
+        if isinstance(self._mcp_manager, MCPToolManager):
+            for server_name in self._mcp_manager.list_servers():
+                manager_by_server[server_name] = self._mcp_manager
+        elif isinstance(self._mcp_manager, MultiTenantMCPManager):
+            for manager in self._mcp_manager._shared_managers.values():
+                for server_name in manager.list_servers():
+                    manager_by_server[server_name] = manager
+            for user_servers in self._mcp_manager._user_managers.values():
+                for instance in user_servers.values():
+                    manager = instance._manager
+                    for server_name in manager.list_servers():
+                        manager_by_server[server_name] = manager
+
+        configured = {server.name: server for server in (self._config.mcp.servers or [])}
+        all_server_names = list(configured.keys())
+        for server_name in manager_by_server:
+            if server_name not in configured:
+                all_server_names.append(server_name)
+
         statuses = []
-        for server_name in self._mcp_manager._servers.keys():
-            statuses.append({
+        for server_name in all_server_names:
+            server_config = configured.get(server_name)
+            manager = manager_by_server.get(server_name)
+            alive = bool(manager and manager.is_server_alive(server_name))
+            wrappers = getattr(manager, "_tool_wrappers", {}) if manager else {}
+            tools = [
+                tool_name
+                for tool_name, wrapper in wrappers.items()
+                if getattr(wrapper, "_server_name", None) == server_name
+            ]
+            status = {
                 "name": server_name,
-                "alive": self._mcp_manager.is_server_alive(server_name),
-            })
+                "alive": alive,
+                "loaded": manager is not None,
+                "tool_count": len(tools),
+                "tools": tools,
+                "last_error": self._mcp_server_load_errors.get(server_name),
+            }
+            if server_config:
+                status.update({
+                    "transport": server_config.transport,
+                    "isolation": server_config.isolation,
+                    "associated_skill": server_config.associated_skill,
+                    "auth_configured": bool(server_config.auth_token_ref),
+                    "url_configured": bool(server_config.url),
+                    "command_configured": bool(server_config.command),
+                })
+            else:
+                saved_config = getattr(manager, "_server_configs", {}).get(server_name, {}) if manager else {}
+                if saved_config:
+                    status.update({
+                        "transport": saved_config.get("transport", "stdio"),
+                        "isolation": saved_config.get("isolation_mode", "shared"),
+                        "associated_skill": None,
+                        "auth_configured": bool(saved_config.get("auth_token_ref")),
+                        "url_configured": bool(saved_config.get("url")),
+                        "command_configured": bool(saved_config.get("server_command")),
+                    })
+            statuses.append(status)
         return statuses
 
     def get_temp_user_stats(self) -> dict:

@@ -10,13 +10,15 @@ Skills are Markdown-first with optional Python scripts.
 """
 
 from fastreact.skills.base import Skill, SkillMetadata
-from fastreact.skills.loader import SkillLoader, SkillRegistry
+from fastreact.skills.loader import MultiPathSkillLoader, SkillLoader, SkillLocation, SkillRegistry
 from fastreact.skills.parser import SkillParser, ParsedSkill
 
 __all__ = [
     "Skill",
     "SkillMetadata",
     "SkillLoader",
+    "MultiPathSkillLoader",
+    "SkillLocation",
     "SkillRegistry",
     "SkillParser",
     "ParsedSkill",

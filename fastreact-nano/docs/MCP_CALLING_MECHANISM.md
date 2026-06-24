@@ -77,12 +77,27 @@ MCP tools are surfaced in FastReAct's tool list alongside native tools. Use:
 curl http://127.0.0.1:8000/v1/tools
 ```
 
+The tools response includes `mcp_servers` and `tool_summaries` for diagnostics. MCP server status reports transport, isolation, loaded tool count, liveness, and recent load errors; auth token references are reported only as configured/not configured, never as secret values.
+
 Readiness includes configured server status and loaded tool status:
 
 ```bash
 curl http://127.0.0.1:8000/ready \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
+
+Runtime MCP reload is deliberately disabled by default. To allow an authenticated reload, both flags must be set:
+
+```json
+{
+  "extensions": {
+    "runtime_reload_enabled": true,
+    "mcp_reload_enabled": true
+  }
+}
+```
+
+This keeps PSKA and other stateful MCP integrations on the existing startup-time loading path unless an operator explicitly opts into reconnecting them.
 
 ## Isolation Modes
 

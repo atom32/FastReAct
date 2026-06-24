@@ -14,7 +14,7 @@ import pytest
 
 from fastreact.agent import Agent
 from fastreact.core.multitenant import UserContext
-from fastreact.core.config import Config, MCPConfig, MCPServerConfig, PathsConfig
+from fastreact.core.config import Config, ExtensionConfig, MCPConfig, MCPServerConfig, PathsConfig
 from fastreact.core.tools import ToolRegistry
 from fastreact.mcp.http_client import StreamableHTTPMCPClient
 from fastreact.mcp.manager import MCPToolManager, MCPToolWrapper
@@ -59,6 +59,91 @@ async def test_agent_loader_passes_http_mcp_config(tmp_path):
         auth_token_ref="mcp_api_keys.pska",
         allowed_user_key=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_agent_mcp_status_reports_http_pska_config_without_secret(tmp_path):
+    config = _config_with_http_mcp(tmp_path)
+    agent = Agent(config=config)
+
+    with patch.object(MCPToolManager, "add_server", new=AsyncMock()):
+        await agent._load_mcp_servers()
+
+    status = agent.list_mcp_server_status()[0]
+
+    assert status["name"] == "pska"
+    assert status["transport"] == "http"
+    assert status["isolation"] == "shared"
+    assert status["auth_configured"] is True
+    assert "mcp_api_keys.pska" not in str(status)
+    assert status["last_error"] is None
+
+
+@pytest.mark.asyncio
+async def test_agent_mcp_status_keeps_last_load_error(tmp_path):
+    config = _config_with_http_mcp(tmp_path)
+    agent = Agent(config=config)
+
+    with patch.object(MCPToolManager, "add_server", new=AsyncMock(side_effect=RuntimeError("boom"))):
+        await agent._load_mcp_servers()
+
+    status = agent.list_mcp_server_status()[0]
+
+    assert status["name"] == "pska"
+    assert status["alive"] is False
+    assert status["loaded"] is False
+    assert status["last_error"] == "boom"
+
+
+@pytest.mark.asyncio
+async def test_agent_mcp_reload_preserves_http_pska_config(tmp_path):
+    config = _config_with_http_mcp(tmp_path)
+    config.extensions = ExtensionConfig(
+        runtime_reload_enabled=True,
+        mcp_reload_enabled=True,
+    )
+    agent = Agent(config=config)
+
+    with patch.object(MCPToolManager, "add_server", new=AsyncMock()) as add_server:
+        result = await agent.reload_mcp_servers()
+
+    add_server.assert_awaited_once_with(
+        name="pska",
+        transport="http",
+        server_command="",
+        server_args=[],
+        env=None,
+        url="http://127.0.0.1:8765/mcp",
+        auth_token_ref="mcp_api_keys.pska",
+        allowed_user_key=None,
+    )
+    assert result["reloaded"] is True
+
+
+@pytest.mark.asyncio
+async def test_agent_mcp_close_unregisters_mcp_wrappers_only(tmp_path):
+    config = _config_with_http_mcp(tmp_path)
+    agent = Agent(config=config)
+    client = MagicMock()
+    client.close = AsyncMock()
+    wrapper = MCPToolWrapper(
+        tool_name="search",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="PSKA search",
+        parameters={},
+        transport="http",
+    )
+    agent._tools.register(wrapper)
+
+    assert "read_file" in agent.list_tools()
+    assert "pska_search" in agent.list_tools()
+
+    await agent.close_mcp_servers()
+
+    assert "read_file" in agent.list_tools()
+    assert "pska_search" not in agent.list_tools()
 
 
 @pytest.mark.asyncio

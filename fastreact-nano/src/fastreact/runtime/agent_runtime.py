@@ -345,7 +345,10 @@ class AgentRuntime:
             # Build system prompt with skills (skills already selected above)
             # Returns (base_prompt, skills_content) for cache-friendly injection
             context_span = TimingSpan("context.assembly")
-            base_prompt, skills_content = agent.skill_resolver.build_prompt(skills)
+            base_prompt, skills_content = agent.skill_resolver.build_prompt(
+                skills,
+                user_context=user_context,
+            )
 
             # Inject skills content as a separate system message at the START of messages
             # This keeps base_prompt constant (cacheable) while providing skills context

@@ -49,6 +49,10 @@
     "auto_approve_safe": true,
     "enable_filesystem_memory": true
   },
+  "extensions": {
+    "runtime_reload_enabled": false,
+    "mcp_reload_enabled": false
+  },
   "mcp": {
     "servers": [
       {

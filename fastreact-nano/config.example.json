@@ -127,6 +127,12 @@
     "mcp_transport": "http"
   },
 
+  "extensions": {
+    "_comment": "Authenticated runtime reload is opt-in. Keep MCP reload disabled for PSKA/stateful integrations unless an operator explicitly wants reconnect semantics.",
+    "runtime_reload_enabled": false,
+    "mcp_reload_enabled": false
+  },
+
   "mcp": {
     "_comment": "MCP (Model Context Protocol) 服务器配置",
     "_comment_2": "MCP 服务器可以与 Skill 关联，实现渐进式工具发现",
