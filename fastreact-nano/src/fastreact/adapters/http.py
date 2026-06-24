@@ -61,6 +61,9 @@ _rate_limit_windows: dict[str, dict[str, float | int]] = {}
 class ChatRequest(BaseModel):
     messages: list[dict[str, Any]]
     model: Optional[str] = None
+    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    max_tokens: Optional[int] = Field(default=None, gt=0)
     stream: bool = True
     session_id: Optional[str] = None
     skills: Optional[list[str]] = None
@@ -172,13 +175,26 @@ def run_agent_event_stream(agent: Any, **kwargs: Any) -> AsyncIterator[AgentEven
     except (TypeError, ValueError):
         return agent.run_event_stream(**kwargs)
     parameters = signature.parameters
-    supports_run_metadata = "run_metadata" in parameters or any(
+    supports_var_kwargs = any(
         parameter.kind == inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     )
-    if not supports_run_metadata:
-        kwargs.pop("run_metadata", None)
+    for optional_kwarg in ("run_metadata", "llm_options"):
+        if optional_kwarg not in parameters and not supports_var_kwargs:
+            kwargs.pop(optional_kwarg, None)
     return agent.run_event_stream(**kwargs)
+
+
+def generation_options_from_request(chat_request: ChatRequest) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+    model = getattr(chat_request, "model", None)
+    if isinstance(model, str) and model.strip():
+        options["model"] = model.strip()
+    for field_name in ("temperature", "top_p", "max_tokens"):
+        value = getattr(chat_request, field_name, None)
+        if value is not None:
+            options[field_name] = value
+    return options
 
 
 def configured_service_token() -> str | None:
@@ -409,6 +425,7 @@ def run_snapshot(record: dict[str, Any], include_events: bool = False) -> dict[s
         "event_count": record.get("event_count", len(record.get("events", []))),
         "error": record.get("error"),
         "metadata": record.get("metadata", {}),
+        "generation_options": record.get("generation_options", {}),
         "attempts": record.get("attempts", 0),
         "lease_expires_at": record.get("lease_expires_at"),
         "retry_after": record.get("retry_after"),
@@ -455,6 +472,7 @@ async def execute_background_run(run_id: str) -> None:
             history=record.get("history"),
             user_key=record.get("user_key"),
             run_metadata=record.get("metadata") or {},
+            llm_options=record.get("generation_options") or {},
         ):
             payload = service_event_payload(
                 event,
@@ -1208,6 +1226,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         run_id = str(chat_request.metadata.get("run_id") or uuid.uuid4())
         session_id = chat_request.session_id or str(uuid.uuid4())
         history = extract_history(chat_request.messages)
+        generation_options = generation_options_from_request(chat_request)
         started_at = time.perf_counter()
 
         async def event_generator() -> AsyncIterator[str]:
@@ -1221,6 +1240,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                     history=history,
                     user_key=chat_request.user_key,
                     run_metadata=dict(chat_request.metadata or {}),
+                    llm_options=generation_options,
                 ):
                     payload = service_event_payload(
                         event,
@@ -1279,6 +1299,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 history=history,
                 user_key=chat_request.user_key,
                 run_metadata=dict(chat_request.metadata or {}),
+                llm_options=generation_options,
             ):
                 payload = service_event_payload(
                     event,
@@ -1329,6 +1350,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         run_id = str(chat_request.metadata.get("run_id") or uuid.uuid4())
+        generation_options = generation_options_from_request(chat_request)
         runs = get_run_service()
         if runs.get(run_id):
             raise HTTPException(status_code=409, detail="Run already exists")
@@ -1341,6 +1363,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             history=extract_history(chat_request.messages),
             user_key=chat_request.user_key,
             metadata=dict(chat_request.metadata or {}),
+            generation_options=generation_options,
         )
         schedule_queued_runs(get_agent())
         return {"type": "run", **(runs.snapshot(run_id) or run_snapshot(record))}

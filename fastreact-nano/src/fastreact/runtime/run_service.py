@@ -64,6 +64,7 @@ class RunService:
         history: Optional[list[dict[str, Any]]] = None,
         user_key: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
+        generation_options: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         if self.get(run_id):
             raise ValueError(f"Run already exists: {run_id}")
@@ -83,6 +84,7 @@ class RunService:
             "history": history or [],
             "user_key": user_key,
             "metadata": metadata or {},
+            "generation_options": generation_options or {},
             "event_count": 0,
             "error": None,
             "last_error": None,
@@ -120,6 +122,7 @@ class RunService:
             "event_count": self.event_count(run_id),
             "error": record.get("error"),
             "metadata": record.get("metadata", {}),
+            "generation_options": record.get("generation_options", {}),
             "attempts": record.get("attempts", 0),
             "lease_expires_at": record.get("lease_expires_at"),
             "retry_after": record.get("retry_after"),
@@ -339,6 +342,7 @@ class RunService:
             "final_content": final_event.get("content") if final_event else "",
             "error": record.get("error") or (error_event.get("content") if error_event else None),
             "metadata": record.get("metadata", {}),
+            "generation_options": record.get("generation_options", {}),
             "policy_snapshot_hash": self.policy_snapshot_hash(record.get("metadata", {})),
         }
         digest_budget = self.pska_digest_tool_budget(record.get("metadata", {}), tool_name_counts)

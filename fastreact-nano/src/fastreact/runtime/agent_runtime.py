@@ -103,6 +103,7 @@ class AgentRuntime:
         history: Optional[list[dict]] = None,
         user_key: Optional[str] = None,
         run_metadata: Optional[dict] = None,
+        llm_options: Optional[dict] = None,
     ) -> AsyncIterator["AgentEvent"]:
         span = TimingSpan("agent.run_event_stream")
         first_event_seen = False
@@ -118,6 +119,7 @@ class AgentRuntime:
             history=history,
             user_key=user_key,
             run_metadata=run_metadata,
+            llm_options=llm_options,
         ):
             event_count += 1
             if not first_event_seen:
@@ -204,6 +206,7 @@ class AgentRuntime:
         history: Optional[list[dict]] = None,
         user_key: Optional[str] = None,
         run_metadata: Optional[dict] = None,
+        llm_options: Optional[dict] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """
         Run agent with event stream (Brain-Body Loop)
@@ -283,6 +286,7 @@ class AgentRuntime:
 
         agent = self._agent
         budget_guard = DigestToolBudgetGuard(run_metadata)
+        llm_options = {key: value for key, value in (llm_options or {}).items() if value is not None}
 
         # Extract user_key from session_id if not provided
         if user_key is None and agent._multitenant_enabled and session_id:
@@ -464,7 +468,9 @@ class AgentRuntime:
                     metadata_context_tokens = _positive_int((run_metadata or {}).get("max_context_tokens"))
                     configured_context_tokens = int(getattr(agent._config.react, "max_context_tokens", 12000) or 12000)
                     max_context_tokens = metadata_context_tokens or configured_context_tokens
-                    completion_buffer = int(getattr(agent._config.llm, "max_tokens", 0) or 0)
+                    completion_buffer = _positive_int(llm_options.get("max_tokens")) or int(
+                        getattr(agent._config.llm, "max_tokens", 0) or 0
+                    )
                     compression_budget = max(1, max_context_tokens - completion_buffer)
                     compressed_messages = agent._compress_context(
                         messages,
@@ -501,6 +507,7 @@ class AgentRuntime:
                         messages=compressed_messages,  # Use compressed messages
                         session_id=session_id,
                         system_prompt=system_prompt,  # Pass skills-enhanced prompt
+                        llm_options=llm_options,
                     ):
                         # Collect TOOL_CALL events for execution
                         if event.type == EventType.TOOL_CALL:

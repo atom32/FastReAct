@@ -200,6 +200,92 @@ def test_store_service_sanitizes_sensitive_nested_fields(tmp_path):
     assert record["metadata"]["nested"]["long_text"].endswith("[... truncated ...]")
 
 
+def test_run_service_preserves_long_final_answer_with_previews(tmp_path):
+    store = StoreService(tmp_path / ".fastreact")
+    runs = RunService(store)
+    long_answer = "A" * 1300
+
+    runs.create(
+        run_id="run-long-final",
+        session_id="session-long-final",
+        query="draft",
+        metadata={"purpose": "draft"},
+        generation_options={"model": "test-model", "max_tokens": 2048},
+    )
+    runs.mark_running("run-long-final", worker_id="worker-test")
+    runs.append_event(
+        "run-long-final",
+        {
+            "type": "session_end",
+            "content": long_answer,
+            "sequence": 1,
+            "metadata": {
+                "authorization": "Bearer secret-token",
+                "nested": {"long_text": "x" * 1300},
+            },
+        },
+    )
+    runs.complete("run-long-final")
+
+    run_event = store.read("run_events", limit=0, run_id="run-long-final")[0]
+    compat_event = store.read("events", limit=0, run_id="run-long-final")[0]
+    trace = store.latest_by_id("traces", "run_id", "run-long-final")
+
+    assert run_event["content"] == long_answer
+    assert compat_event["content"] == long_answer
+    assert run_event["content_preview"] == long_answer[:600] + "\n[... truncated ...]"
+    assert run_event["content_truncated"] is True
+    assert run_event["content_length"] == len(long_answer)
+    assert run_event["metadata"]["authorization"] == "***"
+    assert run_event["metadata"]["nested"]["long_text"].endswith("[... truncated ...]")
+    assert trace["final_content"] == long_answer
+    assert trace["final_content_preview"] == long_answer[:600] + "\n[... truncated ...]"
+    assert trace["final_content_truncated"] is True
+    assert trace["final_content_length"] == len(long_answer)
+    assert trace["generation_options"] == {"model": "test-model", "max_tokens": 2048}
+    assert runs.snapshot("run-long-final")["generation_options"] == {"model": "test-model", "max_tokens": 2048}
+
+
+@pytest.mark.asyncio
+async def test_runtime_passes_llm_options_to_provider(tmp_path, monkeypatch):
+    from fastreact.providers.litellm import LLMResponse, LiteLLMProvider
+
+    captured = []
+
+    async def capture_chat(self, messages, tools=None, model=None, **kwargs):
+        captured.append({"model": model, **kwargs})
+        return LLMResponse(
+            content="The answer is 42",
+            tool_calls=[],
+            model=model or self.model,
+            usage={"prompt_tokens": 10, "completion_tokens": 5},
+        )
+
+    monkeypatch.setattr(LiteLLMProvider, "chat", capture_chat)
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+
+    events = []
+    async for event in agent.run_event_stream(
+        "What is 2+2?",
+        session_id="llm-options-contract",
+        llm_options={
+            "model": "override-model",
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "max_tokens": 321,
+        },
+    ):
+        events.append(event)
+
+    assert events[-1].type == EventType.SESSION_END
+    assert captured[0] == {
+        "model": "override-model",
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "max_tokens": 321,
+    }
+
+
 def test_workspace_profile_context_loads_agents_and_soul_files(tmp_path):
     config = make_test_config(tmp_path)
     config.paths.gateway_workspace = tmp_path

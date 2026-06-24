@@ -19,7 +19,7 @@ All execution moved to Agent (Body).
 """
 
 import asyncio
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 from fastreact.core.messages import Message
 from fastreact.core.tools import ToolRegistry
@@ -75,6 +75,7 @@ class ReActCore:
         messages: list[dict],
         session_id: str,
         system_prompt: Optional[str] = None,
+        llm_options: Optional[dict[str, Any]] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """
         Single reasoning step: Ask LLM, Emit Intent
@@ -149,6 +150,7 @@ class ReActCore:
                 response = await self._llm.chat(
                     messages_for_llm,
                     tools=self._tools.schemas(),
+                    **(llm_options or {}),
                 )
             except Exception as e:
                 yield AgentEvent.error(f"LLM call failed: {e}", session_id)

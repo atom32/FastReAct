@@ -1238,6 +1238,7 @@ class Agent:
         history: Optional[list[dict]] = None,
         user_key: Optional[str] = None,
         run_metadata: Optional[dict] = None,
+        llm_options: Optional[dict] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """
         Public execution stream entrypoint.
@@ -1252,6 +1253,7 @@ class Agent:
             history=history,
             user_key=user_key,
             run_metadata=run_metadata,
+            llm_options=llm_options,
         ):
             yield event
 

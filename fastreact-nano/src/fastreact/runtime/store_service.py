@@ -10,7 +10,18 @@ from fastreact.core.time import utc_iso
 
 
 SENSITIVE_KEYS = {"api_key", "apikey", "token", "pat", "password", "secret", "authorization"}
-SAFE_TOKEN_USAGE_KEYS = {"prompt_tokens", "completion_tokens", "total_tokens"}
+SAFE_TOKEN_USAGE_KEYS = {
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "max_tokens",
+    "max_context_tokens",
+    "completion_buffer_tokens",
+    "compression_budget_tokens",
+}
+LONG_STRING_LIMIT = 1200
+PREVIEW_CHARS = 600
+TRUNCATION_MARKER = "\n[... truncated ...]"
 
 
 class StoreService:
@@ -31,7 +42,7 @@ class StoreService:
     def append(self, stream: str, record: dict[str, Any]) -> dict[str, Any]:
         record = dict(record)
         record.setdefault("created_at", utc_iso())
-        record = self.sanitize(record)
+        record = self.sanitize_for_stream(stream, record)
         path = self.root / f"{stream}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
@@ -147,13 +158,47 @@ class StoreService:
         with self._lock:
             with tmp_path.open("w", encoding="utf-8") as handle:
                 for record in latest.values():
-                    handle.write(json.dumps(self.sanitize(record), ensure_ascii=False, default=str) + "\n")
+                    handle.write(
+                        json.dumps(self.sanitize_for_stream(stream, record), ensure_ascii=False, default=str) + "\n"
+                    )
             os.replace(tmp_path, path)
         return {
             "stream": stream,
             "records": len(latest),
             "path": str(path),
         }
+
+    @classmethod
+    def preview_text(cls, value: str) -> str:
+        return value[:PREVIEW_CHARS] + TRUNCATION_MARKER if len(value) > LONG_STRING_LIMIT else value
+
+    @classmethod
+    def preview_metadata(cls, field_name: str, value: str) -> dict[str, Any]:
+        return {
+            f"{field_name}_preview": cls.preview_text(value),
+            f"{field_name}_truncated": len(value) > LONG_STRING_LIMIT,
+            f"{field_name}_length": len(value),
+        }
+
+    @classmethod
+    def sanitize_for_stream(cls, stream: str, record: dict[str, Any]) -> dict[str, Any]:
+        cleaned = cls.sanitize(record)
+        if not isinstance(cleaned, dict):
+            return cleaned
+
+        if stream in {"run_events", "events"} and record.get("type") == "session_end":
+            content = record.get("content")
+            if isinstance(content, str):
+                cleaned["content"] = content
+                cleaned.update(cls.preview_metadata("content", content))
+
+        if stream == "traces":
+            final_content = record.get("final_content")
+            if isinstance(final_content, str):
+                cleaned["final_content"] = final_content
+                cleaned.update(cls.preview_metadata("final_content", final_content))
+
+        return cleaned
 
     @classmethod
     def sanitize(cls, value: Any) -> Any:
@@ -170,6 +215,6 @@ class StoreService:
             return cleaned
         if isinstance(value, list):
             return [cls.sanitize(item) for item in value]
-        if isinstance(value, str) and (value.startswith("sk-") or len(value) > 1200):
-            return value[:600] + "\n[... truncated ...]" if len(value) > 1200 else "***"
+        if isinstance(value, str) and (value.startswith("sk-") or len(value) > LONG_STRING_LIMIT):
+            return cls.preview_text(value) if len(value) > LONG_STRING_LIMIT else "***"
         return value

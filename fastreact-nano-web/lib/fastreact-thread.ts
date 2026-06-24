@@ -7,6 +7,9 @@ export type FastReactRunEvent = {
   session_id?: string
   type: string
   content?: string
+  content_preview?: string
+  content_truncated?: boolean
+  content_length?: number
   tool_name?: string
   tool_args?: unknown
   tool_call_id?: string

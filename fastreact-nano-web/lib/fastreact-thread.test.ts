@@ -59,6 +59,24 @@ describe("fastReactEventsToThreadMessages", () => {
     expect(assistant?.reasoning).toEqual(["thinking"])
   })
 
+  it("uses full session_end content instead of preview fields", () => {
+    const fullAnswer = "A".repeat(1300)
+    const snapshot = fastReactEventsToThreadMessages([
+      { type: "session_start", content: "draft", sequence: 1 },
+      {
+        type: "session_end",
+        content: fullAnswer,
+        content_preview: `${"A".repeat(600)}\n[... truncated ...]`,
+        content_truncated: true,
+        content_length: fullAnswer.length,
+        sequence: 2,
+      },
+    ])
+
+    const assistant = snapshot.messages.find((message) => message.role === "assistant")
+    expect(assistant?.content).toBe(fullAnswer)
+  })
+
   it("keeps one assistant turn for all events from the same durable run", () => {
     const snapshot = fastReactEventsToThreadMessages([
       { type: "session_start", run_id: "run_1", content: "inspect", sequence: 0 },

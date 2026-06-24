@@ -357,6 +357,10 @@ The request body is the same shape as `/v1/chat/completions`.
   "messages": [
     {"role": "user", "content": "Generate the report."}
   ],
+  "model": "deepseek-v4-flash",
+  "temperature": 0.3,
+  "top_p": 0.9,
+  "max_tokens": 2048,
   "session_id": "optional-session-id",
   "user_key": "pska:user_primary",
   "metadata": {
@@ -384,6 +388,11 @@ List endpoints accept `limit` where supported. Event replay endpoints accept
 Replay responses include `count`, `total_event_count`, `next_after_sequence`,
 and `has_more`; clients should resume by passing the previous
 `next_after_sequence` as `after_sequence`.
+
+For completed runs, `session_end.content` and `trace.final_content` are durable
+full-text fields. Preview fields such as `content_preview` and
+`final_content_preview` are only for display or diagnostics and may be
+truncated.
 
 Run status values:
 

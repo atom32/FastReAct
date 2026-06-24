@@ -56,6 +56,26 @@ class FakeAgent:
         return {"loaded": True, "required_skills": required_skills}
 
 
+class CapturingGenerationAgent(FakeAgent):
+    def __init__(self, final_answer="final answer"):
+        self.final_answer = final_answer
+        self.captured_llm_options = []
+
+    async def run_event_stream(
+        self,
+        query,
+        skills=None,
+        session_id=None,
+        history=None,
+        user_key=None,
+        run_metadata=None,
+        llm_options=None,
+    ):
+        self.captured_llm_options.append(dict(llm_options or {}))
+        yield AgentEvent.session_start(query, session_id, skills=skills)
+        yield AgentEvent.session_end(session_id, self.final_answer)
+
+
 class FakeSkillMetadata:
     version = "1.0.0"
     tags = ["demo"]
@@ -823,6 +843,154 @@ def test_extension_reload_requires_separate_mcp_flag(tmp_path):
     assert response.status_code == 403
     assert response.json()["detail"] == "Runtime MCP reload is disabled"
 
+
+def test_chat_completions_passes_generation_options_to_runtime():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingGenerationAgent()
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_agent_for_testing(agent)
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={
+                "messages": [{"role": "user", "content": "say hi"}],
+                "stream": False,
+                "model": "override-model",
+                "temperature": 0.2,
+                "top_p": 0.8,
+                "max_tokens": 321,
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    assert agent.captured_llm_options == [
+        {
+            "model": "override-model",
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "max_tokens": 321,
+        }
+    ]
+
+
+def test_chat_stream_passes_generation_options_to_runtime():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingGenerationAgent()
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_agent_for_testing(agent)
+    try:
+        client = testclient.TestClient(create_app())
+        with client.stream(
+            "POST",
+            "/v1/chat/completions",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={
+                "messages": [{"role": "user", "content": "say hi"}],
+                "stream": True,
+                "model": "stream-model",
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "max_tokens": 222,
+            },
+        ) as response:
+            assert response.status_code == 200
+            assert "session_end" in response.read().decode("utf-8")
+    finally:
+        set_agent_for_testing(None)
+
+    assert agent.captured_llm_options == [
+        {
+            "model": "stream-model",
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "max_tokens": 222,
+        }
+    ]
+
+
+def test_chat_request_rejects_invalid_generation_options():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_agent_for_testing(CapturingGenerationAgent())
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={
+                "messages": [{"role": "user", "content": "say hi"}],
+                "temperature": 3.0,
+                "top_p": 1.2,
+                "max_tokens": 0,
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 422
+
+
+def test_background_run_persists_and_passes_generation_options(tmp_path):
+    import time
+
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+    from fastreact.runtime.store_service import StoreService
+
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    agent = CapturingGenerationAgent()
+    agent.store = StoreService(tmp_path / "generation-store")
+    set_agent_for_testing(agent)
+    headers = {"X-FastReAct-Service-Token": "service-secret"}
+    run_id = f"run-generation-contract-{time.time_ns()}"
+    expected_options = {
+        "model": "run-model",
+        "temperature": 0.3,
+        "top_p": 0.7,
+        "max_tokens": 456,
+    }
+    try:
+        client = testclient.TestClient(create_app())
+        created = client.post(
+            "/v1/runs",
+            headers=headers,
+            json={
+                "messages": [{"role": "user", "content": "generate"}],
+                "metadata": {"run_id": run_id},
+                **expected_options,
+            },
+        )
+        assert created.status_code == 200
+        assert created.json()["generation_options"] == expected_options
+
+        final_payload = None
+        for _ in range(20):
+            response = client.get(f"/v1/runs/{run_id}", headers=headers)
+            assert response.status_code == 200
+            final_payload = response.json()
+            if final_payload["status"] == "completed":
+                break
+            time.sleep(0.01)
+
+        assert final_payload is not None
+        assert final_payload["status"] == "completed"
+        assert final_payload["generation_options"] == expected_options
+        trace = client.get(f"/v1/traces/{run_id}", headers=headers)
+        assert trace.status_code == 200
+        assert trace.json()["trace"]["generation_options"] == expected_options
+        assert agent.captured_llm_options == [expected_options]
+    finally:
+        set_agent_for_testing(None)
 
 
 def test_background_run_endpoints_create_query_events_cancel_and_trace(tmp_path):
