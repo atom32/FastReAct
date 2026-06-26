@@ -105,6 +105,7 @@ class MCPToolWrapper(Tool):
 
         # Extract user_key from user_context
         user_key = user_context.user_key if user_context else None
+        tenant_key = user_context.tenant_key if user_context else None
         if self._allowed_user_key and user_key != self._allowed_user_key:
             return (
                 f"[MCP_ERROR] Tool '{self.name}' is scoped to user "
@@ -118,10 +119,13 @@ class MCPToolWrapper(Tool):
         for attempt in range(self._max_retries):
             try:
                 call_attempts += 1
+                identity_kwargs = {"user_key": user_key}
+                if tenant_key:
+                    identity_kwargs["tenant_key"] = tenant_key
                 return await self._mcp_client.call_tool(
                     self._tool_name,
                     kwargs,
-                    user_key=user_key
+                    **identity_kwargs,
                 )
 
             except RuntimeError as e:

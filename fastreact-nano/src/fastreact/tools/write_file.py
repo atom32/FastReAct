@@ -5,10 +5,10 @@ Follows Pi's philosophy: Simple, focused tool.
 """
 
 import asyncio
-from pathlib import Path
 from typing import Any, Optional
 
 from fastreact.core.tools import Tool
+from fastreact.tools.path_guard import resolve_user_path
 
 
 class WriteFileTool(Tool):
@@ -79,11 +79,13 @@ class WriteFileTool(Tool):
         Returns:
             Success message
         """
-        file_path = Path(path)
+        file_path, path_error = resolve_user_path(path, user_context=user_context)
+        if path_error:
+            return path_error
 
         # Check protected paths
         for protected in self._protected_paths:
-            if file_path.match(protected):
+            if file_path and file_path.match(protected):
                 return f"[ERROR] Protected path, cannot write: {path}"
 
         # Check content size

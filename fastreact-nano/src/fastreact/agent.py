@@ -40,6 +40,7 @@ from fastreact.runtime import (
     SessionService,
     ToolExecutionService,
     SkillResolver,
+    PromptLayerResolver,
     MCPBootstrapper,
     StoreService,
     RunService,
@@ -134,7 +135,7 @@ class Agent:
         self._multitenant_enabled = multitenant
         self._multitenant = None
         if multitenant:
-            workspace_path = base_workspace or Path.cwd() / "workspace"
+            workspace_path = base_workspace or self._config.paths.workspaces_root
             self._multitenant = MultiTenantManager(workspace_path)
 
         # Initialize skills.
@@ -199,6 +200,7 @@ class Agent:
         self.sessions = SessionService(self)
         self.runtime = AgentRuntime(self)
         self.tool_executor = ToolExecutionService(self)
+        self.prompt_layers = PromptLayerResolver(self)
         self.skill_resolver = SkillResolver(self)
         self.mcp_bootstrapper = MCPBootstrapper(self)
 
@@ -412,18 +414,12 @@ class Agent:
             - base_prompt: Constant base system prompt (cacheable)
             - skills_content: Variable skills and tools content (injected as message)
         """
-        from fastreact.core.prompts import get_system_prompt
-
         # Get base system prompt (constant, cacheable)
-        base_prompt = get_system_prompt("core")
+        base_prompt = self.prompt_layers.base_prompt()
 
         # === Build Variable Content Section (skills + tools) ===
         # This will be injected as a separate system message to preserve cache
-        variable_content = ""
-
-        workspace_profile = self._load_workspace_profile_context()
-        if workspace_profile:
-            variable_content += workspace_profile
+        variable_content = self.prompt_layers.variable_prefix(user_context=user_context)
 
         # === Add Available Tools Section ===
         tools_section = "\n\n# Available Tools\nYou have access to the following tools:\n\n"
@@ -543,50 +539,11 @@ class Agent:
 
     def _load_workspace_profile_context(self, max_chars_per_file: int = 4000) -> str:
         """Load optional workspace profile files such as AGENTS.md or SOUL.md."""
-        roots = []
-        paths = getattr(self._config, "paths", None)
-        workspace = getattr(paths, "gateway_workspace", None)
-        if workspace:
-            roots.append(Path(workspace))
-        tool_working_dir = getattr(getattr(self._config, "tools", None), "working_dir", None)
-        if tool_working_dir:
-            roots.append(Path(tool_working_dir))
-        roots.append(Path.cwd())
-
-        seen_roots = []
-        for root in roots:
-            root = root.expanduser()
-            if root not in seen_roots:
-                seen_roots.append(root)
-
-        candidates = []
-        for root in seen_roots:
-            candidates.extend([
-                root / "AGENTS.md",
-                root / "SOUL.md",
-                root / ".fastreact" / "AGENT.md",
-                root / ".fastreact" / "SOUL.md",
-            ])
-
-        sections = []
-        seen_files = set()
-        for path in candidates:
-            if path in seen_files or not path.exists() or not path.is_file():
-                continue
-            seen_files.add(path)
-            try:
-                content = path.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            if not content.strip():
-                continue
-            if len(content) > max_chars_per_file:
-                content = content[:max_chars_per_file] + "\n[... workspace profile truncated ...]"
-            sections.append(f"## {path.name} ({path})\n{content.strip()}")
-
-        if not sections:
+        layers = self.prompt_layers.workspace_profile_layers(max_chars_per_file=max_chars_per_file)
+        if not layers:
             return ""
-        return "\n\n# Workspace Profile\nUse these local workspace instructions when they apply.\n\n" + "\n\n".join(sections)
+        rendered = "\n\n".join(layer.render() for layer in layers)
+        return "\n\n# Workspace Profile\nUse these local workspace instructions when they apply.\n\n" + rendered
 
     def enable_auto_skill_selection(self, max_skills: int = 3):
         """
@@ -818,21 +775,22 @@ class Agent:
         safe_server = re.sub(r"[^a-zA-Z0-9_]+", "_", server_name).strip("_") or "server"
         return f"user_{safe_user}_{safe_server}"
 
-    def _configured_mcp_servers(self, user_key: Optional[str] = None) -> list:
+    def _configured_mcp_servers(self, user_key: Optional[str] = None, tenant_key: Optional[str] = None) -> list:
         from fastreact.core.config import MCPServerConfig
 
         servers = list(self._config.mcp.servers or [])
         if not (self._multitenant_enabled and user_key and self._multitenant):
             return servers
 
-        user_context = self._multitenant.get_user_context(user_key)
+        user_context = self._multitenant.get_user_context(user_key, tenant_key=tenant_key)
         user_mcp = (user_context.config or {}).get("mcp", {})
         user_servers = user_mcp.get("servers", []) if isinstance(user_mcp, dict) else []
         for raw_server in user_servers:
             try:
                 server_config = raw_server if isinstance(raw_server, MCPServerConfig) else MCPServerConfig.from_dict(raw_server)
                 original_name = server_config.name
-                server_config.name = self._user_scoped_mcp_server_name(user_key, original_name)
+                identity_key = f"{tenant_key}:{user_key}" if tenant_key else user_key
+                server_config.name = self._user_scoped_mcp_server_name(identity_key, original_name)
                 server_config.allowed_user_key = user_key
                 self._mcp_user_scoped_server_names.add(server_config.name)
                 if not server_config.description:
@@ -846,6 +804,7 @@ class Agent:
         self,
         required_skills: Optional[list[str]] = None,
         user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
     ) -> None:
         """
         Load MCP servers from configuration
@@ -857,6 +816,7 @@ class Agent:
                            MCP servers that are associated with these skills or
                            have no skill association.
             user_key: Optional user identifier for loading workspace-scoped MCP configs.
+            tenant_key: Optional tenant identifier for workspace-scoped MCP configs.
         """
         if self._mcp_manager is None:
             # Create MCP manager based on multi-tenant mode
@@ -866,7 +826,7 @@ class Agent:
                 self._mcp_manager = MCPToolManager(self._tools)
 
         # Load servers from config
-        mcp_servers = self._configured_mcp_servers(user_key=user_key)
+        mcp_servers = self._configured_mcp_servers(user_key=user_key, tenant_key=tenant_key)
 
         # Build set of required MCP servers from skills
         required_mcp_servers = set()
@@ -879,7 +839,8 @@ class Agent:
         for server_config in mcp_servers:
             server_name = server_config.name if hasattr(server_config, 'name') else server_config.get("name", "unknown")
             is_user_scoped_server = server_name in self._mcp_user_scoped_server_names
-            server_key = f"{user_key}:{server_name}" if is_user_scoped_server else f"global:{server_name}"
+            identity_key = f"{tenant_key}:{user_key}" if tenant_key else user_key
+            server_key = f"{identity_key}:{server_name}" if is_user_scoped_server else f"global:{server_name}"
             if server_key in self._mcp_loaded_server_keys:
                 continue
 
@@ -1006,12 +967,14 @@ class Agent:
         self,
         required_skills: Optional[list[str]] = None,
         user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
     ) -> dict:
         """Reconnect configured MCP servers and refresh registered MCP tools."""
         await self.close_mcp_servers()
         result = await self.mcp_bootstrapper.ensure_loaded(
             required_skills=required_skills,
             user_key=user_key,
+            tenant_key=tenant_key,
         )
         return {
             "reloaded": True,
@@ -1026,6 +989,7 @@ class Agent:
         self,
         session_id: str,
         user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
         max_history: int = 50,
         followup_window_seconds: int = 30,
         max_queue_size: int = 5,
@@ -1065,7 +1029,7 @@ class Agent:
         if self._multitenant_enabled and user_key:
             # This will auto-create user workspace with proper directory structure
             # Exceptions will propagate to caller for validation
-            user_context = self._multitenant.get_user_context(user_key)
+            user_context = self._multitenant.get_user_context(user_key, tenant_key=tenant_key)
             logger.debug("Created/loaded workspace for user %s at %s", user_key, user_context.workspace)
 
         # Create new session
@@ -1079,6 +1043,7 @@ class Agent:
 
         # Set user_key for multi-tenant session tracking
         session.user_key = user_key
+        session.tenant_key = tenant_key or (user_context.tenant_key if user_context else None)
 
         # NEW: Store user_context in session for workspace access
         if user_context:
@@ -1200,6 +1165,7 @@ class Agent:
         self,
         session_id: str,
         user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
         max_history: int = 50,
         followup_window_seconds: int = 30,
         max_queue_size: int = 5,
@@ -1207,6 +1173,7 @@ class Agent:
         return self.sessions.create(
             session_id=session_id,
             user_key=user_key,
+            tenant_key=tenant_key,
             max_history=max_history,
             followup_window_seconds=followup_window_seconds,
             max_queue_size=max_queue_size,

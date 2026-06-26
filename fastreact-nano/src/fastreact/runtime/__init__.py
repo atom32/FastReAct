@@ -9,6 +9,7 @@ from fastreact.runtime.agent_runtime import AgentRuntime
 from fastreact.runtime.session_service import SessionService
 from fastreact.runtime.tool_execution_service import ToolExecutionService
 from fastreact.runtime.skill_resolver import SkillResolver
+from fastreact.runtime.prompt_layer_resolver import PromptLayerResolver
 from fastreact.runtime.mcp_bootstrapper import MCPBootstrapper
 from fastreact.runtime.timing import TimingSpan, now_ms
 from fastreact.runtime.store_service import StoreService
@@ -26,6 +27,7 @@ __all__ = [
     "SessionService",
     "ToolExecutionService",
     "SkillResolver",
+    "PromptLayerResolver",
     "MCPBootstrapper",
     "StoreService",
     "RunService",

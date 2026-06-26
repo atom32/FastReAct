@@ -62,8 +62,8 @@ def get_global_agent(
         if config is None:
             config = Config.load()
 
-        # Determine workspace
-        workspace_path = base_workspace or Path.cwd() / "workspace"
+        # Determine workspace root
+        workspace_path = base_workspace or config.paths.workspaces_root
 
         _global_agent = Agent(
             config=config,
@@ -155,6 +155,7 @@ class UserContext:
     config: dict
     skills_dir: Path
     memory_file: Path
+    tenant_key: str = ""
 
     # Optional: User-specific MCP manager for tool isolation
     mcp_manager: Optional["MCPToolManager"] = field(default=None)
@@ -218,12 +219,18 @@ class MultiTenantManager:
         # Ensure base workspace exists
         self._base_workspace.mkdir(parents=True, exist_ok=True)
 
-    def get_user_context(self, user_key: str) -> UserContext:
+    def _context_key(self, user_key: str, tenant_key: Optional[str] = None) -> str:
+        channel = user_key.split(":", 1)[0] if ":" in user_key else ""
+        effective_tenant = tenant_key or channel
+        return f"{effective_tenant}:{user_key}"
+
+    def get_user_context(self, user_key: str, tenant_key: Optional[str] = None) -> UserContext:
         """
         Get or create user context
 
         Args:
             user_key: User identifier in format "channel:user_id"
+            tenant_key: Optional tenant identifier. Defaults to the user_key channel.
 
         Returns:
             UserContext for the user
@@ -231,17 +238,19 @@ class MultiTenantManager:
         Raises:
             ValueError: If user_key format is invalid
         """
-        if user_key not in self._user_contexts:
-            self._user_contexts[user_key] = self._create_user_context(user_key)
+        context_key = self._context_key(user_key, tenant_key)
+        if context_key not in self._user_contexts:
+            self._user_contexts[context_key] = self._create_user_context(user_key, tenant_key=tenant_key)
 
-        return self._user_contexts[user_key]
+        return self._user_contexts[context_key]
 
-    def _create_user_context(self, user_key: str) -> UserContext:
+    def _create_user_context(self, user_key: str, tenant_key: Optional[str] = None) -> UserContext:
         """
         Create user workspace and configuration
 
         Args:
             user_key: User identifier
+            tenant_key: Optional tenant identifier. Defaults to the user_key channel.
 
         Returns:
             UserContext for the user
@@ -277,22 +286,28 @@ class MultiTenantManager:
                 f"User ID contains unsafe characters: '{user_id}'. "
                 f"Allowed: alphanumeric, _, @, ., =, +, -"
             )
+        effective_tenant_key = tenant_key or channel
+        if not self._SAFE_PATTERN.match(effective_tenant_key):
+            raise SecurityError(
+                f"Tenant key contains unsafe characters: '{effective_tenant_key}'. "
+                f"Allowed: alphanumeric, _, @, ., =, +, -"
+            )
 
         # SECURITY: Check for path traversal patterns explicitly
         dangerous_patterns = ["..", "~", "\x00"]
         for pattern in dangerous_patterns:
-            if pattern in channel or pattern in user_id:
+            if pattern in channel or pattern in user_id or pattern in effective_tenant_key:
                 raise SecurityError(
-                    f"Path traversal attempt detected in user_key: '{user_key}'"
+                    f"Path traversal attempt detected in tenant/user identity: '{effective_tenant_key}/{user_key}'"
                 )
 
         # Create workspace (sanitize user_id for filesystem)
-        # Replace colons with underscores (already validated safe above)
+        # Keep the channel prefix to avoid collisions between identity providers.
         safe_user_id = user_id.replace(":", "_")
         workspace_name = f"{channel}_{safe_user_id}"
 
         # SECURITY: Ensure workspace is within base_workspace
-        workspace = self._base_workspace / workspace_name
+        workspace = self._base_workspace / "tenants" / effective_tenant_key / "users" / workspace_name
         workspace = workspace.resolve()  # Normalize path
 
         # SECURITY: Verify workspace is contained within base_workspace
@@ -317,6 +332,9 @@ class MultiTenantManager:
         if config_file.exists():
             with open(config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
+            config.setdefault("tenant_key", effective_tenant_key)
+            config.setdefault("channel", channel)
+            config.setdefault("user_id", user_id)
 
             # Register with config manager for inheritance (Phase 2)
             if self._config_manager:
@@ -325,6 +343,7 @@ class MultiTenantManager:
             # Default config
             config = {
                 "user_key": user_key,
+                "tenant_key": effective_tenant_key,
                 "channel": channel,
                 "user_id": user_id,
                 "preferences": {
@@ -341,6 +360,7 @@ class MultiTenantManager:
 
         return UserContext(
             user_key=user_key,
+            tenant_key=effective_tenant_key,
             workspace=workspace,
             config=config,
             skills_dir=skills_dir,
@@ -349,19 +369,20 @@ class MultiTenantManager:
 
     def list_users(self) -> list[str]:
         """List all user keys that have been loaded"""
-        return list(self._user_contexts.keys())
+        return [context.user_key for context in self._user_contexts.values()]
 
-    def get_user_workspace(self, user_key: str) -> Path:
+    def get_user_workspace(self, user_key: str, tenant_key: Optional[str] = None) -> Path:
         """
         Get user workspace path
 
         Args:
             user_key: User identifier
+            tenant_key: Optional tenant identifier
 
         Returns:
             Path to user workspace
         """
-        context = self.get_user_context(user_key)
+        context = self.get_user_context(user_key, tenant_key=tenant_key)
         return context.workspace
 
     def update_user_config(
@@ -517,8 +538,9 @@ class MultiTenantManager:
                 del self._temp_users[user_key]
 
                 # Also remove from user contexts cache
-                if user_key in self._user_contexts:
-                    del self._user_contexts[user_key]
+                for context_key, context in list(self._user_contexts.items()):
+                    if context.user_key == user_key:
+                        del self._user_contexts[context_key]
 
                 logger.info("Cleaned expired temp user: %s", user_key)
             except Exception as e:

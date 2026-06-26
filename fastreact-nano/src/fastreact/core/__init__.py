@@ -4,7 +4,7 @@ Core modules for FastReAct Nano v2.0
 
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.react import ReActCore
-from fastreact.core.config import Config, LLMConfig, ToolConfig, ReactConfig
+from fastreact.core.config import AuthConfig, Config, LLMConfig, ToolConfig, ReactConfig
 from fastreact.core.credentials import Credentials, get_credentials
 from fastreact.core.context import ContextMonitor, ContextStats, FilesystemMemory, FilesystemNode
 from fastreact.core.safety import (
@@ -22,6 +22,7 @@ from fastreact.core.events import (
     AgentEvent,
     EventStream,
 )
+from fastreact.core.identity import IdentityContext, IdentityVerificationError
 from fastreact.core.session import AgentSession
 from fastreact.core.memory import MemoryManager
 from fastreact.core.multitenant import (
@@ -42,6 +43,7 @@ __all__ = [
     "ReActCore",
     # Config
     "Config",
+    "AuthConfig",
     "LLMConfig",
     "ToolConfig",
     "ReactConfig",
@@ -68,6 +70,9 @@ __all__ = [
     "EventType",
     "AgentEvent",
     "EventStream",
+    # Identity
+    "IdentityContext",
+    "IdentityVerificationError",
     # Session
     "AgentSession",
     # Memory

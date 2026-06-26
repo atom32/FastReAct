@@ -1,5 +1,10 @@
 # FastReAct 系统流程说明
 
+> Legacy reference: this page preserves historical WebSocket Gateway flow
+> sketches. The current FastReAct control plane is HTTP/SSE in
+> `fastreact.adapters.http`; `fastreact.adapters.gateway` is deprecated and is
+> not an active product surface.
+
 ## 系统架构概览
 
 ```

@@ -47,11 +47,17 @@ class ToolExecutionService:
         tool_params: dict[str, Any],
         session_id: str,
         user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
     ) -> tuple[SafetyDecision | None, AgentEvent | None]:
         if not self._agent._safety_policy:
             return None, None
 
-        decision = self._agent._safety_policy.check(tool_name=tool_name, args=tool_params, user_key=user_key)
+        decision = self._agent._safety_policy.check(
+            tool_name=tool_name,
+            args=tool_params,
+            user_key=user_key,
+            tenant_key=tenant_key,
+        )
         if decision.level != SafetyLevel.DANGER:
             return decision, None
 
@@ -176,7 +182,10 @@ class ToolExecutionService:
         started = perf_counter()
         if self._agent._safety_policy and decision is None:
             user_key = getattr(user_context, "user_key", None) if user_context else None
-            tenant_key = getattr(user_context, "tenant_id", None) if user_context else None
+            tenant_key = (
+                getattr(user_context, "tenant_key", None)
+                or getattr(user_context, "tenant_id", None)
+            ) if user_context else None
             decision = self._agent._safety_policy.check(
                 tool_name=tool_name,
                 args=tool_params,

@@ -1,22 +1,31 @@
+import base64
+import hashlib
+import hmac
+import json
+import time
+
 import pytest
 
 from fastreact.adapters.http import (
     SERVICE_EVENT_SCHEMA_VERSION,
     configured_service_token,
     create_app,
+    create_service_agent,
     extract_history,
     extract_query,
     get_agent,
     metrics_payload,
     readiness_payload,
+    run_server,
     service_event_payload,
     set_agent_for_testing,
+    set_auth_config,
     set_service_config,
     sse_frame,
     summarize_events,
 )
 from fastreact.agent import Agent
-from fastreact.core.config import Config, ExtensionConfig, LLMConfig, PathsConfig, ReactConfig, ServiceConfig, ToolConfig
+from fastreact.core.config import AuthConfig, Config, ExtensionConfig, LLMConfig, PathsConfig, ReactConfig, ServiceConfig, ToolConfig
 from fastreact.core.events import AgentEvent
 from fastreact.runtime.run_service import RunService
 
@@ -24,8 +33,10 @@ from fastreact.runtime.run_service import RunService
 @pytest.fixture(autouse=True)
 def reset_service_config():
     set_service_config(ServiceConfig())
+    set_auth_config(AuthConfig())
     yield
     set_service_config(ServiceConfig())
+    set_auth_config(AuthConfig())
 
 
 class FakeAgent:
@@ -74,6 +85,62 @@ class CapturingGenerationAgent(FakeAgent):
         self.captured_llm_options.append(dict(llm_options or {}))
         yield AgentEvent.session_start(query, session_id, skills=skills)
         yield AgentEvent.session_end(session_id, self.final_answer)
+
+
+class CapturingIdentityAgent(FakeAgent):
+    def __init__(self):
+        self.calls = []
+
+    async def run_event_stream(
+        self,
+        query,
+        skills=None,
+        session_id=None,
+        history=None,
+        user_key=None,
+        run_metadata=None,
+        llm_options=None,
+    ):
+        self.calls.append(
+            {
+                "query": query,
+                "session_id": session_id,
+                "user_key": user_key,
+                "run_metadata": dict(run_metadata or {}),
+                "llm_options": dict(llm_options or {}),
+            }
+        )
+        yield AgentEvent.session_start(query, session_id, skills=skills)
+        yield AgentEvent.session_end(session_id, "identity ok")
+
+
+def test_auth_config_reads_jwt_secret_from_named_env(monkeypatch):
+    monkeypatch.setenv("AUTHNODE_JWT_SECRET", "shared-secret")
+
+    config = AuthConfig.from_dict(
+        {
+            "mode": "jwt",
+            "jwt_secret_env": "AUTHNODE_JWT_SECRET",
+            "jwt_issuer": "authnode.local",
+            "jwt_audience": "fastreact",
+        }
+    )
+
+    assert config.mode == "jwt"
+    assert config.jwt_secret == "shared-secret"
+    assert config.jwt_secret_env == "AUTHNODE_JWT_SECRET"
+
+
+def signed_hs256_jwt(claims, secret="secret"):
+    def encode(value):
+        raw = json.dumps(value, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    header = encode({"typ": "JWT", "alg": "HS256"})
+    payload = encode(claims)
+    signature = hmac.new(secret.encode("utf-8"), f"{header}.{payload}".encode("utf-8"), hashlib.sha256).digest()
+    encoded_signature = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
+    return f"{header}.{payload}.{encoded_signature}"
 
 
 class FakeSkillMetadata:
@@ -477,6 +544,137 @@ def test_chat_completions_allowed_user_list_rejects_others():
     assert allowed.status_code == 200
 
 
+def test_chat_completions_trusted_headers_define_identity():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingIdentityAgent()
+    set_agent_for_testing(agent)
+    set_auth_config(AuthConfig(mode="trusted_headers"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={
+                "X-FastReAct-User-Key": "sso:alice",
+                "X-FastReAct-Tenant-Key": "acme",
+                "X-FastReAct-Display-Name": "Alice",
+                "X-FastReAct-Email": "alice@example.com",
+                "X-FastReAct-Roles": "reader,operator",
+                "X-FastReAct-Auth-Provider": "customer-gateway",
+            },
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "user_key": "web:ignored",
+                "metadata": {"run_id": "identity-run"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    assert agent.calls[0]["user_key"] == "sso:alice"
+    metadata = agent.calls[0]["run_metadata"]
+    assert metadata["tenant_key"] == "acme"
+    assert metadata["user_key"] == "sso:alice"
+    assert metadata["identity"]["roles"] == ["reader", "operator"]
+    assert metadata["identity"]["auth_provider"] == "customer-gateway"
+
+
+def test_chat_completions_trusted_headers_require_user_key():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    set_agent_for_testing(CapturingIdentityAgent())
+    set_auth_config(AuthConfig(mode="trusted_headers"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 401
+    assert "trusted identity header" in response.json()["detail"]
+
+
+def test_chat_completions_jwt_identity_claims_are_mapped():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingIdentityAgent()
+    token = signed_hs256_jwt(
+        {
+            "iss": "identity-broker",
+            "aud": "fastreact",
+            "sub": "alice",
+            "tenant_key": "acme",
+            "roles": ["reader"],
+            "groups": "research,ops",
+            "exp": int(time.time()) + 300,
+        }
+    )
+    set_agent_for_testing(agent)
+    set_auth_config(AuthConfig(mode="jwt", jwt_secret="secret", jwt_issuer="identity-broker", jwt_audience="fastreact"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "metadata": {"run_id": "jwt-run"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    assert agent.calls[0]["user_key"] == "sso:alice"
+    metadata = agent.calls[0]["run_metadata"]
+    assert metadata["tenant_key"] == "acme"
+    assert metadata["identity"]["groups"] == ["research", "ops"]
+    assert metadata["identity"]["roles"] == ["reader"]
+    assert metadata["identity"]["auth_provider"] == "identity-broker"
+
+
+def test_background_run_trusted_headers_persist_identity_metadata(tmp_path):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    fake_agent = FakeTaskAgent(tmp_path / "trusted-run-agent")
+    set_agent_for_testing(fake_agent)
+    set_auth_config(AuthConfig(mode="trusted_headers"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/runs",
+            headers={
+                "X-FastReAct-User-Key": "sso:bob",
+                "X-FastReAct-Tenant-Key": "beta",
+            },
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "metadata": {"run_id": "trusted-run"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    record = fake_agent.runs.get("trusted-run")
+    assert record["user_key"] == "sso:bob"
+    assert record["metadata"]["tenant_key"] == "beta"
+    assert record["metadata"]["identity"]["user_key"] == "sso:bob"
+
+
 def test_background_run_create_rate_limit_returns_429(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
@@ -515,12 +713,74 @@ def test_readiness_payload_has_deployment_contract_fields():
 
     assert payload["service_contract"] == SERVICE_EVENT_SCHEMA_VERSION
     assert payload["auth"]["required"] is True
+    assert payload["auth"]["mode"] == "service_token"
     assert payload["auth"]["header"] == "Authorization: Bearer <token>"
     assert payload["mcp"]["ready"] is True
     assert payload["mcp"]["servers"] == [{"name": "pska", "alive": True}]
     assert payload["mcp"]["tools"] == ["pska_search"]
     assert "model" in payload
     assert configured_service_token() == "service-secret"
+
+
+def test_http_service_agent_is_multitenant_by_default(tmp_path):
+    config = Config(
+        llm=LLMConfig(api_key="test-key", api_base="http://localhost:8000"),
+        paths=PathsConfig(
+            workspaces_root=tmp_path / "FastReAct_workspaces",
+            gateway_workspace=tmp_path / "single" / "default",
+        ),
+    )
+
+    agent = create_service_agent(config)
+    context = agent._multitenant.get_user_context("sso:alice", tenant_key="acme")
+    payload = readiness_payload(agent)
+
+    assert agent._multitenant_enabled is True
+    assert context.workspace == config.paths.workspaces_root / "tenants" / "acme" / "users" / "sso_alice"
+    assert payload["multitenant"]["enabled"] is True
+    assert payload["multitenant"]["workspaces_root"] == str(config.paths.workspaces_root)
+
+
+def test_run_server_initializes_multitenant_service_agent(tmp_path, monkeypatch):
+    config_path = tmp_path / "fastreact.json"
+    workspace_root = tmp_path / "FastReAct_workspaces"
+    config_path.write_text(
+        json.dumps(
+            {
+                "llm": {
+                    "api_key": "test-key",
+                    "api_base": "http://localhost:8000",
+                },
+                "service": {
+                    "host": "127.0.0.1",
+                    "port": 8766,
+                    "log_level": "critical",
+                },
+                "paths": {
+                    "workspaces_root": str(workspace_root),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    called = {}
+
+    def fake_uvicorn_run(app, **kwargs):
+        called["kwargs"] = kwargs
+
+    monkeypatch.setattr("fastreact.adapters.http.uvicorn.run", fake_uvicorn_run)
+
+    try:
+        run_server(config_path=str(config_path))
+        agent = get_agent()
+        context = agent._multitenant.get_user_context("sso:alice", tenant_key="acme")
+    finally:
+        set_agent_for_testing(None)
+
+    assert called["kwargs"]["port"] == 8766
+    assert agent._multitenant_enabled is True
+    assert context.workspace == workspace_root / "tenants" / "acme" / "users" / "sso_alice"
 
 
 def test_metrics_payload_summarizes_headless_service_state(tmp_path):
@@ -1259,6 +1519,14 @@ def test_workspace_profile_endpoint_reads_and_updates_profile(tmp_path):
         assert payload["workspace"] == str(workspace.resolve())
         agents_file = next(item for item in payload["files"] if item["name"] == "AGENTS.md")
         assert agents_file["content"] == "Use project rules."
+        assert agents_file["layer"] == "workspace_framework"
+        assert agents_file["source"] == "workspace"
+        assert agents_file["editable"] is True
+        assert agents_file["hash"] == hashlib.sha256("Use project rules.".encode("utf-8")).hexdigest()
+        soul_file = next(item for item in payload["files"] if item["name"] == "SOUL.md")
+        assert soul_file["layer"] == "persona"
+        assert payload["metadata"]["profile_version"] == "fastreact.workspace_profile.v2"
+        assert payload["metadata"]["precedence"] == ["workspace_framework", "persona"]
 
         updated = client.put(
             "/v1/workspace/profile",

@@ -287,6 +287,7 @@ class AgentRuntime:
         agent = self._agent
         budget_guard = DigestToolBudgetGuard(run_metadata)
         llm_options = {key: value for key, value in (llm_options or {}).items() if value is not None}
+        tenant_key = (run_metadata or {}).get("tenant_key")
 
         # Extract user_key from session_id if not provided
         if user_key is None and agent._multitenant_enabled and session_id:
@@ -299,7 +300,8 @@ class AgentRuntime:
         # Get user context if multi-tenant (must be before skill selection)
         user_context: Optional[UserContext] = None
         if agent._multitenant_enabled and user_key:
-            user_context = agent._multitenant.get_user_context(user_key)
+            user_context = agent._multitenant.get_user_context(user_key, tenant_key=tenant_key)
+            tenant_key = user_context.tenant_key
 
         # Auto-select skills if not specified and enabled
         if skills is None and agent._auto_select_skills:
@@ -311,7 +313,11 @@ class AgentRuntime:
         # Load MCP servers on first run (lazy initialization)
         # Pass selected skills to load only required MCP servers
         mcp_span = TimingSpan("mcp.bootstrap")
-        await agent.mcp_bootstrapper.ensure_loaded(required_skills=skills, user_key=user_key)
+        await agent.mcp_bootstrapper.ensure_loaded(
+            required_skills=skills,
+            user_key=user_key,
+            tenant_key=tenant_key,
+        )
 
         # Generate session_id if not provided
         session_id = session_id or str(uuid.uuid4())
@@ -324,9 +330,10 @@ class AgentRuntime:
         # Get or create session and set user_key
         session = agent.get_session(session_id)
         if not session:
-            session = agent.create_session(session_id, user_key=user_key)
+            session = agent.create_session(session_id, user_key=user_key, tenant_key=tenant_key)
         else:
             session.user_key = user_key
+            session.tenant_key = tenant_key
 
         # Set running status
         session.set_status("running")
@@ -648,6 +655,7 @@ class AgentRuntime:
                                 tool_params=tool_params,
                                 session_id=session_id,
                                 user_key=user_key,
+                                tenant_key=tenant_key,
                             )
                             approved = None
                             request_id = None

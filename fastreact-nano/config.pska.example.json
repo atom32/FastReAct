@@ -38,7 +38,8 @@
     "mcp_transport": "http"
   },
   "paths": {
-    "gateway_workspace": "~/fastreact-pska-workspace"
+    "workspaces_root": "~/FastReAct_workspaces",
+    "gateway_workspace": "~/FastReAct_workspaces/single/pska"
   },
   "react": {
     "max_iterations": 20,

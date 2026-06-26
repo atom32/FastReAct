@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastreact.core.tools import Tool
+from fastreact.tools.path_guard import user_working_dir
 
 
 class ExecTool(Tool):
@@ -88,13 +89,15 @@ class ExecTool(Tool):
             shell = True  # Use bash on Unix
 
         try:
+            working_dir = user_working_dir(self._working_dir, user_context=user_context)
+
             # Run command in subprocess
             process = await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 shell=shell,
-                cwd=str(self._working_dir),
+                cwd=str(working_dir),
             )
 
             # Wait with timeout

@@ -74,6 +74,7 @@ class AgentSession:
         self.created_at = utc_now()
         self.last_activity = utc_now()
         self.user_key: Optional[str] = None  # User identifier for multi-tenant
+        self.tenant_key: Optional[str] = None  # Tenant identifier for multi-tenant
         self.status: str = "idle"  # Session status: idle | running | closed
 
         # Agent reference (for execution)
@@ -490,6 +491,7 @@ class AgentSession:
         return {
             "session_id": self.session_id,
             "user_key": self.user_key,
+            "tenant_key": self.tenant_key,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
             "last_activity": self.last_activity.isoformat(),

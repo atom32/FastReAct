@@ -7,8 +7,10 @@ The local developer stack can also run the optional Next.js service console.
 - Service console: Next.js, optional local operator UI
 
 No external database is required for the current Nano service. Runtime
-control-plane data is stored as JSONL under `paths.gateway_workspace/.fastreact/`
-or `$FASTRACT_GATEWAY_WORKSPACE/.fastreact/`.
+control-plane data is stored as JSONL under the configured workspace. New
+deployments should use `paths.workspaces_root` (default
+`~/FastReAct_workspaces`); `paths.gateway_workspace` remains as a legacy
+single-workspace override.
 
 ## Configuration
 
@@ -57,7 +59,8 @@ Important settings:
 - `logs.http`, `logs.web`: local log files for `./start.sh`.
 - `pska.enabled`, `pska.archive`, `pska.refresh_config`, `pska.config_file`:
   PSKA linkage and optional generated-config refresh.
-- `paths.gateway_workspace`: workspace and JSONL store root.
+- `paths.workspaces_root`: public runtime workspace root, default `~/FastReAct_workspaces`.
+- `paths.gateway_workspace`: legacy single-workspace and JSONL store override.
 - `mcp.servers`: external MCP servers exposed to the agent.
 - `policy`: per-tool, per-tenant, and per-user execution policy.
 

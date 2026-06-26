@@ -18,19 +18,13 @@ fastreact-nano/
 │   │   └── per_user.json     # Per-user mode servers (isolated)
 │   └── README.md             # MCP server development guide
 │
-├── workspaces/               # User workspaces (Gateway single-tenant)
-│   └── default/              # Default Gateway workspace
-│       ├── config.json       # User configuration
-│       ├── memory.json       # Conversation memory
-│       └── skills/           # User-specific skills (override global)
-│
 ├── src/                      # Core Python code
 │   └── fastreact/
 │       ├── core/             # ReAct engine, tools, events
 │       ├── providers/        # LLM providers (litellm, etc.)
 │       ├── mcp/              # MCP tool management
 │       ├── skills/           # Skill discovery and loading
-│       ├── adapters/         # Gateway, Feishu adapters
+│       ├── adapters/         # HTTP/SSE and CLI adapters
 │       └── agent.py          # Main Agent orchestration
 │
 ├── examples/                 # Example code and demos
@@ -74,25 +68,25 @@ fastreact-nano/
 
 ## Single-Tenant vs Multi-Tenant Deployment
 
-### Gateway (Single-Tenant Mode)
+### Local Single-Workspace Mode
 
 **Use Case**: Development, testing, single-user deployments
 
-**Workspace Location**: `./workspaces/default/`
+**Workspace Location**: `~/FastReAct_workspaces/single/default/`
 
 **Characteristics**:
-- All resources within the project directory
+- Runtime data is outside the project directory
 - Single workspace for all users
 - Skills loaded from `skills/builtin/`
-- User-specific skills in `workspaces/default/skills/`
+- User-specific skills in `~/FastReAct_workspaces/single/default/skills/`
 - MCP servers from `mcp_servers/config/`
+- `paths.gateway_workspace` remains as a legacy explicit override
 
 **Configuration** (`~/.fastreact/config.json`):
 ```json
 {
-  "adapter": "gateway",
   "paths": {
-    "gateway_workspace": "./workspaces/default",
+    "workspaces_root": "~/FastReAct_workspaces",
     "global_skills_dir": "./skills/builtin",
     "user_skills_template": "{user_workspace}/skills",
     "global_mcp_config": "./mcp_servers/config/shared.json"
@@ -100,32 +94,28 @@ fastreact-nano/
 }
 ```
 
-### Feishu (Multi-Tenant Mode)
+### Multi-Tenant Mode
 
 **Use Case**: Production deployments, enterprise environments
 
-**Workspace Location**: `/var/fastreact/tenants/feishu/{user_id}/`
+**Workspace Location**: `~/FastReAct_workspaces/tenants/{tenant_key}/users/{safe_user_id}/`
 
 **Characteristics**:
-- Workspaces outside project directory (system-level)
+- Workspaces outside project directory
 - Each user gets isolated workspace
 - Skills loaded from `skills/builtin/` + user workspace
 - User-specific MCP configurations supported
-- Centralized management via Feishu bot
+- Tenant defaults to the prefix before `:` in `user_key` unless an authenticated identity provides `tenant_key`
 
 **Configuration** (`~/.fastreact/config.json`):
 ```json
 {
-  "adapter": "feishu",
-  "feishu": {
-    "enable_multitenant": true
-  },
   "paths": {
+    "workspaces_root": "~/FastReAct_workspaces",
     "global_skills_dir": "./skills/builtin",
     "user_skills_template": "{user_workspace}/skills",
     "global_mcp_config": "./mcp_servers/config/shared.json",
-    "user_mcp_config_template": "{user_workspace}/mcp_config.json",
-    "feishu_workspace_base": "/var/fastreact/tenants/feishu"
+    "user_mcp_config_template": "{user_workspace}/mcp_config.json"
   }
 }
 ```
@@ -192,10 +182,10 @@ mcp_servers/builtin/
 
 ## Workspace Directory Structure
 
-### Gateway Workspace
+### Local Single Workspace
 
 ```
-workspaces/default/
+~/FastReAct_workspaces/single/default/
 ├── config.json             # User configuration
 ├── memory.json             # Conversation history
 ├── skills/                 # User-specific skills (override global)
@@ -203,25 +193,30 @@ workspaces/default/
 └── mcp_config.json         # User-specific MCP servers (optional)
 ```
 
-### Feishu Multi-Tenant Workspaces
+### Multi-Tenant Workspaces
 
 ```
-/var/fastreact/tenants/feishu/
-├── ou_user_a/
-│   ├── config.json
-│   ├── memory.json
-│   ├── skills/
-│   └── mcp_config.json
-├── ou_user_b/
-│   └── ...
-└── ou_user_c/
-    └── ...
+~/FastReAct_workspaces/
+└── tenants/
+    └── acme/
+        └── users/
+            ├── sso_user_a/
+            │   ├── config.json
+            │   ├── memory.json
+            │   ├── skills/
+            │   └── mcp_config.json
+            └── sso_user_b/
+                └── ...
 ```
+
+Legacy `paths.gateway_workspace` can still point to an explicit single
+workspace for older deployments, but active multi-tenant layout is rooted at
+`paths.workspaces_root`.
 
 ## Configuration Priority Order
 
 For skills loading:
-1. User workspace skills (`workspaces/{user}/skills/`)
+1. User workspace skills (`~/FastReAct_workspaces/tenants/{tenant}/users/{user}/skills/`)
 2. Global built-in skills (`skills/builtin/`)
 3. Community skills (`skills/community/`)
 
@@ -244,8 +239,8 @@ export FASTRACT_MCP_CONFIG="./mcp_servers/config/shared.json"
 export FASTRACT_USER_MCP_CONFIG_TEMPLATE="{user_workspace}/mcp_config.json"
 
 # Workspaces
-export FASTRACT_GATEWAY_WORKSPACE="./workspaces/default"
-export FEISHU_BASE_WORKSPACE="/var/fastreact/tenants/feishu"
+export FASTREACT_WORKSPACES_ROOT="~/FastReAct_workspaces"
+export FASTREACT_GATEWAY_WORKSPACE="~/FastReAct_workspaces/single/default"  # legacy override
 ```
 
 ## Migration Guide
@@ -264,22 +259,21 @@ fastreact-nano/
 fastreact-nano/
 ├── skills/
 │   └── builtin/           # Built-in skills moved here
-└── workspaces/            # Renamed from workspace/
-    └── default/           # Default workspace
+└── src/
 ```
 
 **Migration Steps**:
 1. Existing skills automatically moved to `skills/builtin/`
-2. `workspace/` renamed to `workspaces/`
-3. User-specific configs updated automatically
-4. No manual intervention required
+2. Runtime workspace data should move outside the repo to `~/FastReAct_workspaces`
+3. Legacy `paths.gateway_workspace` can be kept temporarily for single-workspace deployments
+4. Multi-tenant deployments should adopt `tenants/{tenant}/users/{user}/`
 
 ## Best Practices
 
-1. **Development**: Use Gateway mode with `workspaces/default/`
-2. **Production**: Use Feishu mode with `/var/fastreact/tenants/`
+1. **Development**: Use local single-workspace mode with `~/FastReAct_workspaces/single/default/`
+2. **Production**: Use multi-tenant mode with `~/FastReAct_workspaces/tenants/{tenant}/users/{user}/`
 3. **Skills**: Add built-in skills to `skills/builtin/`
-4. **Customization**: Add user skills to `workspaces/{user}/skills/`
+4. **Customization**: Add user skills to `{user_workspace}/skills/`
 5. **MCP Servers**: Configure in `mcp_servers/config/` based on isolation needs
 
 ## See Also

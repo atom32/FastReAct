@@ -6,11 +6,10 @@ For complex operations, use Bash with sed/awk.
 """
 
 import asyncio
-import re
-from pathlib import Path
 from typing import Any, Optional
 
 from fastreact.core.tools import Tool
+from fastreact.tools.path_guard import resolve_user_path
 
 
 class EditFileTool(Tool):
@@ -87,10 +86,12 @@ class EditFileTool(Tool):
         Returns:
             Success message with number of replacements
         """
-        file_path = Path(path)
+        file_path, path_error = resolve_user_path(path, user_context=user_context)
+        if path_error:
+            return path_error
 
         # Check if file exists
-        if not file_path.exists():
+        if not file_path or not file_path.exists():
             return f"[ERROR] File not found: {path}"
 
         # Check file size

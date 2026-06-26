@@ -4,6 +4,7 @@
 > current headless service API, auth, policy, and MCP behavior, use
 > [HEADLESS_SERVICE.md](HEADLESS_SERVICE.md), [security.md](security.md), and
 > [MCP_CALLING_MECHANISM.md](MCP_CALLING_MECHANISM.md).
+> `fastreact.adapters.gateway` is deprecated; use the HTTP/SSE service adapter.
 
 **版本**: 2.4.2
 **更新日期**: 2025-02-19

@@ -44,7 +44,16 @@ except ImportError:  # pragma: no cover - exercised in minimal installs.
         return default
 
 from fastreact import Agent, Config
+from fastreact.core.config import AuthConfig
 from fastreact.core.events import AgentEvent
+from fastreact.core.identity import (
+    IdentityContext,
+    IdentityVerificationError,
+    infer_tenant_key,
+    list_claim,
+    verify_hs256_jwt,
+)
+from fastreact.runtime.prompt_layer_resolver import sha256_text, workspace_profile_spec
 from fastreact.runtime.run_service import RunService, TERMINAL_RUN_STATUSES
 
 
@@ -53,6 +62,7 @@ MAX_PAGE_LIMIT = 1000
 
 _agent: Optional[Agent] = None
 _service_config = None
+_auth_config: AuthConfig | None = None
 _run_tasks: dict[str, asyncio.Task] = {}
 _run_wakeup_task: Optional[asyncio.Task] = None
 _rate_limit_windows: dict[str, dict[str, float | int]] = {}
@@ -144,12 +154,23 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def create_service_agent(config: Config) -> Agent:
+    """Create the HTTP/SSE daemon agent with tenant-aware workspace isolation."""
+
+    return Agent(
+        config=config,
+        multitenant=True,
+        base_workspace=config.paths.workspaces_root,
+    )
+
+
 def get_agent() -> Agent:
     global _agent
     if _agent is None:
         config = Config.load()
         set_service_config(config.service)
-        _agent = Agent(config)
+        set_auth_config(config.auth)
+        _agent = create_service_agent(config)
     return _agent
 
 
@@ -166,6 +187,11 @@ def set_agent_for_testing(agent: Optional[Agent]) -> None:
 def set_service_config(config: Any) -> None:
     global _service_config
     _service_config = config
+
+
+def set_auth_config(config: AuthConfig | None) -> None:
+    global _auth_config
+    _auth_config = config
 
 
 def run_agent_event_stream(agent: Any, **kwargs: Any) -> AsyncIterator[AgentEvent]:
@@ -214,6 +240,118 @@ def require_service_auth(request: Request) -> None:  # type: ignore[valid-type]
     if bearer_token == expected or header_token == expected:
         return
     raise HTTPException(status_code=401, detail="FastReAct service token required")
+
+
+def current_auth_config(agent: Any | None = None) -> AuthConfig:
+    if _auth_config is not None:
+        return _auth_config
+    config = getattr(agent, "_config", None)
+    auth = getattr(config, "auth", None)
+    return auth if auth is not None else AuthConfig()
+
+
+def require_request_identity(
+    request: Request,  # type: ignore[valid-type]
+    chat_request: ChatRequest,
+    agent: Any | None = None,
+) -> IdentityContext:
+    auth_config = current_auth_config(agent)
+    mode = str(getattr(auth_config, "mode", "service_token") or "service_token").strip().lower()
+    if mode == "service_token":
+        require_service_auth(request)
+        metadata = dict(chat_request.metadata or {})
+        user_key = chat_request.user_key or ""
+        tenant_key = infer_tenant_key(user_key, metadata.get("tenant_key"))
+        return IdentityContext(
+            tenant_key=tenant_key,
+            user_key=user_key,
+            subject=user_key,
+            auth_provider="service_token",
+        )
+    if mode == "trusted_headers":
+        return identity_from_trusted_headers(request, auth_config)
+    if mode == "jwt":
+        return identity_from_jwt(request, auth_config)
+    raise HTTPException(status_code=500, detail=f"Unsupported auth mode: {mode}")
+
+
+def identity_from_trusted_headers(request: Request, auth_config: AuthConfig) -> IdentityContext:  # type: ignore[valid-type]
+    user_key = request.headers.get(auth_config.trusted_header_user_key, "").strip()
+    if not user_key:
+        raise HTTPException(status_code=401, detail="FastReAct trusted identity header required")
+    tenant_key = infer_tenant_key(
+        user_key,
+        request.headers.get(auth_config.trusted_header_tenant_key, "").strip(),
+    )
+    subject = request.headers.get(auth_config.trusted_header_subject, "").strip() or user_key
+    return IdentityContext(
+        tenant_key=tenant_key,
+        user_key=user_key,
+        subject=subject,
+        display_name=request.headers.get(auth_config.trusted_header_display_name, "").strip(),
+        email=request.headers.get(auth_config.trusted_header_email, "").strip(),
+        groups=list_claim(request.headers.get(auth_config.trusted_header_groups)),
+        roles=list_claim(request.headers.get(auth_config.trusted_header_roles)),
+        auth_provider=request.headers.get(auth_config.trusted_header_provider, "").strip() or "trusted_headers",
+    )
+
+
+def identity_from_jwt(request: Request, auth_config: AuthConfig) -> IdentityContext:  # type: ignore[valid-type]
+    secret = getattr(auth_config, "jwt_secret", None)
+    if not secret:
+        raise HTTPException(status_code=500, detail="JWT auth requires jwt_secret")
+    token = bearer_token_from_request(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Bearer JWT required")
+    try:
+        claims = verify_hs256_jwt(
+            token,
+            secret,
+            issuer=getattr(auth_config, "jwt_issuer", None),
+            audience=getattr(auth_config, "jwt_audience", None),
+        )
+    except IdentityVerificationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    subject = str(claims.get(getattr(auth_config, "jwt_user_claim", "sub")) or claims.get("sub") or "").strip()
+    if not subject:
+        raise HTTPException(status_code=401, detail="JWT subject claim required")
+    user_key = subject if ":" in subject else f"sso:{subject}"
+    tenant_key = ""
+    for claim_name in getattr(auth_config, "jwt_tenant_claims", []) or []:
+        value = claims.get(claim_name)
+        if value:
+            tenant_key = str(value).strip()
+            break
+    tenant_key = infer_tenant_key(user_key, tenant_key)
+    provider_claim = getattr(auth_config, "jwt_provider_claim", "iss")
+    return IdentityContext(
+        tenant_key=tenant_key,
+        user_key=user_key,
+        subject=subject,
+        display_name=str(claims.get(getattr(auth_config, "jwt_display_name_claim", "name")) or ""),
+        email=str(claims.get(getattr(auth_config, "jwt_email_claim", "email")) or ""),
+        groups=list_claim(claims.get(getattr(auth_config, "jwt_groups_claim", "groups"))),
+        roles=list_claim(claims.get(getattr(auth_config, "jwt_roles_claim", "roles"))),
+        auth_provider=str(claims.get(provider_claim) or "jwt"),
+    )
+
+
+def bearer_token_from_request(request: Request) -> str:  # type: ignore[valid-type]
+    authorization = request.headers.get("authorization", "")
+    bearer_prefix = "Bearer "
+    return authorization[len(bearer_prefix) :].strip() if authorization.startswith(bearer_prefix) else ""
+
+
+def metadata_with_identity(metadata: dict[str, Any] | None, identity: IdentityContext) -> dict[str, Any]:
+    merged = dict(metadata or {})
+    identity_metadata = identity.to_metadata()
+    if identity.tenant_key:
+        merged["tenant_key"] = identity.tenant_key
+    if identity.user_key:
+        merged["user_key"] = identity.user_key
+    merged["identity"] = identity_metadata["identity"]
+    return merged
 
 
 def require_rate_limit(user_key: Optional[str]) -> None:
@@ -604,12 +742,14 @@ def readiness_payload(agent: Agent) -> dict[str, Any]:
         mcp_servers.append({"name": "tools", "alive": False, "error": str(exc)})
 
     mcp_ready = bool(mcp_tools) or all(server.get("alive") for server in mcp_servers) if mcp_servers else False
+    auth_config = current_auth_config(agent)
     return {
         "status": "ready" if agent is not None and mcp_ready else "degraded",
         "agent_ready": agent is not None,
         "service_contract": SERVICE_EVENT_SCHEMA_VERSION,
         "auth": {
             "required": configured_service_token() is not None,
+            "mode": getattr(auth_config, "mode", "service_token"),
             "header": "Authorization: Bearer <token>",
             "alternate_header": "X-FastReAct-Service-Token",
         },
@@ -617,6 +757,10 @@ def readiness_payload(agent: Agent) -> dict[str, Any]:
             "name": getattr(getattr(config, "llm", None), "model", None),
             "api_base_configured": bool(getattr(getattr(config, "llm", None), "api_base", None)),
             "api_key_configured": bool(getattr(getattr(config, "llm", None), "api_key", None)),
+        },
+        "multitenant": {
+            "enabled": bool(getattr(agent, "_multitenant_enabled", False)),
+            "workspaces_root": str(getattr(getattr(config, "paths", None), "workspaces_root", "")),
         },
         "mcp": {
             "ready": mcp_ready,
@@ -631,7 +775,7 @@ def workspace_profile_root(agent: Any) -> Path:
     config = getattr(agent, "_config", None)
     paths = getattr(config, "paths", None)
     workspace = getattr(paths, "gateway_workspace", None) or getattr(paths, "workspace", None)
-    return Path(workspace) if workspace else Path.cwd() / "workspaces" / "default"
+    return Path(workspace) if workspace else Path.home() / "FastReAct_workspaces" / "single" / "default"
 
 
 def read_workspace_profile(agent: Any) -> dict[str, Any]:
@@ -643,7 +787,9 @@ def read_workspace_profile(agent: Any) -> dict[str, Any]:
         ".fastreact/SOUL.md": root / ".fastreact" / "SOUL.md",
     }
     profile_files = []
+    layer_order = []
     for name, path in files.items():
+        spec = workspace_profile_spec(name)
         exists = path.exists()
         content = ""
         error = None
@@ -652,6 +798,10 @@ def read_workspace_profile(agent: Any) -> dict[str, Any]:
                 content = path.read_text(encoding="utf-8")
             except OSError as exc:
                 error = str(exc)
+        content_hash = sha256_text(content) if exists and error is None else None
+        layer = spec.layer if spec else "unknown"
+        if exists and error is None and layer != "unknown" and layer not in layer_order:
+            layer_order.append(layer)
         profile_files.append(
             {
                 "name": name,
@@ -659,6 +809,10 @@ def read_workspace_profile(agent: Any) -> dict[str, Any]:
                 "exists": exists,
                 "size_bytes": path.stat().st_size if exists and path.is_file() else 0,
                 "content": content,
+                "hash": content_hash,
+                "layer": layer,
+                "source": spec.source if spec else "unknown",
+                "editable": bool(spec.editable) if spec else False,
                 "error": error,
             }
         )
@@ -667,6 +821,11 @@ def read_workspace_profile(agent: Any) -> dict[str, Any]:
         "workspace": str(root),
         "files": profile_files,
         "editable_files": ["AGENTS.md", "SOUL.md"],
+        "metadata": {
+            "profile_version": "fastreact.workspace_profile.v2",
+            "layers": layer_order,
+            "precedence": ["workspace_framework", "persona"],
+        },
     }
 
 
@@ -750,6 +909,7 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
             "recover_queued_runs": True,
         },
         "paths": {
+            "workspaces_root": "~/FastReAct_workspaces",
             "gateway_workspace": request.workspace,
         },
         "react": {
@@ -1169,7 +1329,9 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             "paths": {
                 "global_skills_dir": str(getattr(paths, "global_skills_dir", "")),
                 "user_skills_dir": str(getattr(paths, "user_skills_dir", "") or ""),
+                "workspaces_root": str(getattr(paths, "workspaces_root", "")),
                 "gateway_workspace": str(getattr(paths, "gateway_workspace", "")),
+                "gateway_workspace_legacy": True,
             },
             "metrics": metrics,
             "presets": {
@@ -1211,9 +1373,12 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request, chat_request: ChatRequest) -> Any:  # type: ignore[valid-type]
-        require_service_auth(request)
-        require_user_access(chat_request.user_key)
-        require_rate_limit(chat_request.user_key)
+        agent = get_agent()
+        identity = require_request_identity(request, chat_request, agent=agent)
+        request_user_key = identity.user_key or chat_request.user_key
+        run_metadata = metadata_with_identity(chat_request.metadata, identity)
+        require_user_access(request_user_key)
+        require_rate_limit(request_user_key)
         if not chat_request.messages:
             raise HTTPException(status_code=400, detail="No messages provided")
 
@@ -1222,7 +1387,6 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        agent = get_agent()
         run_id = str(chat_request.metadata.get("run_id") or uuid.uuid4())
         session_id = chat_request.session_id or str(uuid.uuid4())
         history = extract_history(chat_request.messages)
@@ -1238,8 +1402,8 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                     skills=chat_request.skills,
                     session_id=session_id,
                     history=history,
-                    user_key=chat_request.user_key,
-                    run_metadata=dict(chat_request.metadata or {}),
+                    user_key=request_user_key,
+                    run_metadata=run_metadata,
                     llm_options=generation_options,
                 ):
                     payload = service_event_payload(
@@ -1297,8 +1461,8 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
                 skills=chat_request.skills,
                 session_id=session_id,
                 history=history,
-                user_key=chat_request.user_key,
-                run_metadata=dict(chat_request.metadata or {}),
+                user_key=request_user_key,
+                run_metadata=run_metadata,
                 llm_options=generation_options,
             ):
                 payload = service_event_payload(
@@ -1339,9 +1503,12 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
 
     @app.post("/v1/runs")
     async def create_run(request: Request, chat_request: ChatRequest) -> dict[str, Any]:
-        require_service_auth(request)
-        require_user_access(chat_request.user_key)
-        require_rate_limit(chat_request.user_key)
+        agent = get_agent()
+        identity = require_request_identity(request, chat_request, agent=agent)
+        request_user_key = identity.user_key or chat_request.user_key
+        run_metadata = metadata_with_identity(chat_request.metadata, identity)
+        require_user_access(request_user_key)
+        require_rate_limit(request_user_key)
         if not chat_request.messages:
             raise HTTPException(status_code=400, detail="No messages provided")
         try:
@@ -1361,11 +1528,11 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             query=query,
             skills=chat_request.skills,
             history=extract_history(chat_request.messages),
-            user_key=chat_request.user_key,
-            metadata=dict(chat_request.metadata or {}),
+            user_key=request_user_key,
+            metadata=run_metadata,
             generation_options=generation_options,
         )
-        schedule_queued_runs(get_agent())
+        schedule_queued_runs(agent)
         return {"type": "run", **(runs.snapshot(run_id) or run_snapshot(record))}
 
     @app.get("/v1/runs")
@@ -1885,7 +2052,8 @@ def run_server(
 
     config = Config.load(Path(config_path).expanduser() if config_path else None)
     set_service_config(config.service)
-    set_agent_for_testing(Agent(config))
+    set_auth_config(config.auth)
+    set_agent_for_testing(create_service_agent(config))
     app = create_app()
     service = config.service
     uvicorn.run(

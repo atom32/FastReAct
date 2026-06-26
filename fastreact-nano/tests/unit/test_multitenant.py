@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fastreact.core.multitenant import MultiTenantManager, UserContext
+from fastreact.core.multitenant import MultiTenantManager, SecurityError, UserContext
 
 
 class TestUserContext:
@@ -30,6 +30,7 @@ class TestUserContext:
         assert context.config == {"test": "value"}
         assert context.skills_dir == Path("/tmp/skills")
         assert context.memory_file == Path("/tmp/memory.json")
+        assert context.tenant_key == ""
 
 
 class TestMultiTenantManager:
@@ -133,6 +134,7 @@ class TestMultiTenantManager:
                 config = json.load(f)
 
             assert config["user_key"] == "feishu:ou_xyz"
+            assert config["tenant_key"] == "feishu"
             assert config["channel"] == "feishu"
             assert config["user_id"] == "ou_xyz"
             assert "preferences" in config
@@ -193,8 +195,40 @@ class TestMultiTenantManager:
             user_workspace = manager.get_user_workspace("feishu:ou_workspace")
 
             # Check path (use resolve() for cross-platform compatibility)
-            expected = workspace / "feishu_ou_workspace"
+            expected = workspace / "tenants" / "feishu" / "users" / "feishu_ou_workspace"
             assert user_workspace == expected
+
+    def test_explicit_tenant_key_controls_workspace_layout(self):
+        """Explicit tenant_key should separate users from identity-provider prefixes."""
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir).resolve()
+            manager = MultiTenantManager(root)
+
+            context = manager.get_user_context("sso:alice", tenant_key="acme")
+
+            assert context.tenant_key == "acme"
+            assert context.workspace == root / "tenants" / "acme" / "users" / "sso_alice"
+            assert context.workspace.exists()
+
+    def test_same_user_key_can_exist_in_different_tenants(self):
+        """Context cache keys include tenant_key so tenants cannot share workspaces."""
+        with TemporaryDirectory() as tmpdir:
+            manager = MultiTenantManager(Path(tmpdir).resolve())
+
+            acme = manager.get_user_context("sso:alice", tenant_key="acme")
+            beta = manager.get_user_context("sso:alice", tenant_key="beta")
+
+            assert acme.workspace != beta.workspace
+            assert acme.tenant_key == "acme"
+            assert beta.tenant_key == "beta"
+
+    def test_invalid_tenant_key_is_rejected(self):
+        """Tenant keys must not be able to escape the workspace root."""
+        with TemporaryDirectory() as tmpdir:
+            manager = MultiTenantManager(Path(tmpdir).resolve())
+
+            with pytest.raises(SecurityError, match="Tenant key"):
+                manager.get_user_context("sso:alice", tenant_key="../acme")
 
     def test_update_user_config(self):
         """Manager should update user config"""

@@ -45,6 +45,20 @@ PY
     fi
   done
 
+  local default_config="$ROOT/.fastreact/config.json"
+  local default_template="$BACKEND/config.pska.example.json"
+  if [[ -f "$default_template" ]]; then
+    mkdir -p "$(dirname "$default_config")"
+    cp "$default_template" "$default_config"
+    echo -e "${YELLOW}Created local FastReAct config:${NC} $default_config"
+    python3 - "$default_config" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).expanduser().resolve())
+PY
+    return
+  fi
+
   echo -e "${RED}Missing FastReAct config.${NC}" >&2
   echo "Create one at $ROOT/.fastreact/config.json, or pass a path: ./start.sh /path/to/config.json" >&2
   exit 1
@@ -200,8 +214,10 @@ fi
 
 eval "$(read_service_config "$BACKEND_CONFIG")"
 
+FASTREACT_DIRECT_URL="http://${SERVICE_CHECK_HOST}:${SERVICE_PORT}"
+
 export PYTHONPATH="$BACKEND/src:${PYTHONPATH:-}"
-export NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL="http://${SERVICE_CHECK_HOST}:${SERVICE_PORT}"
+export NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL="${NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL:-$FASTREACT_DIRECT_URL}"
 
 echo -e "${BLUE}Starting FastReAct daemon...${NC}"
 (
@@ -257,6 +273,7 @@ if [[ "$WEB_ENABLED" == "true" ]]; then
 fi
 echo "Daemon health:   http://${SERVICE_CHECK_HOST}:${SERVICE_PORT}/health"
 echo "Daemon ready:    http://${SERVICE_CHECK_HOST}:${SERVICE_PORT}/ready"
+echo "Service API:     $NEXT_PUBLIC_FASTREACT_SERVICE_HTTP_URL"
 echo ""
 echo "Logs:"
 echo "  daemon: $HTTP_LOG"

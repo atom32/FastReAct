@@ -10,6 +10,15 @@ from pathlib import Path
 from typing import Optional, Any
 
 
+def _env_value(*names: str, default: str | None = None) -> str | None:
+    """Return the first non-empty environment variable value from names."""
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return default
+
+
 def _expand_path(path_str: str | Path) -> Path:
     """
     Expand user home directory (~) and environment variables in path.
@@ -265,17 +274,110 @@ class PathsConfig:
     user_skills_template: str = "{user_workspace}/skills"
     user_skills_dir: Optional[Path] = None  # User-defined skills directory
 
-    # Workspace
-    gateway_workspace: Path = field(default_factory=lambda: Path.cwd() / "workspaces" / "default")
+    # Runtime workspaces. gateway_workspace is retained for legacy single-workspace deployments.
+    workspaces_root: Path = field(default_factory=lambda: Path.home() / "FastReAct_workspaces")
+    gateway_workspace: Path = field(default_factory=lambda: Path.home() / "FastReAct_workspaces" / "single" / "default")
+
     @classmethod
     def from_env(cls) -> "PathsConfig":
         """Create paths config from environment variables"""
         user_skills_dir = os.getenv("FASTRACT_USER_SKILLS_DIR")
+        workspaces_root = _expand_path(
+            _env_value("FASTREACT_WORKSPACES_ROOT", "FASTRACT_WORKSPACES_ROOT", default=str(Path.home() / "FastReAct_workspaces"))
+        )
+        gateway_workspace = _env_value("FASTREACT_GATEWAY_WORKSPACE", "FASTRACT_GATEWAY_WORKSPACE")
         return cls(
             global_skills_dir=_expand_path(os.getenv("FASTRACT_SKILLS_DIR", str(Path.cwd() / "skills" / "builtin"))),
             user_skills_template=os.getenv("FASTRACT_USER_SKILLS_TEMPLATE", "{user_workspace}/skills"),
             user_skills_dir=_expand_path(user_skills_dir) if user_skills_dir else None,
-            gateway_workspace=_expand_path(os.getenv("FASTRACT_GATEWAY_WORKSPACE", str(Path.cwd() / "workspaces" / "default"))),
+            workspaces_root=workspaces_root,
+            gateway_workspace=_expand_path(gateway_workspace) if gateway_workspace else workspaces_root / "single" / "default",
+        )
+
+
+@dataclass
+class AuthConfig:
+    """Inbound identity verification boundary for HTTP/SSE deployments."""
+
+    mode: str = "service_token"
+    trusted_header_user_key: str = "X-FastReAct-User-Key"
+    trusted_header_tenant_key: str = "X-FastReAct-Tenant-Key"
+    trusted_header_subject: str = "X-FastReAct-Subject"
+    trusted_header_display_name: str = "X-FastReAct-Display-Name"
+    trusted_header_email: str = "X-FastReAct-Email"
+    trusted_header_groups: str = "X-FastReAct-Groups"
+    trusted_header_roles: str = "X-FastReAct-Roles"
+    trusted_header_provider: str = "X-FastReAct-Auth-Provider"
+    jwt_secret: Optional[str] = None
+    jwt_secret_env: Optional[str] = None
+    jwt_issuer: Optional[str] = None
+    jwt_audience: Optional[str] = None
+    jwt_algorithm: str = "HS256"
+    jwt_tenant_claims: list[str] = field(default_factory=lambda: ["tenant_key", "tenant", "org_id"])
+    jwt_user_claim: str = "sub"
+    jwt_display_name_claim: str = "name"
+    jwt_email_claim: str = "email"
+    jwt_groups_claim: str = "groups"
+    jwt_roles_claim: str = "roles"
+    jwt_provider_claim: str = "iss"
+
+    @classmethod
+    def from_env(cls) -> "AuthConfig":
+        return cls(
+            mode=os.getenv("FASTREACT_AUTH_MODE", "service_token"),
+            trusted_header_user_key=os.getenv("FASTREACT_AUTH_HEADER_USER_KEY", cls.trusted_header_user_key),
+            trusted_header_tenant_key=os.getenv("FASTREACT_AUTH_HEADER_TENANT_KEY", cls.trusted_header_tenant_key),
+            trusted_header_subject=os.getenv("FASTREACT_AUTH_HEADER_SUBJECT", cls.trusted_header_subject),
+            trusted_header_display_name=os.getenv("FASTREACT_AUTH_HEADER_DISPLAY_NAME", cls.trusted_header_display_name),
+            trusted_header_email=os.getenv("FASTREACT_AUTH_HEADER_EMAIL", cls.trusted_header_email),
+            trusted_header_groups=os.getenv("FASTREACT_AUTH_HEADER_GROUPS", cls.trusted_header_groups),
+            trusted_header_roles=os.getenv("FASTREACT_AUTH_HEADER_ROLES", cls.trusted_header_roles),
+            trusted_header_provider=os.getenv("FASTREACT_AUTH_HEADER_PROVIDER", cls.trusted_header_provider),
+            jwt_secret=os.getenv("FASTREACT_AUTH_JWT_SECRET"),
+            jwt_secret_env=os.getenv("FASTREACT_AUTH_JWT_SECRET_ENV"),
+            jwt_issuer=os.getenv("FASTREACT_AUTH_JWT_ISSUER"),
+            jwt_audience=os.getenv("FASTREACT_AUTH_JWT_AUDIENCE"),
+            jwt_algorithm=os.getenv("FASTREACT_AUTH_JWT_ALGORITHM", "HS256"),
+            jwt_tenant_claims=_csv_env_list("FASTREACT_AUTH_JWT_TENANT_CLAIMS") or ["tenant_key", "tenant", "org_id"],
+            jwt_user_claim=os.getenv("FASTREACT_AUTH_JWT_USER_CLAIM", "sub"),
+            jwt_display_name_claim=os.getenv("FASTREACT_AUTH_JWT_DISPLAY_NAME_CLAIM", "name"),
+            jwt_email_claim=os.getenv("FASTREACT_AUTH_JWT_EMAIL_CLAIM", "email"),
+            jwt_groups_claim=os.getenv("FASTREACT_AUTH_JWT_GROUPS_CLAIM", "groups"),
+            jwt_roles_claim=os.getenv("FASTREACT_AUTH_JWT_ROLES_CLAIM", "roles"),
+            jwt_provider_claim=os.getenv("FASTREACT_AUTH_JWT_PROVIDER_CLAIM", "iss"),
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AuthConfig":
+        tenant_claims = data.get("jwt_tenant_claims", ["tenant_key", "tenant", "org_id"])
+        if isinstance(tenant_claims, str):
+            tenant_claims = [item.strip() for item in tenant_claims.split(",") if item.strip()]
+        jwt_secret_env = data.get("jwt_secret_env")
+        jwt_secret = data.get("jwt_secret")
+        if not jwt_secret and jwt_secret_env:
+            jwt_secret = os.getenv(str(jwt_secret_env))
+        return cls(
+            mode=data.get("mode", "service_token"),
+            trusted_header_user_key=data.get("trusted_header_user_key", cls.trusted_header_user_key),
+            trusted_header_tenant_key=data.get("trusted_header_tenant_key", cls.trusted_header_tenant_key),
+            trusted_header_subject=data.get("trusted_header_subject", cls.trusted_header_subject),
+            trusted_header_display_name=data.get("trusted_header_display_name", cls.trusted_header_display_name),
+            trusted_header_email=data.get("trusted_header_email", cls.trusted_header_email),
+            trusted_header_groups=data.get("trusted_header_groups", cls.trusted_header_groups),
+            trusted_header_roles=data.get("trusted_header_roles", cls.trusted_header_roles),
+            trusted_header_provider=data.get("trusted_header_provider", cls.trusted_header_provider),
+            jwt_secret=jwt_secret,
+            jwt_secret_env=jwt_secret_env,
+            jwt_issuer=data.get("jwt_issuer"),
+            jwt_audience=data.get("jwt_audience"),
+            jwt_algorithm=data.get("jwt_algorithm", "HS256"),
+            jwt_tenant_claims=list(tenant_claims or ["tenant_key", "tenant", "org_id"]),
+            jwt_user_claim=data.get("jwt_user_claim", "sub"),
+            jwt_display_name_claim=data.get("jwt_display_name_claim", "name"),
+            jwt_email_claim=data.get("jwt_email_claim", "email"),
+            jwt_groups_claim=data.get("jwt_groups_claim", "groups"),
+            jwt_roles_claim=data.get("jwt_roles_claim", "roles"),
+            jwt_provider_claim=data.get("jwt_provider_claim", "iss"),
         )
 
 
@@ -497,7 +599,11 @@ class Config:
         FASTRACT_SKILLS_DIR: Global skills directory (default: ./skills/builtin)
         FASTRACT_USER_SKILLS_DIR: User skills directory (default: none)
         FASTRACT_USER_SKILLS_TEMPLATE: User skills path template (default: {user_workspace}/skills)
-        FASTRACT_GATEWAY_WORKSPACE: Daemon workspace path (default: ./workspaces/default)
+        FASTREACT_WORKSPACES_ROOT: Runtime workspace root (default: ~/FastReAct_workspaces)
+        FASTREACT_GATEWAY_WORKSPACE: Legacy single-workspace override (default: {workspaces_root}/single/default)
+        FASTREACT_AUTH_MODE: service_token, trusted_headers, or jwt (default: service_token)
+        FASTREACT_AUTH_JWT_SECRET: JWT shared secret for env-based config
+        FASTREACT_AUTH_JWT_SECRET_ENV: Name of the env var holding the JWT shared secret
         FASTRACT_EXTENSIONS_RUNTIME_RELOAD: Enable authenticated runtime extension reload (default: false)
         FASTRACT_EXTENSIONS_MCP_RELOAD: Enable runtime MCP reconnect/reload (default: false)
     """
@@ -508,6 +614,7 @@ class Config:
     mcp: MCPConfig = field(default_factory=MCPConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
     service: ServiceConfig = field(default_factory=ServiceConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
     extensions: ExtensionConfig = field(default_factory=ExtensionConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
 
@@ -522,6 +629,7 @@ class Config:
             mcp=MCPConfig.from_env(),
             paths=PathsConfig.from_env(),
             service=ServiceConfig.from_env(llm_config.api_key_file),
+            auth=AuthConfig.from_env(),
             extensions=ExtensionConfig.from_env(),
             policy=PolicyConfig.from_env(),
         )
@@ -669,17 +777,26 @@ class Config:
             paths_config = PathsConfig()
             if "paths" in data:
                 paths_data = data["paths"]
+                workspaces_root = _expand_path(
+                    paths_data.get("workspaces_root", str(Path.home() / "FastReAct_workspaces"))
+                )
+                gateway_workspace = paths_data.get("gateway_workspace")
                 paths_config = PathsConfig(
                     global_skills_dir=_expand_path(paths_data.get("global_skills_dir", str(Path.cwd() / "skills" / "builtin"))),
                     user_skills_template=paths_data.get("user_skills_template", "{user_workspace}/skills"),
                     user_skills_dir=_expand_path(paths_data.get("user_skills_dir")) if paths_data.get("user_skills_dir") else None,
-                    gateway_workspace=_expand_path(paths_data.get("gateway_workspace", str(Path.cwd() / "workspaces" / "default"))),
+                    workspaces_root=workspaces_root,
+                    gateway_workspace=_expand_path(gateway_workspace) if gateway_workspace else workspaces_root / "single" / "default",
                 )
 
             # Extract headless HTTP service configuration
             service_config = ServiceConfig()
             if "service" in data:
                 service_config = ServiceConfig.from_dict(data["service"], llm_config.api_key_file)
+
+            auth_config = AuthConfig()
+            if "auth" in data:
+                auth_config = AuthConfig.from_dict(data["auth"])
 
             extensions_config = ExtensionConfig()
             if "extensions" in data:
@@ -696,6 +813,7 @@ class Config:
                 mcp=mcp_config,
                 paths=paths_config,
                 service=service_config,
+                auth=auth_config,
                 extensions=extensions_config,
                 policy=policy_config,
             )

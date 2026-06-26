@@ -19,7 +19,7 @@ __author__ = "FastReAct Team"
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.react import ReActCore
 from fastreact.core.tools import Tool, ToolRegistry
-from fastreact.core.config import Config, ExtensionConfig, LLMConfig, ToolConfig, ReactConfig, MCPConfig, PolicyConfig
+from fastreact.core.config import AuthConfig, Config, ExtensionConfig, LLMConfig, ToolConfig, ReactConfig, MCPConfig, PolicyConfig
 from fastreact.core.context import ContextMonitor, ContextStats, FilesystemMemory, FilesystemNode
 from fastreact.core.safety import (
     SafetyLevel,
@@ -35,6 +35,7 @@ from fastreact.core.events import (
     AgentEvent,
     EventStream,
 )
+from fastreact.core.identity import IdentityContext, IdentityVerificationError
 
 # Provider
 from fastreact.providers.litellm import LiteLLMProvider
@@ -79,6 +80,7 @@ __all__ = [
     "ToolRegistry",
     # Config
     "Config",
+    "AuthConfig",
     "LLMConfig",
     "ToolConfig",
     "ReactConfig",
@@ -102,6 +104,8 @@ __all__ = [
     "EventType",
     "AgentEvent",
     "EventStream",
+    "IdentityContext",
+    "IdentityVerificationError",
     # Provider
     "LiteLLMProvider",
     # Tools

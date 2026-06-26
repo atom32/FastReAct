@@ -176,7 +176,7 @@ async def test_multitenant_shared_loader_passes_http_mcp_config():
 @pytest.mark.asyncio
 async def test_multitenant_agent_loads_user_workspace_http_mcp_config(tmp_path):
     workspace = tmp_path / "tenants"
-    user_workspace = workspace / "web_alice"
+    user_workspace = workspace / "tenants" / "web" / "users" / "web_alice"
     user_workspace.mkdir(parents=True)
     (user_workspace / "config.json").write_text(
         json.dumps(
@@ -250,6 +250,40 @@ async def test_user_scoped_mcp_tool_rejects_other_users(tmp_path):
     client.call_tool.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_mcp_tool_passes_tenant_and_user_to_http_client(tmp_path):
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value="ok")
+    wrapper = MCPToolWrapper(
+        tool_name="search",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="PSKA search",
+        parameters={},
+        transport="http",
+    )
+    workspace = tmp_path / "alice"
+    user = UserContext(
+        user_key="sso:alice",
+        tenant_key="acme",
+        workspace=workspace,
+        config={},
+        skills_dir=workspace / "skills",
+        memory_file=workspace / "memory.json",
+    )
+
+    result = await wrapper.execute(user_context=user, query="Atlas")
+
+    assert result == "ok"
+    client.call_tool.assert_awaited_once_with(
+        "search",
+        {"query": "Atlas"},
+        user_key="sso:alice",
+        tenant_key="acme",
+    )
+
+
 def test_http_client_uses_path_url_as_mcp_endpoint():
     client = StreamableHTTPMCPClient("http://127.0.0.1:8765/mcp")
 
@@ -260,3 +294,16 @@ def test_http_client_keeps_legacy_message_endpoint_for_root_url():
     client = StreamableHTTPMCPClient("http://127.0.0.1:8765")
 
     assert client._message_url() == "http://127.0.0.1:8765/message"
+
+
+@pytest.mark.asyncio
+async def test_http_client_includes_tenant_and_user_in_tool_call_params():
+    client = StreamableHTTPMCPClient("http://127.0.0.1:8765/mcp")
+    client._send_request = AsyncMock(return_value={"result": {"content": [{"type": "text", "text": "ok"}]}})
+
+    result = await client.call_tool("search", {"query": "Atlas"}, user_key="sso:alice", tenant_key="acme")
+
+    assert result == "ok"
+    request = client._send_request.await_args.args[0]
+    assert request["params"]["user_key"] == "sso:alice"
+    assert request["params"]["tenant_key"] == "acme"

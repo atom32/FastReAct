@@ -20,7 +20,7 @@ FastReAct Nano test suite coverage targets, analysis, and improvement strategies
 | **P0** | `core/multitenant.py` | >90% | ⚠️ ~75% |
 | **P0** | `mcp/multitenant_manager.py` | >85% | ⚠️ ~60% |
 | **P1** | `mcp/client.py` | >80% | ⚠️ ~70% |
-| **P1** | `adapters/gateway.py` | >75% | ⚠️ ~50% |
+| **P1** | HTTP/SSE service adapter | >75% | active |
 | **P1** | `tools/*.py` | >85% | ✅ ~85% |
 
 **Legend**:
@@ -177,21 +177,10 @@ pytest tests/integration/test_multitenant_mcp.py --cov=src/fastreact/mcp/multite
 
 ### Important Gaps (P1 - Should Fix)
 
-#### 6. Gateway WebSocket Adapter (`adapters/gateway.py`)
-**Current Coverage**: ~50%
-**Target**: >75%
-
-**Missing Tests**:
-- [ ] WebSocket session lifecycle
-- [ ] Real-time event streaming
-- [ ] Authentication and authorization
-- [ ] Concurrent connection handling
-- [ ] Session state management
-- [ ] Error recovery and reconnection
-
-**Impact**: Medium - Gateway reliability
-
-**Plan**: Add `tests/integration/test_gateway_websocket.py` (~150 lines)
+#### 6. HTTP/SSE Service Adapter (`adapters/http.py`)
+The legacy WebSocket gateway adapter is archived and is no longer an active
+coverage target. Current control-plane coverage should focus on HTTP/SSE chat,
+runs, approvals, policy, workspace profile, and auth contracts.
 
 ---
 
@@ -263,11 +252,11 @@ pytest tests/integration/test_multitenant_mcp.py --cov=src/fastreact/mcp/multite
 **Priority**: P1 gaps
 
 **Tasks**:
-1. Create `tests/integration/test_gateway_websocket.py`
-   - WebSocket lifecycle
-   - Real-time streaming
-   - Authentication
-   - Concurrent connections
+1. Extend HTTP/SSE service contracts
+   - Chat and run lifecycle
+   - SSE streaming
+   - Authentication and identity propagation
+   - Concurrent requests
 
 2. Create `tests/unit/test_tool_security.py`
    - File size limits
@@ -276,7 +265,7 @@ pytest tests/integration/test_multitenant_mcp.py --cov=src/fastreact/mcp/multite
    - Encoding errors
 
 **Expected Outcome**:
-- `adapters/gateway.py`: 50% → 75%
+- HTTP/SSE service adapter: maintain active contract coverage
 - `tools/*.py`: 85% → 90%
 
 ---

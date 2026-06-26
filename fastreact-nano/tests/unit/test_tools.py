@@ -9,7 +9,21 @@ import tempfile
 from pathlib import Path
 
 from fastreact.core.tools import Tool, ToolRegistry, ValidationError, EchoTool, AddTool
+from fastreact.core.multitenant import UserContext
 from fastreact.tools import ReadFileTool, WriteFileTool, ExecTool, EditFileTool
+
+
+def make_user_context(workspace: Path, user_key: str = "web:alice") -> UserContext:
+    workspace.mkdir(parents=True, exist_ok=True)
+    skills_dir = workspace / "skills"
+    skills_dir.mkdir(exist_ok=True)
+    return UserContext(
+        user_key=user_key,
+        workspace=workspace,
+        config={},
+        skills_dir=skills_dir,
+        memory_file=workspace / "memory.json",
+    )
 
 
 class TestTool:
@@ -161,6 +175,29 @@ class TestReadFileTool:
         finally:
             test_file.unlink()
 
+    @pytest.mark.asyncio
+    async def test_read_file_uses_user_workspace_for_relative_path(self, tmp_path):
+        """Test tenant-scoped relative reads resolve inside the user workspace."""
+        tool = ReadFileTool()
+        context = make_user_context(tmp_path / "alice")
+        (context.workspace / "note.txt").write_text("tenant note", encoding="utf-8")
+
+        result = await tool.execute(path="note.txt", user_context=context)
+
+        assert result == "tenant note"
+
+    @pytest.mark.asyncio
+    async def test_read_file_blocks_user_workspace_escape(self, tmp_path):
+        """Test tenant-scoped reads cannot escape the user workspace."""
+        tool = ReadFileTool()
+        context = make_user_context(tmp_path / "alice")
+        outside = tmp_path / "outside.txt"
+        outside.write_text("outside", encoding="utf-8")
+
+        result = await tool.execute(path=str(outside), user_context=context)
+
+        assert "[ERROR] Path outside user workspace" in result
+
 
 class TestWriteFileTool:
     """Test WriteFileTool"""
@@ -214,6 +251,28 @@ class TestWriteFileTool:
             actual = test_file.read_text(encoding="utf-8")
             assert actual == "new content"
 
+    @pytest.mark.asyncio
+    async def test_write_file_uses_user_workspace_for_relative_path(self, tmp_path):
+        """Test tenant-scoped writes resolve inside the user workspace."""
+        tool = WriteFileTool()
+        context = make_user_context(tmp_path / "alice")
+
+        result = await tool.execute(path="subdir/result.txt", content="tenant", user_context=context)
+
+        assert "[OK]" in result
+        assert (context.workspace / "subdir" / "result.txt").read_text(encoding="utf-8") == "tenant"
+
+    @pytest.mark.asyncio
+    async def test_write_file_blocks_user_workspace_escape(self, tmp_path):
+        """Test tenant-scoped writes cannot escape the user workspace."""
+        tool = WriteFileTool()
+        context = make_user_context(tmp_path / "alice")
+
+        result = await tool.execute(path="../outside.txt", content="nope", user_context=context)
+
+        assert "[ERROR] Path outside user workspace" in result
+        assert not (tmp_path / "outside.txt").exists()
+
 
 class TestExecTool:
     """Test ExecTool"""
@@ -239,6 +298,19 @@ class TestExecTool:
         result = await tool.execute(command="nonexistentcommand12345")
         # Error output varies by platform, just check for some indication
         assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_exec_uses_user_workspace_as_cwd(self, tmp_path):
+        """Test tenant-scoped exec runs inside the user workspace."""
+        tool = ExecTool(working_dir=tmp_path / "default")
+        context = make_user_context(tmp_path / "alice")
+
+        result = await tool.execute(
+            command=f'"{sys.executable}" -c "import os; print(os.getcwd())"',
+            user_context=context,
+        )
+
+        assert str(context.workspace.resolve()) in result
 
 
 class TestEditFileTool:
@@ -326,3 +398,21 @@ class TestEditFileTool:
             assert content == "dog dog dog\n"
         finally:
             test_file.unlink()
+
+    @pytest.mark.asyncio
+    async def test_edit_file_blocks_user_workspace_escape(self, tmp_path):
+        """Test tenant-scoped edits cannot escape the user workspace."""
+        tool = EditFileTool()
+        context = make_user_context(tmp_path / "alice")
+        outside = tmp_path / "outside.txt"
+        outside.write_text("old", encoding="utf-8")
+
+        result = await tool.execute(
+            path=str(outside),
+            old_text="old",
+            new_text="new",
+            user_context=context,
+        )
+
+        assert "[ERROR] Path outside user workspace" in result
+        assert outside.read_text(encoding="utf-8") == "old"

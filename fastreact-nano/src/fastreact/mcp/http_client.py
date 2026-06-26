@@ -157,6 +157,7 @@ class StreamableHTTPMCPClient:
         name: str,
         arguments: Dict[str, Any],
         user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
     ) -> str:
         """
         Call a tool on the MCP server
@@ -165,6 +166,7 @@ class StreamableHTTPMCPClient:
             name: Tool name
             arguments: Tool arguments
             user_key: User identifier for multi-tenant isolation (optional)
+            tenant_key: Tenant identifier for multi-tenant isolation (optional)
 
         Returns:
             Tool result as string
@@ -178,6 +180,8 @@ class StreamableHTTPMCPClient:
         # Add user_key if provided (for multi-tenant isolation)
         if user_key is not None:
             request_params["user_key"] = user_key
+        if tenant_key is not None:
+            request_params["tenant_key"] = tenant_key
 
         request = {
             "jsonrpc": "2.0",

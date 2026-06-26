@@ -25,6 +25,7 @@ class SessionService:
         self,
         session_id: Optional[str] = None,
         user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
         max_history: int = 50,
         followup_window_seconds: int = 30,
         max_queue_size: int = 5,
@@ -33,6 +34,7 @@ class SessionService:
         return self._agent._create_session_impl(
             session_id=session_id,
             user_key=user_key,
+            tenant_key=tenant_key,
             max_history=max_history,
             followup_window_seconds=followup_window_seconds,
             max_queue_size=max_queue_size,

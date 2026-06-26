@@ -37,6 +37,25 @@ def test_safety_policy_supports_tool_user_and_tenant_rules():
     assert operator_decision.requires_confirmation is True
 
 
+def test_safety_policy_uses_explicit_tenant_key_for_sso_users():
+    policy = SafetyPolicy(
+        policy_config={
+            "tenant_rules": {
+                "acme": {"tools": {"exec": "deny"}},
+                "beta": {"tools": {"exec": "allow"}},
+            },
+        }
+    )
+
+    acme_decision = policy.check("exec", {"command": "ls"}, user_key="sso:alice", tenant_key="acme")
+    beta_decision = policy.check("exec", {"command": "ls"}, user_key="sso:alice", tenant_key="beta")
+
+    assert acme_decision.level == SafetyLevel.FORBIDDEN
+    assert acme_decision.policy_scope == "tenant:acme"
+    assert beta_decision.level == SafetyLevel.SAFE
+    assert beta_decision.policy_scope == "tenant:beta"
+
+
 def test_config_loads_policy_block(tmp_path):
     config_file = tmp_path / "fastreact.json"
     config_file.write_text(
@@ -156,6 +175,13 @@ def test_headless_policy_inspection_and_dry_run_endpoints():
         assert policy_payload["policy_version"] == policy_payload["policy_snapshot_hash"]
         assert policy_payload["reload_supported"] is False
         assert "require_approval" in policy_payload["actions"]
+        assert policy_payload["priority"] == [
+            "user_rules",
+            "tenant_rules",
+            "tool_rules",
+            "default_action",
+            "built_in_safety",
+        ]
 
         denied = client.post(
             "/v1/policy/check",

@@ -5,10 +5,10 @@ Follows Pi's philosophy: Simple, focused tool.
 """
 
 import asyncio
-from pathlib import Path
 from typing import Any, Optional
 
 from fastreact.core.tools import Tool
+from fastreact.tools.path_guard import resolve_user_path
 
 
 class ReadFileTool(Tool):
@@ -90,10 +90,12 @@ class ReadFileTool(Tool):
         Returns:
             File contents
         """
-        file_path = Path(path)
+        file_path, path_error = resolve_user_path(path, user_context=user_context)
+        if path_error:
+            return path_error
 
         # Check if file exists
-        if not file_path.exists():
+        if not file_path or not file_path.exists():
             return f"[ERROR] File not found: {path}"
 
         if not file_path.is_file():

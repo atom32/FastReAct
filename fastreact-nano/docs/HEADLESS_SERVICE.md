@@ -35,6 +35,11 @@ Authorization: Bearer replace-with-local-service-token
 
 `GET /health` is public. Operational endpoints such as `/ready`, `/v1/setup`, `/v1/metrics`, runs, traces, tasks, approvals, policy, and workspace profile require service auth when a token is configured.
 
+For user-facing calls, `auth.mode` may be `service_token`, `trusted_headers`, or
+`jwt`. FastReAct does not provide a login page or password store; existing
+platforms or an external identity broker should authenticate the user and pass
+verified identity claims into FastReAct.
+
 ## Endpoint Map
 
 Public:
@@ -46,7 +51,7 @@ GET /v1/tools
 GET /v1/skills
 ```
 
-Protected when service auth is enabled:
+Protected by the configured service/user authentication mode:
 
 ```http
 GET /ready

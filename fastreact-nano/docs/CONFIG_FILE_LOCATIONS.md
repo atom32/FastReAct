@@ -71,7 +71,8 @@ For predictable deployments, pass `--config` explicitly or run through the repos
     ]
   },
   "paths": {
-    "gateway_workspace": "~/fastreact-workspace"
+    "workspaces_root": "~/FastReAct_workspaces",
+    "gateway_workspace": "~/FastReAct_workspaces/single/default"
   },
   "mcp": {
     "servers": []

@@ -10,11 +10,12 @@ FastReAct 当前主线是 `fastreact-nano`：一个面向 PSKA 和其他上层�
 
 ```bash
 cd /Users/xudawei/FastReAct
-mkdir -p .fastreact
-cp fastreact-nano/config.pska.example.json .fastreact/config.json
-# Edit .fastreact/config.json and set llm.api_key or llm.api_key_file.
 ./start.sh
 ```
+
+首次运行时如果还没有配置，脚本会自动创建
+`.fastreact/config.json`。FastReAct 的启动脚本只启动 FastReAct 本身，
+不会跨仓库启动 AuthNode 或 PSKA。
 
 默认地址：
 
@@ -23,11 +24,31 @@ Service console: http://127.0.0.1:3000/service
 HTTP daemon:     http://127.0.0.1:8000
 ```
 
-Daemon-only 运行：
+如果配置使用 AuthNode JWT（`auth.mode=jwt` 且 `auth.jwt_issuer=authnode.local`），
+请在 AuthNode、FastReAct、PSKA 各自仓库分别运行自己的 `./start.sh`。
+本地或容器部署时通过同一个 JWT secret、issuer/audience、反向代理或
+AuthNode proxy 把它们接起来；FastReAct 不读取 AuthNode 项目目录。
+
+FastReAct 配置可通过环境变量接收部署层注入的共享 secret：
+
+```json
+{
+  "auth": {
+    "mode": "jwt",
+    "jwt_secret_env": "AUTHNODE_JWT_SECRET",
+    "jwt_issuer": "authnode.local",
+    "jwt_audience": "fastreact",
+    "jwt_tenant_claims": ["tenant_key", "tenant_id", "tenant", "org_id"],
+    "jwt_user_claim": "sub"
+  }
+}
+```
+
+指定配置运行：
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
-python3 -m fastreact.adapters.http --config /Users/xudawei/FastReAct/.fastreact/config.json
+cd /Users/xudawei/FastReAct
+./start.sh /Users/xudawei/.fastreact/config.json
 ```
 
 完整文档入口：

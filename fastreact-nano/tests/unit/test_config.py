@@ -8,8 +8,10 @@ import tempfile
 from pathlib import Path
 
 from fastreact.core.config import (
+    AuthConfig,
     Config,
     LLMConfig,
+    PathsConfig,
     ServiceConfig,
     ToolConfig,
     ReactConfig,
@@ -75,6 +77,73 @@ class TestServiceConfig:
         assert config.port == 8000
         assert config.log_level == "info"
         assert config.service_token is None
+
+
+class TestPathsConfig:
+    """Test runtime workspace path configuration."""
+
+    def test_default_workspaces_root_is_home_fastreact_workspaces(self):
+        config = PathsConfig()
+
+        assert config.workspaces_root == Path.home() / "FastReAct_workspaces"
+        assert config.gateway_workspace == Path.home() / "FastReAct_workspaces" / "single" / "default"
+
+    def test_from_env_overrides_workspaces_root(self, monkeypatch, tmp_path):
+        root = tmp_path / "FastReAct_workspaces"
+        monkeypatch.setenv("FASTREACT_WORKSPACES_ROOT", str(root))
+        monkeypatch.delenv("FASTREACT_GATEWAY_WORKSPACE", raising=False)
+        monkeypatch.delenv("FASTRACT_GATEWAY_WORKSPACE", raising=False)
+
+        config = PathsConfig.from_env()
+
+        assert config.workspaces_root == root
+        assert config.gateway_workspace == root / "single" / "default"
+
+    def test_load_paths_config_can_override_root_and_legacy_gateway_workspace(self, tmp_path):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            """
+{
+  "paths": {
+    "workspaces_root": "%s",
+    "gateway_workspace": "%s"
+  }
+}
+"""
+            % (tmp_path / "root", tmp_path / "legacy"),
+            encoding="utf-8",
+        )
+
+        config = Config.load(config_path)
+
+        assert config.paths.workspaces_root == tmp_path / "root"
+        assert config.paths.gateway_workspace == tmp_path / "legacy"
+
+
+class TestAuthConfig:
+    """Test inbound identity configuration."""
+
+    def test_default_auth_mode_is_service_token(self):
+        config = AuthConfig()
+
+        assert config.mode == "service_token"
+        assert config.trusted_header_user_key == "X-FastReAct-User-Key"
+        assert config.jwt_tenant_claims == ["tenant_key", "tenant", "org_id"]
+
+    def test_from_dict_supports_jwt_claim_mapping(self):
+        config = AuthConfig.from_dict(
+            {
+                "mode": "jwt",
+                "jwt_secret": "secret",
+                "jwt_tenant_claims": "tenant,org_id",
+                "jwt_user_claim": "user_id",
+            }
+        )
+
+        assert config.mode == "jwt"
+        assert config.jwt_secret == "secret"
+        assert config.jwt_tenant_claims == ["tenant", "org_id"]
+        assert config.jwt_user_claim == "user_id"
 
 
 class TestToolConfig:

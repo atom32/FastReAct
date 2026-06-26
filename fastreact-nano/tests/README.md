@@ -9,7 +9,7 @@ The default gates are intentionally smaller than the historical suite:
 
 - **contracts**: event protocol, services, tool approval, JSONL store.
 - **quick**: contracts plus core runtime integration and critical unit tests.
-- **integration**: Gateway, MCP, and multitenant scenarios.
+- **integration**: HTTP/SSE runtime, MCP, and multitenant scenarios.
 - **release-llm**: manual real LLM efficiency gate, not run by default.
 - **diagnostics**: local scripts under `scripts/diagnostics/`, not collected by pytest.
 
@@ -24,7 +24,7 @@ python3 run_tests.py contracts
 # Quick release-safe check
 python3 run_tests.py quick
 
-# Gateway/MCP/multitenant integration
+# HTTP/SSE, MCP, and multitenant integration
 python3 run_tests.py integration
 
 # All release-safe backend tests
@@ -48,7 +48,6 @@ tests/
 ├── unit/                    # Fast unit tests
 ├── integration/
 │   ├── agent_runtime/       # ReAct loop and runtime service integration
-│   ├── gateway/             # HTTP/WebSocket control plane
 │   ├── mcp/                 # MCP integration and lifecycle
 │   └── multitenant/         # User isolation/concurrency
 └── release/                 # Release-only LLM gate documentation

@@ -128,6 +128,7 @@ class SimpleMCPClient:
         name: str,
         arguments: Dict[str, Any],
         user_key: Optional[str] = None,
+        tenant_key: Optional[str] = None,
     ) -> str:
         """
         Call a tool on the MCP server
@@ -136,6 +137,7 @@ class SimpleMCPClient:
             name: Tool name
             arguments: Tool arguments
             user_key: User identifier for multi-tenant isolation (optional)
+            tenant_key: Tenant identifier for multi-tenant isolation (optional)
 
         Returns:
             Tool result as string
@@ -149,6 +151,8 @@ class SimpleMCPClient:
         # Add user_key if provided (for multi-tenant isolation)
         if user_key is not None:
             request_params["user_key"] = user_key
+        if tenant_key is not None:
+            request_params["tenant_key"] = tenant_key
 
         await self._send_request({
             "jsonrpc": "2.0",
