@@ -65,6 +65,59 @@ class DuplicateDigestWriteLLM:
         return LLMResponse(content='{"ok": true, "write_calls": 1}')
 
 
+class CaptureToolsLLM:
+    def __init__(self):
+        self.tools_seen = []
+
+    async def chat(self, messages, tools=None, **kwargs):
+        self.tools_seen.append(tools or [])
+        return LLMResponse(content="No tools were visible.")
+
+
+class ForbiddenToolLLM:
+    def __init__(self):
+        self.calls = 0
+        self.tools_seen = []
+
+    async def chat(self, messages, tools=None, **kwargs):
+        self.calls += 1
+        self.tools_seen.append(tools or [])
+        if self.calls == 1:
+            return LLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="blocked-call",
+                        name="blocked_tool",
+                        params={"text": "should not execute"},
+                    )
+                ],
+            )
+        return LLMResponse(content="Recovered after policy denial.")
+
+
+class FakeNamedTool(Tool):
+    def __init__(self, name: str):
+        self._name = name
+        self.calls = []
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def description(self) -> str:
+        return f"Fake tool {self._name}."
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {"text": {"type": "string"}}, "required": []}
+
+    async def execute(self, user_context=None, **kwargs) -> str:
+        self.calls.append(kwargs)
+        return '{"ok": true}'
+
+
 class FakePskAWriteCandidatesTool(Tool):
     def __init__(self):
         self.calls = []
@@ -129,6 +182,75 @@ async def test_runtime_loop_executes_task_tool_and_records_spans(tmp_path):
         for span in agent.store.read("runtime_spans", session_id="runtime-loop-session")
     }
     assert {"context.assembly", "llm.step", "tool.execution"}.issubset(span_names)
+
+
+@pytest.mark.asyncio
+async def test_run_tool_policy_none_hides_all_tool_schemas(tmp_path):
+    agent = Agent(config=make_config(tmp_path), multitenant=False)
+    fake_llm = CaptureToolsLLM()
+    agent._llm = fake_llm
+    agent._core._llm = fake_llm
+
+    events = []
+    async for event in agent.run_event_stream(
+        "Answer without tools",
+        session_id="tool-policy-none-session",
+        run_metadata={"tool_policy": {"mode": "none"}},
+    ):
+        events.append(event)
+
+    assert fake_llm.tools_seen == [[]]
+    assert events[0].metadata["tool_policy"] == {"mode": "none", "allowed_tools": []}
+    assert events[0].metadata["visible_tools"] == []
+    assert events[-1].content == "No tools were visible."
+
+
+@pytest.mark.asyncio
+async def test_run_tool_policy_allowlist_hides_and_denies_forbidden_tools(tmp_path):
+    agent = Agent(config=make_config(tmp_path), multitenant=False)
+    fake_llm = ForbiddenToolLLM()
+    allowed_tool = FakeNamedTool("allowed_tool")
+    blocked_tool = FakeNamedTool("blocked_tool")
+    agent._llm = fake_llm
+    agent._core._llm = fake_llm
+    agent._tools.register(allowed_tool)
+    agent._tools.register(blocked_tool)
+
+    events = []
+    async for event in agent.run_event_stream(
+        "Try a forbidden tool",
+        session_id="tool-policy-allowlist-session",
+        run_metadata={
+            "tool_policy": {
+                "mode": "allowlist",
+                "allowed_tools": ["allowed_tool"],
+            }
+        },
+    ):
+        events.append(event)
+
+    first_tool_names = {
+        schema["function"]["name"]
+        for schema in fake_llm.tools_seen[0]
+    }
+    denied_results = [
+        event
+        for event in events
+        if event.type == EventType.TOOL_RESULT and event.metadata.get("tool_policy_denied")
+    ]
+    denied_calls = [
+        event
+        for event in events
+        if event.type == EventType.TOOL_CALL and event.metadata.get("tool_policy_denied")
+    ]
+
+    assert "allowed_tool" in first_tool_names
+    assert "blocked_tool" not in first_tool_names
+    assert denied_calls
+    assert denied_results
+    assert "[TOOL_POLICY_DENIED]" in denied_results[0].content
+    assert blocked_tool.calls == []
+    assert events[-1].content == "Recovered after policy denial."
 
 
 @pytest.mark.asyncio

@@ -582,6 +582,38 @@ def test_chat_completions_trusted_headers_define_identity():
     assert metadata["identity"]["auth_provider"] == "customer-gateway"
 
 
+def test_chat_completions_passes_tool_policy_to_runtime_metadata():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingIdentityAgent()
+    set_agent_for_testing(agent)
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "user_key": "web:alice",
+                "metadata": {"run_id": "tool-policy-chat-run"},
+                "tool_policy": {
+                    "mode": "allowlist",
+                    "allowed_tools": ["pska_pska_search", "pska_pska_index_status"],
+                },
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    metadata = agent.calls[0]["run_metadata"]
+    assert metadata["tool_policy"] == {
+        "mode": "allowlist",
+        "allowed_tools": ["pska_pska_search", "pska_pska_index_status"],
+    }
+
+
 def test_chat_completions_trusted_headers_require_user_key():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
@@ -673,6 +705,30 @@ def test_background_run_trusted_headers_persist_identity_metadata(tmp_path):
     assert record["user_key"] == "sso:bob"
     assert record["metadata"]["tenant_key"] == "beta"
     assert record["metadata"]["identity"]["user_key"] == "sso:bob"
+
+
+def test_background_run_persists_tool_policy_metadata(tmp_path):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    fake_agent = FakeTaskAgent(tmp_path / "tool-policy-agent")
+    set_agent_for_testing(fake_agent)
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/runs",
+            json={
+                "messages": [{"role": "user", "content": "answer without tools"}],
+                "metadata": {"run_id": "tool-policy-run"},
+                "tool_policy": {"mode": "none"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    record = fake_agent.runs.get("tool-policy-run")
+    assert record["metadata"]["tool_policy"] == {"mode": "none"}
 
 
 def test_background_run_create_rate_limit_returns_429(tmp_path):

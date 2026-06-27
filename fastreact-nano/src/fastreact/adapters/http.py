@@ -77,6 +77,7 @@ class ChatRequest(BaseModel):
     stream: bool = True
     session_id: Optional[str] = None
     skills: Optional[list[str]] = None
+    tool_policy: Optional[dict[str, Any]] = None
     user_key: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -351,6 +352,13 @@ def metadata_with_identity(metadata: dict[str, Any] | None, identity: IdentityCo
     if identity.user_key:
         merged["user_key"] = identity.user_key
     merged["identity"] = identity_metadata["identity"]
+    return merged
+
+
+def metadata_with_tool_policy(metadata: dict[str, Any], chat_request: ChatRequest) -> dict[str, Any]:
+    merged = dict(metadata or {})
+    if isinstance(chat_request.tool_policy, dict):
+        merged["tool_policy"] = dict(chat_request.tool_policy)
     return merged
 
 
@@ -1376,7 +1384,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         agent = get_agent()
         identity = require_request_identity(request, chat_request, agent=agent)
         request_user_key = identity.user_key or chat_request.user_key
-        run_metadata = metadata_with_identity(chat_request.metadata, identity)
+        run_metadata = metadata_with_tool_policy(metadata_with_identity(chat_request.metadata, identity), chat_request)
         require_user_access(request_user_key)
         require_rate_limit(request_user_key)
         if not chat_request.messages:
@@ -1506,7 +1514,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         agent = get_agent()
         identity = require_request_identity(request, chat_request, agent=agent)
         request_user_key = identity.user_key or chat_request.user_key
-        run_metadata = metadata_with_identity(chat_request.metadata, identity)
+        run_metadata = metadata_with_tool_policy(metadata_with_identity(chat_request.metadata, identity), chat_request)
         require_user_access(request_user_key)
         require_rate_limit(request_user_key)
         if not chat_request.messages:

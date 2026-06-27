@@ -47,6 +47,7 @@ Only protocol data crosses the boundary:
 - response summary: final answer, events, tool calls, duration, run id, session id
 - health/readiness: model config status, MCP readiness, loaded tools, dependency status
 - metrics: run status, latency, tool duration, approval duration, error summaries
+- tool policy: per-run visible and executable tool scope
 
 The boundary must not carry:
 
@@ -82,6 +83,10 @@ Request:
   "session_id": "optional-session-id",
   "user_key": "pska:user_primary",
   "skills": ["optional-skill-name"],
+  "tool_policy": {
+    "mode": "allowlist",
+    "allowed_tools": ["pska_pska_search", "pska_pska_index_status"]
+  },
   "metadata": {
     "caller": "pska",
     "run_id": "optional-report-run-id",
@@ -99,6 +104,19 @@ Rules:
 - `metadata.run_id` is optional; FastReAct generates one when absent.
 - `user_key` identifies the caller/user context for FastReAct session and workspace isolation.
 - PSKA-specific identity should be duplicated in `metadata.pska_user_id` when PSKA tools need it.
+- `tool_policy={"mode":"none"}` hides all tool schemas from the model and denies all tool calls at execution time.
+- `tool_policy={"mode":"allowlist","allowed_tools":[...]}` exposes and executes only the named tools. Denied calls are recorded in the run trace.
+
+For Ask PSKA deep QA, FastReAct should receive only PSKA read-only tools:
+
+```json
+{
+  "mode": "allowlist",
+  "allowed_tools": ["pska_pska_search", "pska_pska_index_status"]
+}
+```
+
+FastReAct must enforce this both when building model tool schemas and when executing tool calls. This is a runtime boundary, not a prompt convention.
 
 ## Streaming Event
 

@@ -8,6 +8,7 @@ from typing import AsyncIterator, Optional, TYPE_CHECKING
 from fastreact.runtime.timing import TimingSpan
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.multitenant import UserContext
+from fastreact.runtime.tool_policy import filter_tool_registry, normalize_tool_policy, tool_policy_denial
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +289,7 @@ class AgentRuntime:
         budget_guard = DigestToolBudgetGuard(run_metadata)
         llm_options = {key: value for key, value in (llm_options or {}).items() if value is not None}
         tenant_key = (run_metadata or {}).get("tenant_key")
+        run_tool_policy = normalize_tool_policy((run_metadata or {}).get("tool_policy"))
 
         # Extract user_key from session_id if not provided
         if user_key is None and agent._multitenant_enabled and session_id:
@@ -313,11 +315,12 @@ class AgentRuntime:
         # Load MCP servers on first run (lazy initialization)
         # Pass selected skills to load only required MCP servers
         mcp_span = TimingSpan("mcp.bootstrap")
-        await agent.mcp_bootstrapper.ensure_loaded(
-            required_skills=skills,
-            user_key=user_key,
-            tenant_key=tenant_key,
-        )
+        if run_tool_policy.mode != "none":
+            await agent.mcp_bootstrapper.ensure_loaded(
+                required_skills=skills,
+                user_key=user_key,
+                tenant_key=tenant_key,
+            )
 
         # Generate session_id if not provided
         session_id = session_id or str(uuid.uuid4())
@@ -325,7 +328,15 @@ class AgentRuntime:
         # Prepend user_key to session_id for multi-tenant
         if user_context and ":" not in session_id:
             session_id = f"{user_key}:{session_id}"
-        self._record_span(session_id, "mcp.bootstrap", mcp_span, skills=skills or [])
+        run_tools = filter_tool_registry(agent._tools, run_tool_policy)
+        self._record_span(
+            session_id,
+            "mcp.bootstrap",
+            mcp_span,
+            skills=skills or [],
+            tool_policy=run_tool_policy.to_metadata(),
+            visible_tools=run_tools.list_all(),
+        )
 
         # Get or create session and set user_key
         session = agent.get_session(session_id)
@@ -345,7 +356,10 @@ class AgentRuntime:
 
         try:
             # Emit SESSION_START with skills information
-            yield AgentEvent.session_start(query, session_id, skills=skills)
+            session_start = AgentEvent.session_start(query, session_id, skills=skills)
+            session_start.metadata["tool_policy"] = run_tool_policy.to_metadata()
+            session_start.metadata["visible_tools"] = run_tools.list_all()
+            yield session_start
 
             # Validate and clean history
             messages = agent._validate_history(history)
@@ -364,7 +378,14 @@ class AgentRuntime:
             # Inject skills content as a separate system message at the START of messages
             # This keeps base_prompt constant (cacheable) while providing skills context
             messages.insert(0, {"role": "system", "content": skills_content})
-            self._record_span(session_id, "context.assembly", context_span, skills=skills or [])
+            self._record_span(
+                session_id,
+                "context.assembly",
+                context_span,
+                skills=skills or [],
+                tool_policy=run_tool_policy.to_metadata(),
+                visible_tools=run_tools.list_all(),
+            )
 
             # Use base_prompt for Core (constant, cacheable)
             system_prompt = base_prompt
@@ -515,9 +536,23 @@ class AgentRuntime:
                         session_id=session_id,
                         system_prompt=system_prompt,  # Pass skills-enhanced prompt
                         llm_options=llm_options,
+                        tools=run_tools,
                     ):
                         # Collect TOOL_CALL events for execution
                         if event.type == EventType.TOOL_CALL:
+                            denial = tool_policy_denial(event.tool_name or "", run_tool_policy)
+                            if denial:
+                                event.metadata["tool_policy_denied"] = True
+                                event.metadata["tool_policy"] = run_tool_policy.to_metadata()
+                                event.metadata["denial_reason"] = denial
+                                yield event
+                                tool_calls.append({
+                                    "id": event.metadata.get("call_id", ""),
+                                    "name": event.tool_name,
+                                    "arguments": event.tool_args,
+                                    "tool_policy_denied": denial,
+                                })
+                                continue
                             validation_error = budget_guard.validate(event.tool_name or "", event.tool_args)
                             if validation_error:
                                 yield event
@@ -591,6 +626,24 @@ class AgentRuntime:
                             tool_params = tool_call.get("arguments", {})
                             call_id = tool_call.get("id", "")
                             validation_error = tool_call.get("validation_error")
+                            tool_policy_denied = tool_call.get("tool_policy_denied")
+
+                            if tool_policy_denied:
+                                result = f"[TOOL_POLICY_DENIED] {tool_policy_denied}"
+                                result_event = AgentEvent.tool_result(tool_name, result, session_id)
+                                result_event.metadata.update({
+                                    "request_id": call_id,
+                                    "tool_policy_denied": True,
+                                    "tool_policy": run_tool_policy.to_metadata(),
+                                    "denial_reason": tool_policy_denied,
+                                })
+                                yield result_event
+                                messages.append(Message.tool(
+                                    name=tool_name,
+                                    result=result,
+                                    call_id=call_id,
+                                ).to_llm_format())
+                                continue
 
                             if validation_error:
                                 result = f"[PSKA_DIGEST_VALIDATION_ERROR] {validation_error}"

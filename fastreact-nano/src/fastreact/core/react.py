@@ -76,6 +76,7 @@ class ReActCore:
         session_id: str,
         system_prompt: Optional[str] = None,
         llm_options: Optional[dict[str, Any]] = None,
+        tools: Optional[ToolRegistry] = None,
     ) -> AsyncIterator["AgentEvent"]:
         """
         Single reasoning step: Ask LLM, Emit Intent
@@ -147,9 +148,10 @@ class ReActCore:
 
             # Call LLM
             try:
+                tool_registry = tools or self._tools
                 response = await self._llm.chat(
                     messages_for_llm,
-                    tools=self._tools.schemas(),
+                    tools=tool_registry.schemas(),
                     **(llm_options or {}),
                 )
             except Exception as e:
