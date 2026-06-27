@@ -35,6 +35,13 @@ For user-facing deployments, configure `auth.mode`:
 - `jwt`: FastReAct verifies a JWT from an external platform or identity broker
   and maps claims into `tenant_key` and `user_key`.
 
+If `service.service_token` is configured, service-to-service callers such as
+PSKA may use `X-FastReAct-Service-Token` with `auth.mode=trusted_headers` or
+`auth.mode=jwt`. This bypass is only for trusted backends that already verified
+the browser session; the request body must carry `user_key` and, for explicit
+tenant isolation, `metadata.tenant_key`. FastReAct records this as
+`auth_provider=service_token` in run metadata.
+
 Customer SSO should live outside FastReAct. Use the customer's existing platform
 or a small OIDC/SAML/LDAP identity broker to authenticate users, then send
 FastReAct verified headers or a JWT. PSKA receives the same `tenant_key` and

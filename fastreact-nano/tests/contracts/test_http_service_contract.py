@@ -114,6 +114,29 @@ class CapturingIdentityAgent(FakeAgent):
         yield AgentEvent.session_end(session_id, "identity ok")
 
 
+class PSKAAskStreamAgent(FakeAgent):
+    async def run_event_stream(
+        self,
+        query,
+        skills=None,
+        session_id=None,
+        history=None,
+        user_key=None,
+        run_metadata=None,
+        llm_options=None,
+    ):
+        yield AgentEvent.session_start(query, session_id, skills=skills)
+        yield AgentEvent.think("Understanding the PSKA question and planning retrieval.", session_id)
+        yield AgentEvent.tool_call("pska_pska_search", {"query": "acme", "top_k": 8}, session_id, call_id="pska-search-1")
+        yield AgentEvent.tool_result(
+            "pska_pska_search",
+            '{"results":[{"title":"Acme"}],"citations":[{"source_item_id":"src_1","title":"Acme"}]}',
+            session_id,
+        )
+        yield AgentEvent.think("Reviewing retrieved evidence before final synthesis.", session_id)
+        yield AgentEvent.session_end(session_id, "Acme is covered by the cited PSKA evidence.")
+
+
 def test_auth_config_reads_jwt_secret_from_named_env(monkeypatch):
     monkeypatch.setenv("AUTHNODE_JWT_SECRET", "shared-secret")
 
@@ -614,6 +637,41 @@ def test_chat_completions_passes_tool_policy_to_runtime_metadata():
     }
 
 
+def test_pska_ask_stream_exposes_agentic_search_sequence():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    set_agent_for_testing(PSKAAskStreamAgent())
+    try:
+        client = testclient.TestClient(create_app())
+        with client.stream(
+            "POST",
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "请分析 acme"}],
+                "stream": True,
+                "skills": ["pska_answer_with_citations"],
+                "metadata": {"run_id": "pska-ask-stream-run"},
+                "tool_policy": {
+                    "mode": "allowlist",
+                    "allowed_tools": ["pska_pska_search", "pska_pska_index_status"],
+                },
+            },
+        ) as response:
+            body = response.read().decode("utf-8")
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    assert "event: session_start" in body
+    assert "event: think" in body
+    assert "event: tool_call" in body
+    assert "event: tool_result" in body
+    assert "event: session_end" in body
+    assert "pska_pska_search" in body
+    assert "Acme is covered by the cited PSKA evidence." in body
+
+
 def test_chat_completions_trusted_headers_require_user_key():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
@@ -677,6 +735,68 @@ def test_chat_completions_jwt_identity_claims_are_mapped():
     assert metadata["identity"]["auth_provider"] == "identity-broker"
 
 
+def test_chat_completions_jwt_mode_accepts_service_token_identity():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingIdentityAgent()
+    set_agent_for_testing(agent)
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="jwt", jwt_secret="secret"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "user_key": "pska:user_primary",
+                "metadata": {"run_id": "jwt-service-token-run", "tenant_key": "tenant_default"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    assert agent.calls[0]["user_key"] == "pska:user_primary"
+    metadata = agent.calls[0]["run_metadata"]
+    assert metadata["tenant_key"] == "tenant_default"
+    assert metadata["user_key"] == "pska:user_primary"
+    assert metadata["identity"]["tenant_key"] == "tenant_default"
+    assert metadata["identity"]["user_key"] == "pska:user_primary"
+    assert metadata["identity"]["auth_provider"] == "service_token"
+
+
+def test_chat_completions_trusted_headers_mode_accepts_service_token_identity():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingIdentityAgent()
+    set_agent_for_testing(agent)
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "user_key": "pska:user_primary",
+                "metadata": {"run_id": "headers-service-token-run", "tenant_key": "tenant_default"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    metadata = agent.calls[0]["run_metadata"]
+    assert metadata["tenant_key"] == "tenant_default"
+    assert metadata["identity"]["auth_provider"] == "service_token"
+
+
 def test_background_run_trusted_headers_persist_identity_metadata(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
@@ -705,6 +825,35 @@ def test_background_run_trusted_headers_persist_identity_metadata(tmp_path):
     assert record["user_key"] == "sso:bob"
     assert record["metadata"]["tenant_key"] == "beta"
     assert record["metadata"]["identity"]["user_key"] == "sso:bob"
+
+
+def test_background_run_jwt_mode_accepts_service_token_identity(tmp_path):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    fake_agent = FakeTaskAgent(tmp_path / "jwt-service-run-agent")
+    set_agent_for_testing(fake_agent)
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="jwt", jwt_secret="secret"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/runs",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "user_key": "pska:user_primary",
+                "metadata": {"run_id": "jwt-service-token-background-run", "tenant_key": "tenant_default"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    record = fake_agent.runs.get("jwt-service-token-background-run")
+    assert record["user_key"] == "pska:user_primary"
+    assert record["metadata"]["tenant_key"] == "tenant_default"
+    assert record["metadata"]["identity"]["auth_provider"] == "service_token"
 
 
 def test_background_run_persists_tool_policy_metadata(tmp_path):

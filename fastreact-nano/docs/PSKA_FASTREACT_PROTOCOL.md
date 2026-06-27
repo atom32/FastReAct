@@ -118,6 +118,11 @@ For Ask PSKA deep QA, FastReAct should receive only PSKA read-only tools:
 
 FastReAct must enforce this both when building model tool schemas and when executing tool calls. This is a runtime boundary, not a prompt convention.
 
+PSKA may translate FastReAct raw events into product-level `agent_step` records
+for Ask PSKA. FastReAct should keep emitting the standard raw event protocol;
+PSKA owns the product timeline wording and must keep raw events behind a debug
+foldout.
+
 ## Streaming Event
 
 SSE frame:
@@ -166,6 +171,8 @@ Consumer rules:
 - Consumers should use `schema` to select parser behavior.
 - Consumers must not parse FastReAct internal Python objects.
 - Tool result payloads may be text or JSON encoded by the MCP tool.
+- Final answer text must not expose GraphRAG, FastReAct, MCP, tool routing, or
+  tool status. Those belong in events/trace, not the answer body.
 
 ## Non-Streaming Response
 
@@ -492,6 +499,12 @@ FastReAct may pass:
 - `metadata.pska_user_id`
 - tool argument `user_id`
 - tool argument `owner_user_id`
+
+For PSKA-to-FastReAct calls, PSKA should authenticate with
+`X-FastReAct-Service-Token` and pass `user_key` plus `metadata.tenant_key`.
+This remains valid when FastReAct is configured for `auth.mode=jwt` or
+`auth.mode=trusted_headers`; FastReAct records the run identity with
+`auth_provider=service_token`. Browsers should never receive this token.
 
 PSKA decides:
 

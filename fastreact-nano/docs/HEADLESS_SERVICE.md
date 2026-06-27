@@ -40,6 +40,12 @@ For user-facing calls, `auth.mode` may be `service_token`, `trusted_headers`, or
 platforms or an external identity broker should authenticate the user and pass
 verified identity claims into FastReAct.
 
+When `service.service_token` is configured, trusted backend callers may still
+use `X-FastReAct-Service-Token` even when `auth.mode` is `trusted_headers` or
+`jwt`. In that path the caller must provide `user_key` and, when needed,
+`metadata.tenant_key`; FastReAct records the identity as `service_token`. Do not
+send the service token to browsers.
+
 ## Endpoint Map
 
 Public:

@@ -234,13 +234,18 @@ def require_service_auth(request: Request) -> None:  # type: ignore[valid-type]
     if not expected:
         return
 
-    authorization = request.headers.get("authorization", "")
-    bearer_prefix = "Bearer "
-    bearer_token = authorization[len(bearer_prefix) :].strip() if authorization.startswith(bearer_prefix) else ""
-    header_token = request.headers.get("x-fastreact-service-token", "").strip()
-    if bearer_token == expected or header_token == expected:
+    if service_token_matches_request(request):
         return
     raise HTTPException(status_code=401, detail="FastReAct service token required")
+
+
+def service_token_matches_request(request: Request) -> bool:  # type: ignore[valid-type]
+    expected = configured_service_token()
+    if not expected:
+        return False
+    bearer_token = bearer_token_from_request(request)
+    header_token = request.headers.get("x-fastreact-service-token", "").strip()
+    return bearer_token == expected or header_token == expected
 
 
 def current_auth_config(agent: Any | None = None) -> AuthConfig:
@@ -258,22 +263,50 @@ def require_request_identity(
 ) -> IdentityContext:
     auth_config = current_auth_config(agent)
     mode = str(getattr(auth_config, "mode", "service_token") or "service_token").strip().lower()
+    service_identity = service_token_identity_from_request(request, chat_request)
     if mode == "service_token":
+        if service_identity:
+            return service_identity
         require_service_auth(request)
-        metadata = dict(chat_request.metadata or {})
-        user_key = chat_request.user_key or ""
-        tenant_key = infer_tenant_key(user_key, metadata.get("tenant_key"))
-        return IdentityContext(
-            tenant_key=tenant_key,
-            user_key=user_key,
-            subject=user_key,
-            auth_provider="service_token",
-        )
+        return service_token_identity_from_chat_request(chat_request)
     if mode == "trusted_headers":
+        if service_identity:
+            return service_identity
         return identity_from_trusted_headers(request, auth_config)
     if mode == "jwt":
+        if service_identity:
+            return service_identity
         return identity_from_jwt(request, auth_config)
     raise HTTPException(status_code=500, detail=f"Unsupported auth mode: {mode}")
+
+
+def service_token_identity_from_request(
+    request: Request,  # type: ignore[valid-type]
+    chat_request: ChatRequest,
+) -> IdentityContext | None:
+    if not service_token_matches_request(request):
+        return None
+    return service_token_identity_from_chat_request(chat_request, request=request)
+
+
+def service_token_identity_from_chat_request(
+    chat_request: ChatRequest,
+    *,
+    request: Request | None = None,  # type: ignore[valid-type]
+) -> IdentityContext:
+    metadata = dict(chat_request.metadata or {})
+    user_key = chat_request.user_key or ""
+    tenant_key_hint = metadata.get("tenant_key")
+    if request is not None:
+        user_key = user_key or request.headers.get("x-fastreact-user-key", "").strip()
+        tenant_key_hint = tenant_key_hint or request.headers.get("x-fastreact-tenant-key", "").strip()
+    tenant_key = infer_tenant_key(user_key, tenant_key_hint)
+    return IdentityContext(
+        tenant_key=tenant_key,
+        user_key=user_key,
+        subject=user_key,
+        auth_provider="service_token",
+    )
 
 
 def identity_from_trusted_headers(request: Request, auth_config: AuthConfig) -> IdentityContext:  # type: ignore[valid-type]

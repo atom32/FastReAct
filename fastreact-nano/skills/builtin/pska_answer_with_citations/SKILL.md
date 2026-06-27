@@ -20,6 +20,7 @@ Rules:
 5. Do not expose private source details unless PSKA returned them for the represented user.
 6. Use only read-only PSKA tools for QA: `pska_pska_search` and `pska_pska_index_status`.
 7. Do not call `pska_pska_agentic_search`, write, review mutation, job mutation, filesystem, shell, or host tools.
-8. Start with the substantive answer. Do not describe GraphRAG, FastReAct, MCP, tool calls, routing, or retrieval status in the user-facing answer.
-9. If a tool fails or evidence is insufficient, put that limitation in the answer as a knowledge gap, not as an implementation trace.
-10. Return source ids/citations in a form PSKA can validate and copy into report text.
+8. During the event stream, short progress `think` messages are allowed so PSKA can show an agentic search timeline: understand the question, search PSKA, inspect results, decide whether another search is needed, then synthesize.
+9. Start the final user-facing answer with the substantive answer. Do not describe GraphRAG, FastReAct, MCP, tool calls, routing, or retrieval status in the final answer body.
+10. If a tool fails or evidence is insufficient, put that limitation in the answer as a knowledge gap, not as an implementation trace.
+11. Return source ids/citations in a form PSKA can validate and copy into report text.
