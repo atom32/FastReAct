@@ -25,6 +25,7 @@ DIGEST_JOB_TYPE = "digest_via_fastreact"
 DEFAULT_PSKA_URL = "http://127.0.0.1:8765"
 DEFAULT_FASTREACT_URL = "http://127.0.0.1:8000"
 DEFAULT_KEY_FILE = Path.home() / "api_key.txt"
+DEFAULT_TENANT_ID = "tenant_default"
 PROMPT_SOURCE_ITEM_LIMIT = 3
 PROMPT_DOCUMENT_LIMIT = 3
 PROMPT_PASSAGE_LIMIT = 6
@@ -48,6 +49,7 @@ class DigestWorkerConfig:
     worker_id: str = "fastreact-pska-digest-worker"
     lease_seconds: int = 300
     batch_limit: int = 1
+    tenant_id: str = DEFAULT_TENANT_ID
     represented_user_id: str = "user_primary"
     timeout_seconds: float = 90.0
     run_timeout_seconds: float = 900.0
@@ -251,6 +253,8 @@ def _run_fastreact_digest(
         "metadata": {
             "caller": "pska_digest_worker",
             "purpose": "digest",
+            "tenant_key": config.tenant_id,
+            "pska_tenant_id": config.tenant_id,
             "pska_user_id": config.represented_user_id,
             "pska_job_id": job_id,
             "max_context_tokens": 128000,
@@ -618,14 +622,25 @@ def _parse_time(value: Any) -> datetime | None:
 
 
 def _pska_headers(config: DigestWorkerConfig) -> dict[str, str]:
-    headers: dict[str, str] = {"X-PSKA-Caller": "agent_service", "X-PSKA-Represented-User-Id": config.represented_user_id}
+    headers: dict[str, str] = {
+        "X-PSKA-Caller": "agent_service",
+        "X-PSKA-Tenant-Id": config.tenant_id,
+        "X-PSKA-User-Id": config.represented_user_id,
+        "X-PSKA-Represented-User-Id": config.represented_user_id,
+    }
     if config.pska_service_token:
         headers["X-PSKA-Service-Token"] = config.pska_service_token
     return headers
 
 
 def _fastreact_headers(config: DigestWorkerConfig) -> dict[str, str]:
-    return {"X-FastReAct-Service-Token": config.fastreact_service_token} if config.fastreact_service_token else {}
+    headers = {
+        "X-FastReAct-Tenant-Key": config.tenant_id,
+        "X-FastReAct-User-Key": f"pska:{config.represented_user_id}",
+    }
+    if config.fastreact_service_token:
+        headers["X-FastReAct-Service-Token"] = config.fastreact_service_token
+    return headers
 
 
 def main() -> int:
@@ -634,6 +649,7 @@ def main() -> int:
     parser.add_argument("--fastreact-url", default=DEFAULT_FASTREACT_URL)
     parser.add_argument("--job-id")
     parser.add_argument("--worker-id", default=f"fastreact-pska-digest-{uuid4().hex[:8]}")
+    parser.add_argument("--tenant-id", default=os.getenv("PSKA_TENANT_ID") or DEFAULT_TENANT_ID)
     parser.add_argument("--represented-user-id", default="user_primary")
     parser.add_argument("--lease-seconds", type=int, default=300)
     parser.add_argument("--batch-limit", type=int, default=20)
@@ -655,6 +671,7 @@ def main() -> int:
         worker_id=args.worker_id,
         lease_seconds=args.lease_seconds,
         batch_limit=args.batch_limit,
+        tenant_id=args.tenant_id,
         represented_user_id=args.represented_user_id,
         timeout_seconds=args.timeout_seconds,
         run_timeout_seconds=args.run_timeout_seconds,

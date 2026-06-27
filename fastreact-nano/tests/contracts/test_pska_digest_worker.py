@@ -121,6 +121,7 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
         fastreact_service_token="fr-token",
         worker_id="worker-test",
         batch_limit=1,
+        tenant_id="tenant_test",
     )
 
     result = worker.run_digest_job(config, "job_digest", http=http)
@@ -131,6 +132,8 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
     assert len(run_calls) == 2
     assert run_calls[0]["payload"]["skills"] == ["pska_digest"]
     assert run_calls[0]["payload"]["user_key"] == "pska:user_primary"
+    assert run_calls[0]["payload"]["metadata"]["tenant_key"] == "tenant_test"
+    assert run_calls[0]["payload"]["metadata"]["pska_tenant_id"] == "tenant_test"
     assert run_calls[0]["payload"]["metadata"]["pska_job_id"] == "job_digest"
     assert "pska.candidates.v1" in run_calls[0]["payload"]["messages"][1]["content"]
     assert "Do not use built-in tools" in run_calls[0]["payload"]["messages"][1]["content"]
@@ -146,6 +149,10 @@ def test_run_digest_job_leases_batches_runs_skill_and_completes():
         "pska_pska_write_candidates": 1,
         "pska_pska_job_context": 1,
     }
+    assert http.calls[0]["headers"]["X-PSKA-Tenant-Id"] == "tenant_test"
+    assert http.calls[0]["headers"]["X-PSKA-User-Id"] == "user_primary"
+    assert run_calls[0]["headers"]["X-FastReAct-Tenant-Key"] == "tenant_test"
+    assert run_calls[0]["headers"]["X-FastReAct-User-Key"] == "pska:user_primary"
     complete_call = http.calls[-1]
     assert complete_call["url"] == "http://pska.test/jobs/job_digest/complete"
     first_run = complete_call["payload"]["result"]["fastreact_runs"][0]
