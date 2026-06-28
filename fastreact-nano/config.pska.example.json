@@ -62,6 +62,10 @@
         "url": "http://127.0.0.1:8765/mcp",
         "auth_token_ref": "mcp_api_keys.pska",
         "isolation": "shared",
+        "identity_forwarding": {
+          "mode": "authnode_jwt",
+          "audience": "pska"
+        },
         "description": "PSKA HTTP MCP endpoint."
       }
     ],
@@ -71,26 +75,58 @@
       "command": "/Users/xudawei/Documents/personal archive/scripts/pska",
       "args": ["mcp-server"],
       "isolation": "shared",
+      "identity_forwarding": {
+        "mode": "service_token_params_dev",
+        "audience": "pska",
+        "stdio_dev_only": true
+      },
       "description": "PSKA local stdio MCP fallback."
     }
   },
   "policy": {
-    "default_action": "caution",
-    "tenant_rules": {
-      "pska": {
-        "tools": {
-          "exec": "deny",
-          "read_file": "deny",
-          "write_file": "deny",
-          "edit_file": "deny",
-          "pska_pska_search": "allow",
-          "pska_pska_index_status": "allow",
-          "pska_pska_job_context": "allow",
-          "pska_pska_review_items": "allow",
-          "pska_pska_write_candidates": "allow",
-          "pska_pska_ingest_channel_payload": "require_approval",
-          "pska_pska_extract_all": "require_approval"
-        }
+    "default_action": "deny",
+    "tool_rules": {
+      "exec": "deny",
+      "read_file": "deny",
+      "write_file": "deny",
+      "edit_file": "deny",
+      "pska_pska_search": "allow",
+      "pska_pska_index_status": "allow",
+      "pska_pska_read_evidence_context": "allow",
+      "pska_pska_graph_context": "allow",
+      "pska_pska_digest_context": "allow",
+      "pska_pska_job_context": "allow",
+      "pska_pska_write_candidates": "allow",
+      "pska_pska_ingest_channel_payload": "deny",
+      "pska_pska_extract_all": "deny",
+      "pska_pska_review_items": "deny"
+    },
+    "tool_profiles": {
+      "pska_ask_read": {
+        "description": "Read-only PSKA research tools for Ask deep mode.",
+        "tools": [
+          "pska_pska_search",
+          "pska_pska_index_status",
+          "pska_pska_read_evidence_context",
+          "pska_pska_graph_context",
+          "pska_pska_digest_context"
+        ]
+      },
+      "pska_digest_worker": {
+        "description": "PSKA digest worker tools for job-scoped candidate writing.",
+        "tools": [
+          "pska_pska_job_context",
+          "pska_pska_write_candidates"
+        ]
+      },
+      "coding_workspace": {
+        "description": "Native coding tools; require a coding-agent profile and workspace path guard.",
+        "tools": [
+          "read_file",
+          "write_file",
+          "edit_file",
+          "exec"
+        ]
       }
     }
   }

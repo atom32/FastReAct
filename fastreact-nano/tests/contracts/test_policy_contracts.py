@@ -61,7 +61,15 @@ def test_config_loads_policy_block(tmp_path):
     config_file.write_text(
         """
 {
-  "policy": {
+    "policy": {
+    "tool_profiles": {
+      "pska_ask_read": {
+        "tools": [
+          "pska_pska_search",
+          "pska_pska_read_evidence_context"
+        ]
+      }
+    },
     "tool_rules": {
       "exec": "require_approval",
       "write_file": "deny"
@@ -84,7 +92,12 @@ def test_config_loads_policy_block(tmp_path):
     assert config.policy.tool_rules["exec"] == "require_approval"
     assert config.policy.tool_rules["write_file"] == "deny"
     assert config.policy.tenant_rules["pska"]["tools"]["pska_search"] == "allow"
+    assert config.policy.tool_profiles["pska_ask_read"]["tools"] == [
+        "pska_pska_search",
+        "pska_pska_read_evidence_context",
+    ]
     assert config.policy.to_safety_policy()["tool_rules"]["exec"] == "require_approval"
+    assert config.policy.to_safety_policy()["tool_profiles"]["pska_ask_read"]["tools"]
 
 
 def test_config_loads_run_retry_and_concurrency_settings(tmp_path):
@@ -126,6 +139,9 @@ def test_policy_config_rejects_invalid_structure():
 
     with pytest.raises(ValueError, match="policy.tenant_rules.pska.tools must be an object"):
         PolicyConfig.from_dict({"tenant_rules": {"pska": {"tools": "exec"}}})
+
+    with pytest.raises(ValueError, match="policy.tool_profiles.pska_ask_read.tools must be a list"):
+        PolicyConfig.from_dict({"tool_profiles": {"pska_ask_read": {"tools": "pska_pska_search"}}})
 
 
 def test_policy_allow_does_not_override_builtin_forbidden_exec_patterns():
@@ -176,6 +192,7 @@ def test_headless_policy_inspection_and_dry_run_endpoints():
         assert policy_payload["reload_supported"] is False
         assert "require_approval" in policy_payload["actions"]
         assert policy_payload["priority"] == [
+            "run_tool_policy",
             "user_rules",
             "tenant_rules",
             "tool_rules",

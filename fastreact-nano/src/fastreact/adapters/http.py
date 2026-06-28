@@ -900,6 +900,10 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
                     "transport": "http",
                     "url": request.pska_http_url,
                     "isolation": "shared",
+                    "identity_forwarding": {
+                        "mode": "service_token_params_dev",
+                        "audience": "pska",
+                    },
                     "description": "PSKA HTTP MCP endpoint.",
                 }
             )
@@ -911,22 +915,62 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
                     "command": request.pska_command,
                     "args": ["mcp-server"],
                     "isolation": "shared",
+                    "identity_forwarding": {
+                        "mode": "service_token_params_dev",
+                        "audience": "pska",
+                        "stdio_dev_only": True,
+                    },
                     "description": "PSKA personal knowledge store tools.",
                 }
             )
     policy = {"default_action": "caution"}
     if request.include_pska:
-        policy["tenant_rules"] = {
-            "pska": {
-                "tools": {
-                    "exec": "require_approval",
-                    "write_file": "require_approval",
-                    "edit_file": "require_approval",
-                    "pska_pska_search": "allow",
-                    "pska_pska_agentic_search": "allow",
-                    "pska_pska_index_status": "allow",
-                }
-            }
+        policy = {
+            "default_action": "deny",
+            "tool_rules": {
+                "exec": "deny",
+                "read_file": "deny",
+                "write_file": "deny",
+                "edit_file": "deny",
+                "pska_pska_search": "allow",
+                "pska_pska_index_status": "allow",
+                "pska_pska_read_evidence_context": "allow",
+                "pska_pska_graph_context": "allow",
+                "pska_pska_digest_context": "allow",
+                "pska_pska_job_context": "allow",
+                "pska_pska_write_candidates": "allow",
+                "pska_pska_ingest_channel_payload": "deny",
+                "pska_pska_extract_all": "deny",
+                "pska_pska_review_items": "deny",
+            },
+            "tool_profiles": {
+                "pska_ask_read": {
+                    "description": "Read-only PSKA research tools for Ask deep mode.",
+                    "tools": [
+                        "pska_pska_search",
+                        "pska_pska_index_status",
+                        "pska_pska_read_evidence_context",
+                        "pska_pska_graph_context",
+                        "pska_pska_digest_context",
+                    ],
+                },
+                "pska_digest_worker": {
+                    "description": "PSKA digest worker tools for job-scoped candidate writing.",
+                    "tools": [
+                        "pska_pska_job_context",
+                        "pska_pska_write_candidates",
+                    ],
+                },
+                "coding_workspace": {
+                    "description": "Native coding tools; require a coding-agent profile and workspace path guard.",
+                    "tools": [
+                        "read_file",
+                        "write_file",
+                        "edit_file",
+                        "exec",
+                    ],
+                },
+            },
         }
     config = {
         "llm": {
@@ -1934,7 +1978,7 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             "policy_version": RunService.policy_snapshot_hash(policy_payload),
             "reload_supported": False,
             "actions": ["allow", "caution", "require_approval", "deny"],
-            "priority": ["user_rules", "tenant_rules", "tool_rules", "default_action", "built_in_safety"],
+            "priority": ["run_tool_policy", "user_rules", "tenant_rules", "tool_rules", "default_action", "built_in_safety"],
             "tenant_inference": "prefix_before_colon_in_user_key",
         }
 

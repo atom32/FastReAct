@@ -213,6 +213,7 @@ class MCPServerConfig:
 
     # Multi-tenant isolation settings
     isolation: str = "shared"  # "shared" | "per_user" | "lazy_per_user"
+    identity_forwarding: Optional[dict[str, Any]] = None
     per_user_args_template: Optional[list[str]] = None  # e.g., ["--user-dir", "{user_workspace}"]
     idle_timeout: int = 300  # seconds, only for lazy_per_user mode
     max_instances: int = 10  # max instances, only for lazy_per_user mode
@@ -231,6 +232,7 @@ class MCPServerConfig:
             associated_skill=data.get("associated_skill"),
             description=data.get("description"),
             isolation=data.get("isolation", "shared"),
+            identity_forwarding=data.get("identity_forwarding"),
             per_user_args_template=data.get("per_user_args_template"),
             idle_timeout=data.get("idle_timeout", 300),
             max_instances=data.get("max_instances", 10),
@@ -482,6 +484,7 @@ class PolicyConfig:
     tool_rules: dict[str, Any] = field(default_factory=dict)
     user_rules: dict[str, Any] = field(default_factory=dict)
     tenant_rules: dict[str, Any] = field(default_factory=dict)
+    tool_profiles: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> "PolicyConfig":
@@ -500,11 +503,13 @@ class PolicyConfig:
         tool_rules = cls._validate_rules_map(data.get("tool_rules", {}), "policy.tool_rules")
         user_rules = cls._validate_rules_map(data.get("user_rules", {}), "policy.user_rules")
         tenant_rules = cls._validate_rules_map(data.get("tenant_rules", {}), "policy.tenant_rules")
+        tool_profiles = cls._validate_tool_profiles(data.get("tool_profiles", {}), "policy.tool_profiles")
         return cls(
             default_action=data.get("default_action"),
             tool_rules=tool_rules,
             user_rules=user_rules,
             tenant_rules=tenant_rules,
+            tool_profiles=tool_profiles,
         )
 
     def to_safety_policy(self) -> dict[str, Any]:
@@ -513,7 +518,32 @@ class PolicyConfig:
             "tool_rules": self.tool_rules,
             "user_rules": self.user_rules,
             "tenant_rules": self.tenant_rules,
+            "tool_profiles": self.tool_profiles,
         }
+
+    @classmethod
+    def _validate_tool_profiles(cls, profiles: Any, path: str) -> dict[str, Any]:
+        if profiles is None:
+            return {}
+        if not isinstance(profiles, dict):
+            raise ValueError(f"{path} must be an object")
+        for profile_name, profile in profiles.items():
+            if not isinstance(profile_name, str) or not profile_name:
+                raise ValueError(f"{path} keys must be non-empty strings")
+            if isinstance(profile, list):
+                for tool_name in profile:
+                    if not isinstance(tool_name, str) or not tool_name:
+                        raise ValueError(f"{path}.{profile_name} must contain non-empty tool names")
+                continue
+            if not isinstance(profile, dict):
+                raise ValueError(f"{path}.{profile_name} must be a list or object")
+            tools = profile.get("tools", [])
+            if not isinstance(tools, list):
+                raise ValueError(f"{path}.{profile_name}.tools must be a list")
+            for tool_name in tools:
+                if not isinstance(tool_name, str) or not tool_name:
+                    raise ValueError(f"{path}.{profile_name}.tools must contain non-empty tool names")
+        return profiles
 
     @classmethod
     def _validate_rules_map(cls, rules: Any, path: str) -> dict[str, Any]:

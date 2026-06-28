@@ -1809,7 +1809,20 @@ def test_setup_presets_and_config_draft_are_safe_and_pska_aware(tmp_path):
     assert payload["config"]["service"]["run_concurrency"] == 4
     assert payload["config"]["service"]["run_retry_base_seconds"] == 5
     assert payload["config"]["mcp"]["servers"][0]["name"] == "pska"
-    assert payload["config"]["policy"]["tenant_rules"]["pska"]["tools"]["exec"] == "require_approval"
+    assert payload["config"]["mcp"]["servers"][0]["identity_forwarding"]["audience"] == "pska"
+    assert payload["config"]["policy"]["default_action"] == "deny"
+    assert payload["config"]["policy"]["tool_rules"]["exec"] == "deny"
+    assert payload["config"]["policy"]["tool_rules"]["read_file"] == "deny"
+    assert payload["config"]["policy"]["tool_rules"]["pska_pska_search"] == "allow"
+    assert payload["config"]["policy"]["tool_rules"]["pska_pska_read_evidence_context"] == "allow"
+    assert payload["config"]["policy"]["tool_rules"]["pska_pska_ingest_channel_payload"] == "deny"
+    assert payload["config"]["policy"]["tool_profiles"]["pska_ask_read"]["tools"] == [
+        "pska_pska_search",
+        "pska_pska_index_status",
+        "pska_pska_read_evidence_context",
+        "pska_pska_graph_context",
+        "pska_pska_digest_context",
+    ]
 
 
 def test_task_endpoints_create_update_list_and_include_related_runs(tmp_path):
