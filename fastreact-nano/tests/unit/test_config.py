@@ -128,7 +128,19 @@ class TestAuthConfig:
 
         assert config.mode == "service_token"
         assert config.trusted_header_user_key == "X-FastReAct-User-Key"
-        assert config.jwt_tenant_claims == ["tenant_key", "tenant", "org_id"]
+        assert config.jwt_tenant_claims == ["tenant_key", "tenant_id", "tenant", "org_id"]
+
+    def test_from_env_resolves_named_jwt_secret(self, monkeypatch):
+        monkeypatch.setenv("AUTHNODE_JWT_SECRET", "shared-authnode-secret")
+        monkeypatch.setenv("FASTREACT_AUTH_MODE", "jwt")
+        monkeypatch.setenv("FASTREACT_AUTH_JWT_SECRET_ENV", "AUTHNODE_JWT_SECRET")
+
+        config = AuthConfig.from_env()
+
+        assert config.mode == "jwt"
+        assert config.jwt_secret == "shared-authnode-secret"
+        assert config.jwt_secret_env == "AUTHNODE_JWT_SECRET"
+        assert config.jwt_tenant_claims == ["tenant_key", "tenant_id", "tenant", "org_id"]
 
     def test_from_dict_supports_jwt_claim_mapping(self):
         config = AuthConfig.from_dict(

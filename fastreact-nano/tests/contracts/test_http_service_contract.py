@@ -735,6 +735,99 @@ def test_chat_completions_jwt_identity_claims_are_mapped():
     assert metadata["identity"]["auth_provider"] == "identity-broker"
 
 
+def test_chat_completions_authnode_jwt_identity_claims_are_mapped():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingIdentityAgent()
+    token = signed_hs256_jwt(
+        {
+            "iss": "authnode.local",
+            "aud": ["fastreact"],
+            "sub": "pska:user_primary",
+            "tenant_id": "tenant_default",
+            "user_id": "user_primary",
+            "user_key": "pska:user_primary",
+            "name": "Primary Local User",
+            "email": "primary@example.test",
+            "roles": ["admin"],
+            "groups": ["local"],
+            "provider": "authnode",
+            "exp": int(time.time()) + 300,
+        }
+    )
+    set_agent_for_testing(agent)
+    set_auth_config(AuthConfig(mode="jwt", jwt_secret="secret", jwt_issuer="authnode.local", jwt_audience="fastreact"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "metadata": {"run_id": "authnode-jwt-run"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 200
+    assert agent.calls[0]["user_key"] == "pska:user_primary"
+    metadata = agent.calls[0]["run_metadata"]
+    assert metadata["tenant_key"] == "tenant_default"
+    assert metadata["user_key"] == "pska:user_primary"
+    assert metadata["identity"]["tenant_key"] == "tenant_default"
+    assert metadata["identity"]["user_key"] == "pska:user_primary"
+    assert metadata["identity"]["subject"] == "pska:user_primary"
+    assert metadata["identity"]["display_name"] == "Primary Local User"
+    assert metadata["identity"]["email"] == "primary@example.test"
+    assert metadata["identity"]["groups"] == ["local"]
+    assert metadata["identity"]["roles"] == ["admin"]
+    assert metadata["identity"]["auth_provider"] == "authnode.local"
+
+
+@pytest.mark.parametrize(
+    ("claim_overrides", "secret", "expected_detail"),
+    [
+        ({}, "wrong-secret", "JWT signature is invalid"),
+        ({"iss": "other-issuer"}, "secret", "JWT issuer is invalid"),
+        ({"aud": ["pska"]}, "secret", "JWT audience is invalid"),
+        ({"exp": int(time.time()) - 60}, "secret", "JWT has expired"),
+    ],
+)
+def test_chat_completions_authnode_jwt_rejects_invalid_identity(claim_overrides, secret, expected_detail):
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    claims = {
+        "iss": "authnode.local",
+        "aud": ["fastreact"],
+        "sub": "pska:user_primary",
+        "tenant_id": "tenant_default",
+        "exp": int(time.time()) + 300,
+    }
+    claims.update(claim_overrides)
+    token = signed_hs256_jwt(claims, secret=secret)
+    set_agent_for_testing(CapturingIdentityAgent())
+    set_auth_config(AuthConfig(mode="jwt", jwt_secret="secret", jwt_issuer="authnode.local", jwt_audience="fastreact"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 401
+    assert expected_detail in response.json()["detail"]
+
+
 def test_chat_completions_jwt_mode_accepts_service_token_identity():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")

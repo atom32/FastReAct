@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Optional, Any
 
 
+AUTHNODE_TENANT_CLAIMS = ["tenant_key", "tenant_id", "tenant", "org_id"]
+
+
 def _env_value(*names: str, default: str | None = None) -> str | None:
     """Return the first non-empty environment variable value from names."""
     for name in names:
@@ -315,7 +318,7 @@ class AuthConfig:
     jwt_issuer: Optional[str] = None
     jwt_audience: Optional[str] = None
     jwt_algorithm: str = "HS256"
-    jwt_tenant_claims: list[str] = field(default_factory=lambda: ["tenant_key", "tenant", "org_id"])
+    jwt_tenant_claims: list[str] = field(default_factory=lambda: list(AUTHNODE_TENANT_CLAIMS))
     jwt_user_claim: str = "sub"
     jwt_display_name_claim: str = "name"
     jwt_email_claim: str = "email"
@@ -325,6 +328,10 @@ class AuthConfig:
 
     @classmethod
     def from_env(cls) -> "AuthConfig":
+        jwt_secret_env = os.getenv("FASTREACT_AUTH_JWT_SECRET_ENV")
+        jwt_secret = os.getenv("FASTREACT_AUTH_JWT_SECRET")
+        if not jwt_secret and jwt_secret_env:
+            jwt_secret = os.getenv(jwt_secret_env)
         return cls(
             mode=os.getenv("FASTREACT_AUTH_MODE", "service_token"),
             trusted_header_user_key=os.getenv("FASTREACT_AUTH_HEADER_USER_KEY", cls.trusted_header_user_key),
@@ -335,12 +342,12 @@ class AuthConfig:
             trusted_header_groups=os.getenv("FASTREACT_AUTH_HEADER_GROUPS", cls.trusted_header_groups),
             trusted_header_roles=os.getenv("FASTREACT_AUTH_HEADER_ROLES", cls.trusted_header_roles),
             trusted_header_provider=os.getenv("FASTREACT_AUTH_HEADER_PROVIDER", cls.trusted_header_provider),
-            jwt_secret=os.getenv("FASTREACT_AUTH_JWT_SECRET"),
-            jwt_secret_env=os.getenv("FASTREACT_AUTH_JWT_SECRET_ENV"),
+            jwt_secret=jwt_secret,
+            jwt_secret_env=jwt_secret_env,
             jwt_issuer=os.getenv("FASTREACT_AUTH_JWT_ISSUER"),
             jwt_audience=os.getenv("FASTREACT_AUTH_JWT_AUDIENCE"),
             jwt_algorithm=os.getenv("FASTREACT_AUTH_JWT_ALGORITHM", "HS256"),
-            jwt_tenant_claims=_csv_env_list("FASTREACT_AUTH_JWT_TENANT_CLAIMS") or ["tenant_key", "tenant", "org_id"],
+            jwt_tenant_claims=_csv_env_list("FASTREACT_AUTH_JWT_TENANT_CLAIMS") or list(AUTHNODE_TENANT_CLAIMS),
             jwt_user_claim=os.getenv("FASTREACT_AUTH_JWT_USER_CLAIM", "sub"),
             jwt_display_name_claim=os.getenv("FASTREACT_AUTH_JWT_DISPLAY_NAME_CLAIM", "name"),
             jwt_email_claim=os.getenv("FASTREACT_AUTH_JWT_EMAIL_CLAIM", "email"),
@@ -351,7 +358,7 @@ class AuthConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AuthConfig":
-        tenant_claims = data.get("jwt_tenant_claims", ["tenant_key", "tenant", "org_id"])
+        tenant_claims = data.get("jwt_tenant_claims", AUTHNODE_TENANT_CLAIMS)
         if isinstance(tenant_claims, str):
             tenant_claims = [item.strip() for item in tenant_claims.split(",") if item.strip()]
         jwt_secret_env = data.get("jwt_secret_env")
@@ -373,7 +380,7 @@ class AuthConfig:
             jwt_issuer=data.get("jwt_issuer"),
             jwt_audience=data.get("jwt_audience"),
             jwt_algorithm=data.get("jwt_algorithm", "HS256"),
-            jwt_tenant_claims=list(tenant_claims or ["tenant_key", "tenant", "org_id"]),
+            jwt_tenant_claims=list(tenant_claims or AUTHNODE_TENANT_CLAIMS),
             jwt_user_claim=data.get("jwt_user_claim", "sub"),
             jwt_display_name_claim=data.get("jwt_display_name_claim", "name"),
             jwt_email_claim=data.get("jwt_email_claim", "email"),
