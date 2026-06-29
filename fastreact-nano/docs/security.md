@@ -35,6 +35,12 @@ For user-facing deployments, configure `auth.mode`:
 - `jwt`: FastReAct verifies a JWT from an external platform or identity broker
   and maps claims into `tenant_key` and `user_key`.
 
+For local PSKA/FastReAct development, AuthNode is the preferred identity
+broker. Configure FastReAct with `auth.mode=jwt`, issuer `authnode.local`,
+audience `fastreact`, and tenant claim order
+`tenant_key,tenant_id,tenant,org_id`. AuthNode's `sub` claim remains the full
+FastReAct `user_key`, for example `pska:user_primary`.
+
 If `service.service_token` is configured, service-to-service callers such as
 PSKA may use `X-FastReAct-Service-Token` with `auth.mode=trusted_headers` or
 `auth.mode=jwt`. This bypass is only for trusted backends that already verified
