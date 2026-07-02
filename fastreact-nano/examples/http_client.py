@@ -10,7 +10,7 @@ import json
 
 def test_run():
     """Test running a query"""
-    url = "http://localhost:8000/run"
+    url = "http://localhost:18741/run"
 
     payload = {
         "query": "What is FastReAct Nano?",
@@ -30,7 +30,7 @@ def test_run():
 
 def test_with_skills():
     """Test using skills"""
-    url = "http://localhost:8000/run"
+    url = "http://localhost:18741/run"
 
     payload = {
         "query": "如何创建一个新的git分支？",
@@ -49,7 +49,7 @@ def test_with_skills():
 
 def test_list_skills():
     """Test listing skills"""
-    url = "http://localhost:8000/skills"
+    url = "http://localhost:18741/skills"
 
     print("[INFO] Fetching skills list...")
     response = requests.get(url)
@@ -66,7 +66,7 @@ def test_list_skills():
 
 def test_list_tools():
     """Test listing tools"""
-    url = "http://localhost:8000/tools"
+    url = "http://localhost:18741/tools"
 
     print("[INFO] Fetching tools list...")
     response = requests.get(url)
@@ -83,7 +83,7 @@ def test_list_tools():
 
 def test_health():
     """Test health check"""
-    url = "http://localhost:8000/health"
+    url = "http://localhost:18741/health"
 
     print("[INFO] Checking server health...")
     response = requests.get(url)

@@ -44,7 +44,7 @@ except ImportError:  # pragma: no cover - exercised in minimal installs.
         return default
 
 from fastreact import Agent, Config
-from fastreact.core.config import AuthConfig
+from fastreact.core.config import AuthConfig, DEFAULT_SERVICE_PORT
 from fastreact.core.events import AgentEvent
 from fastreact.core.identity import (
     IdentityContext,
@@ -130,7 +130,7 @@ class SetupConfigDraftRequest(BaseModel):
     api_key_file: str = "~/api_key.txt"
     service_token: Optional[str] = None
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = DEFAULT_SERVICE_PORT
     workspace: str = "~/fastreact-workspace"
     preset: str = "default"
     include_pska: bool = False

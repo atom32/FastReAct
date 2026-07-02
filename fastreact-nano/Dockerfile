@@ -72,15 +72,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:18741/health || exit 1
 
 # Expose ports
-# 8000: HTTP daemon
-# 8000: HTTP daemon
-EXPOSE 8000
+# 18741: HTTP daemon
+# 18741: HTTP daemon
+EXPOSE 18741
 
 # Default command (can be overridden)
-CMD ["python", "-m", "fastreact.adapters.http", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "fastreact.adapters.http", "--host", "0.0.0.0", "--port", "18741"]
 
 # Stage 3: Development Environment
 FROM production AS development

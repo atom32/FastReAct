@@ -137,7 +137,7 @@ docker-compose logs -f
 
 The Docker Compose setup includes:
 
-- **service**: HTTP/SSE agentic service daemon (port 8000)
+- **service**: HTTP/SSE agentic service daemon (port 18741)
 - **prometheus**: Monitoring (port 9090, optional)
 - **grafana**: Metrics dashboard (port 3000, optional)
 
@@ -288,7 +288,7 @@ FASTREACT_TEMPERATURE=0.7
 FASTREACT_MAX_TOKENS=4096
 
 # Optional: Service port
-FASTREACT_SERVICE_PORT=8000
+FASTREACT_SERVICE_PORT=18741
 
 ```
 
@@ -377,7 +377,7 @@ echo "FASTREACT_API_KEY=sk-your-key" >> .env
 echo "FASTREACT_SERVICE_PORT=8002" >> .env
 
 # Or find and stop the conflicting service
-lsof -i :8000
+lsof -i :18741
 ```
 
 #### Connection Refused

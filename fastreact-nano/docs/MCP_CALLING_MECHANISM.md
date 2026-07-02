@@ -74,7 +74,7 @@ MCP servers do not make ACL decisions for FastReAct. For PSKA knowledge, ACL dec
 MCP tools are surfaced in FastReAct's tool list alongside native tools. Use:
 
 ```bash
-curl http://127.0.0.1:8000/v1/tools
+curl http://127.0.0.1:18741/v1/tools
 ```
 
 The tools response includes `mcp_servers` and `tool_summaries` for diagnostics. MCP server status reports transport, isolation, loaded tool count, liveness, and recent load errors; auth token references are reported only as configured/not configured, never as secret values.
@@ -82,7 +82,7 @@ The tools response includes `mcp_servers` and `tool_summaries` for diagnostics. 
 Readiness includes configured server status and loaded tool status:
 
 ```bash
-curl http://127.0.0.1:8000/ready \
+curl http://127.0.0.1:18741/ready \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 

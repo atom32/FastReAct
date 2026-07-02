@@ -23,6 +23,19 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
+SERVICE_PORT=$(python3 - <<'PY'
+import json
+from pathlib import Path
+
+try:
+    data = json.loads(Path("config.json").read_text(encoding="utf-8"))
+except Exception:
+    print("18741")
+else:
+    print(int((data.get("service") or {}).get("port") or 18741))
+PY
+)
+
 # 检查依赖
 echo "[INFO] 检查依赖..."
 python3 -c "import sys; sys.path.insert(0, 'src'); from fastreact import Config" 2>/dev/null
@@ -38,7 +51,7 @@ echo "  [1] CLI 命令行界面（推荐）"
 echo "      交互式对话，有美化输出"
 echo ""
 echo "  [2] HTTP API 服务器"
-echo "      端口 8000，适合 API 调用"
+echo "      端口 ${SERVICE_PORT}，适合 API 调用"
 echo ""
 echo ""
 read -p "请输入选择 [1-2]: " choice
@@ -53,9 +66,9 @@ case $choice in
     2)
         echo ""
         echo "启动 HTTP API 服务器..."
-        echo "访问 http://localhost:8000 查看 API 文档"
+        echo "访问 http://localhost:${SERVICE_PORT} 查看 API 文档"
         echo ""
-        python3 -m fastreact.adapters.http
+        python3 -m fastreact.adapters.http --config config.json
         ;;
     *)
         echo "[ERROR] 无效选择"

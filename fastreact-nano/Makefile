@@ -104,7 +104,7 @@ docker-up:
 	@echo '$(GREEN)Starting Docker services...$(NC)'
 	docker-compose up -d
 	@echo '$(GREEN)Services started!$(NC)'
-	@echo 'HTTP daemon: http://localhost:8000'
+	@echo 'HTTP daemon: http://localhost:18741'
 
 ## docker-down: Stop all services
 docker-down:

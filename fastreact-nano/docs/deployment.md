@@ -17,7 +17,7 @@ single-workspace override.
 For long-running service deployments, prefer an explicit JSON config:
 
 ```bash
-cd /Users/xudawei/FastReAct
+cd $FASTREACT_REPO
 mkdir -p .fastreact
 cp fastreact-nano/config.example.json .fastreact/config.json
 ```
@@ -31,8 +31,8 @@ Then start the local stack with:
 For daemon-only operation:
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
-python3 -m fastreact.adapters.http --config /Users/xudawei/FastReAct/.fastreact/config.json
+cd $FASTREACT_REPO/fastreact-nano
+python3 -m fastreact.adapters.http --config ../.fastreact/config.json
 ```
 
 When no `--config` is provided, the daemon itself looks for config in this order:
@@ -42,7 +42,7 @@ When no `--config` is provided, the daemon itself looks for config in this order
 - `./config.json`
 
 The root `./start.sh` is intentionally stricter for local product startup: it
-reads `/Users/xudawei/FastReAct/.fastreact/config.json` first, then
+reads `.fastreact/config.json` first, then
 `~/.fastreact/config.json`, and every startup setting should be declared in that
 JSON file.
 
@@ -52,7 +52,7 @@ Important settings:
 - `llm.api_base`: OpenAI-compatible provider base URL when needed.
 - `llm.api_key` or `llm.api_key_file`: LLM provider key.
 - `service.host`: bind host, usually `127.0.0.1` for local PSKA integration.
-- `service.port`: daemon port, usually `8000`.
+- `service.port`: daemon port, usually `18741`.
 - `service.service_token`: shared secret required by PSKA and operator clients.
 - `service.cors_origins`: local console origins allowed by the daemon.
 - `web.enabled`, `web.host`, `web.port`: service console startup settings.
@@ -67,7 +67,7 @@ Important settings:
 ## Local Development
 
 ```bash
-cd /Users/xudawei/FastReAct
+cd $FASTREACT_REPO
 
 # backend
 cd fastreact-nano
@@ -92,7 +92,7 @@ daemon, waits for `/health`, starts the service console, and waits for
 The preferred PSKA-linked local run is:
 
 ```bash
-cd /Users/xudawei/FastReAct
+cd $FASTREACT_REPO
 ./start.sh
 ```
 
@@ -122,8 +122,8 @@ agent tool policy.
 Use this mode when PSKA or another caller manages its own UI:
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
-python3 -m fastreact.adapters.http --config /Users/xudawei/FastReAct/.fastreact/config.json
+cd $FASTREACT_REPO/fastreact-nano
+python3 -m fastreact.adapters.http --config ../.fastreact/config.json
 ```
 
 ## Health Checks
@@ -144,7 +144,7 @@ Example:
 ```bash
 SERVICE_TOKEN="replace-with-local-service-token"
 
-curl -fsS http://127.0.0.1:8000/ready \
+curl -fsS http://127.0.0.1:18741/ready \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
@@ -153,7 +153,7 @@ curl -fsS http://127.0.0.1:8000/ready \
 Before publishing or pushing a release branch:
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
+cd $FASTREACT_REPO/fastreact-nano
 python3 run_tests.py quick
 python3 run_tests.py integration
 python3 run_tests.py release-llm

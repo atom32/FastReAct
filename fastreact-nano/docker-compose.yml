@@ -18,7 +18,7 @@ services:
     container_name: fastreact-service
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "18741:18741"
     volumes:
       - workspace:/workspace
       - config:/root/.fastreact:ro
@@ -32,7 +32,7 @@ services:
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:18741/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -55,7 +55,7 @@ services:
     profiles:
       - dev
     ports:
-      - "8000:8000"
+      - "18741:18741"
       - "8888:8888"
     volumes:
       - .:/app:cached

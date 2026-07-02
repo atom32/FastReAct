@@ -7,13 +7,13 @@ FastReAct uses one JSON config for the daemon, MCP servers, service auth, paths,
 ## Recommended Local Config
 
 ```text
-/Users/xudawei/FastReAct/.fastreact/config.json
+.fastreact/config.json
 ```
 
 Create it from the PSKA-ready example:
 
 ```bash
-cd /Users/xudawei/FastReAct
+cd $FASTREACT_REPO
 mkdir -p .fastreact
 cp fastreact-nano/config.pska.example.json .fastreact/config.json
 ```
@@ -23,10 +23,10 @@ cp fastreact-nano/config.pska.example.json .fastreact/config.json
 The repository root `./start.sh` resolves config in this order:
 
 1. Explicit path: `./start.sh /path/to/config.json`
-2. `/Users/xudawei/FastReAct/.fastreact/config.json`
+2. `.fastreact/config.json`
 3. `~/.fastreact/config.json`
-4. `/Users/xudawei/FastReAct/fastreact-nano/.fastreact/config.json`
-5. `/Users/xudawei/FastReAct/fastreact-nano/config.json`
+4. `fastreact-nano/.fastreact/config.json`
+5. `fastreact-nano/config.json`
 
 `./start.sh` also reads:
 
@@ -62,7 +62,7 @@ For predictable deployments, pass `--config` explicitly or run through the repos
   },
   "service": {
     "host": "127.0.0.1",
-    "port": 8000,
+    "port": 18741,
     "log_level": "info",
     "service_token": "replace-with-local-service-token",
     "cors_origins": [

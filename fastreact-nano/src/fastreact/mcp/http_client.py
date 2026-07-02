@@ -44,7 +44,7 @@ class StreamableHTTPMCPClient:
 
         Args:
             base_url: Base URL or endpoint URL of MCP server
-                (e.g., "http://localhost:8000" or "http://localhost:8000/mcp")
+                (e.g., "http://localhost:18741" or "http://localhost:18741/mcp")
             auth_token: OAuth 2.1 Bearer token for authentication
             timeout: Request timeout in seconds
         """

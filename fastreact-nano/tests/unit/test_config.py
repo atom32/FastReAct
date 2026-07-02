@@ -74,7 +74,7 @@ class TestServiceConfig:
     def test_default_values(self):
         config = ServiceConfig()
         assert config.host == "0.0.0.0"
-        assert config.port == 8000
+        assert config.port == 18741
         assert config.log_level == "info"
         assert config.service_token is None
 

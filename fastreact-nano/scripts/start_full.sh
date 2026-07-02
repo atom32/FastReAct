@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BACKEND="$ROOT/fastreact-nano"
 FRONTEND="$ROOT/fastreact-nano-web"
-SERVICE_PORT="${FASTREACT_SERVICE_PORT:-8000}"
+SERVICE_PORT="${FASTREACT_SERVICE_PORT:-18741}"
 WEB_PORT="${WEB_PORT:-3000}"
 
 load_env_file() {

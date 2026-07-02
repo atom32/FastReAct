@@ -31,7 +31,7 @@ HTTP/SSE 提供 agent loop、工具编排、MCP 调用、审批、run/trace/task
 推荐从仓库根目录启动完整本地服务：
 
 ```bash
-cd /Users/xudawei/FastReAct
+cd $FASTREACT_REPO
 ./start.sh
 ```
 
@@ -43,7 +43,7 @@ cd /Users/xudawei/FastReAct
 
 ```text
 Service console: http://127.0.0.1:3000/service
-HTTP daemon:     http://127.0.0.1:8000
+HTTP daemon:     http://127.0.0.1:18741
 ```
 
 如果配置使用 AuthNode JWT（`auth.mode=jwt` 且 `auth.jwt_issuer=authnode.local`），
@@ -69,8 +69,8 @@ FastReAct 配置可通过环境变量接收部署层注入的共享 secret：
 指定配置运行：
 
 ```bash
-cd /Users/xudawei/FastReAct
-./start.sh /Users/xudawei/.fastreact/config.json
+cd $FASTREACT_REPO
+./start.sh ~/.fastreact/config.json
 ```
 
 完整文档入口：
@@ -287,7 +287,7 @@ Runtime/test generated text such as `fastreact-nano/MagicMock/...`, `workspaces/
 `./start.sh` resolves config in this order:
 
 1. Explicit path passed to `./start.sh /path/to/config.json`
-2. `/Users/xudawei/FastReAct/.fastreact/config.json`
+2. `.fastreact/config.json`
 3. `~/.fastreact/config.json`
 4. `fastreact-nano/.fastreact/config.json`
 5. `fastreact-nano/config.json`

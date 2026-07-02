@@ -11,6 +11,7 @@ from typing import Optional, Any
 
 
 AUTHNODE_TENANT_CLAIMS = ["tenant_key", "tenant_id", "tenant", "org_id"]
+DEFAULT_SERVICE_PORT = 18741
 
 
 def _env_value(*names: str, default: str | None = None) -> str | None:
@@ -395,7 +396,7 @@ class ServiceConfig:
     """Headless HTTP service configuration."""
 
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = DEFAULT_SERVICE_PORT
     log_level: str = "info"
     service_token: Optional[str] = None
     approval_timeout_seconds: float = 300.0
@@ -415,7 +416,7 @@ class ServiceConfig:
         token = _service_token_from_api_key_file(api_key_file)
         return cls(
             host=os.getenv("FASTREACT_HOST", "0.0.0.0"),
-            port=int(os.getenv("FASTREACT_PORT", "8000")),
+            port=int(os.getenv("FASTREACT_PORT", str(DEFAULT_SERVICE_PORT))),
             log_level=os.getenv("FASTREACT_LOG_LEVEL", "info"),
             service_token=token,
             approval_timeout_seconds=float(os.getenv("FASTREACT_APPROVAL_TIMEOUT_SECONDS", "300")),
@@ -438,7 +439,7 @@ class ServiceConfig:
             cors_origins = [cors_origins]
         return cls(
             host=data.get("host", "0.0.0.0"),
-            port=int(data.get("port", 8000)),
+            port=int(data.get("port", DEFAULT_SERVICE_PORT)),
             log_level=data.get("log_level", "info"),
             service_token=token,
             approval_timeout_seconds=float(data.get("approval_timeout_seconds", 300.0)),

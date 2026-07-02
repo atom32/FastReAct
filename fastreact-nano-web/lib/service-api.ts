@@ -1,4 +1,4 @@
-const DEFAULT_SERVICE_HTTP = "http://localhost:8000"
+const DEFAULT_SERVICE_HTTP = "http://localhost:18741"
 const SERVICE_TOKEN_STORAGE = "fastreact_service_token"
 const SERVICE_URL_STORAGE = "fastreact_service_url"
 
@@ -8,7 +8,7 @@ function trimTrailingSlash(value: string): string {
 
 function browserServiceBase(): string {
   if (typeof window === "undefined") return DEFAULT_SERVICE_HTTP
-  return `${window.location.protocol}//${window.location.hostname}:8000`
+  return `${window.location.protocol}//${window.location.hostname}:18741`
 }
 
 export function serviceHttpBase(): string {

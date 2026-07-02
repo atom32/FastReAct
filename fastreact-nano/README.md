@@ -18,7 +18,7 @@ Default URLs:
 
 ```text
 Service console: http://127.0.0.1:3000/service
-HTTP daemon:     http://127.0.0.1:8000
+HTTP daemon:     http://127.0.0.1:18741
 ```
 
 Daemon-only:
@@ -38,7 +38,7 @@ POST /v1/chat/completions
 Minimal request:
 
 ```bash
-curl http://127.0.0.1:8000/v1/chat/completions \
+curl http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
@@ -110,7 +110,7 @@ Minimal config:
   },
   "service": {
     "host": "127.0.0.1",
-    "port": 8000,
+    "port": 18741,
     "log_level": "info",
     "service_token": "replace-with-local-service-token"
   },

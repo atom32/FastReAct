@@ -7,21 +7,21 @@ FastReAct Nano `2.4.2` runs as a headless HTTP/SSE agentic service. The optional
 Full local service from the repository root:
 
 ```bash
-cd /Users/xudawei/FastReAct
+cd $FASTREACT_REPO
 ./start.sh
 ```
 
 Daemon-only:
 
 ```bash
-cd /Users/xudawei/FastReAct/fastreact-nano
-python3 -m fastreact.adapters.http --config /Users/xudawei/FastReAct/.fastreact/config.json
+cd $FASTREACT_REPO/fastreact-nano
+python3 -m fastreact.adapters.http --config ../.fastreact/config.json
 ```
 
 Default daemon URL:
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:18741
 ```
 
 ## Authentication
@@ -100,7 +100,7 @@ POST /run
 Non-streaming:
 
 ```bash
-curl http://127.0.0.1:8000/v1/chat/completions \
+curl http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
@@ -114,7 +114,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 Streaming:
 
 ```bash
-curl -N http://127.0.0.1:8000/v1/chat/completions \
+curl -N http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
@@ -160,7 +160,7 @@ data: [DONE]
 Create a background run:
 
 ```bash
-curl http://127.0.0.1:8000/v1/runs \
+curl http://127.0.0.1:18741/v1/runs \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
@@ -178,10 +178,10 @@ curl http://127.0.0.1:8000/v1/runs \
 Inspect:
 
 ```bash
-curl http://127.0.0.1:8000/v1/runs \
+curl http://127.0.0.1:18741/v1/runs \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 
-curl http://127.0.0.1:8000/v1/traces \
+curl http://127.0.0.1:18741/v1/traces \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
@@ -192,15 +192,15 @@ Runs expose status and events while the daemon is active. Traces provide summary
 When a tool requires approval, FastReAct emits an `ask_user` event and stores an approval request. Headless clients should resolve the request through HTTP rather than relying on a terminal prompt.
 
 ```bash
-curl http://127.0.0.1:8000/v1/approvals \
+curl http://127.0.0.1:18741/v1/approvals \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 
-curl -X POST http://127.0.0.1:8000/v1/approvals/approval-123/approve \
+curl -X POST http://127.0.0.1:18741/v1/approvals/approval-123/approve \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{"reason":"operator approved"}'
 
-curl -X POST http://127.0.0.1:8000/v1/approvals/approval-123/deny \
+curl -X POST http://127.0.0.1:18741/v1/approvals/approval-123/deny \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{"reason":"unsafe command"}'
@@ -244,14 +244,14 @@ Example:
 Inspect:
 
 ```bash
-curl http://127.0.0.1:8000/v1/policy \
+curl http://127.0.0.1:18741/v1/policy \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 Dry-run:
 
 ```bash
-curl http://127.0.0.1:8000/v1/policy/check \
+curl http://127.0.0.1:18741/v1/policy/check \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{"tool_name":"exec","tool_args":{"cmd":"pwd"},"user_key":"local:user"}'
@@ -264,10 +264,10 @@ FastReAct supports stdio and HTTP MCP servers through `mcp.servers`. Skills are 
 Readiness and diagnostics:
 
 ```bash
-curl http://127.0.0.1:8000/ready \
+curl http://127.0.0.1:18741/ready \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 
-curl http://127.0.0.1:8000/v1/skills/diagnostics \
+curl http://127.0.0.1:18741/v1/skills/diagnostics \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 

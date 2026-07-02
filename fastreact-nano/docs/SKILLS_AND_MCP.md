@@ -39,13 +39,13 @@ In multi-tenant runs, the current user's workspace `skills/` directory is tempor
 List skills:
 
 ```bash
-curl http://127.0.0.1:8000/v1/skills
+curl http://127.0.0.1:18741/v1/skills
 ```
 
 Diagnostics:
 
 ```bash
-curl http://127.0.0.1:8000/v1/skills/diagnostics \
+curl http://127.0.0.1:18741/v1/skills/diagnostics \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
@@ -63,7 +63,7 @@ Runtime reload is available through an authenticated admin endpoint only when ex
 ```
 
 ```bash
-curl -X POST http://127.0.0.1:8000/v1/extensions/reload \
+curl -X POST http://127.0.0.1:18741/v1/extensions/reload \
   -H "Content-Type: application/json" \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{"skills": true, "mcp": false}'
@@ -99,7 +99,7 @@ MCP config lives in the main JSON config:
 List available tools:
 
 ```bash
-curl http://127.0.0.1:8000/v1/tools
+curl http://127.0.0.1:18741/v1/tools
 ```
 
 The tools response includes compact tool summaries and MCP server status so operators can inspect loaded tools, transport mode, isolation mode, and recent load errors without exposing secrets.

@@ -23,7 +23,7 @@ from uuid import uuid4
 
 DIGEST_JOB_TYPE = "digest_via_fastreact"
 DEFAULT_PSKA_URL = "http://127.0.0.1:8765"
-DEFAULT_FASTREACT_URL = "http://127.0.0.1:8000"
+DEFAULT_FASTREACT_URL = "http://127.0.0.1:18741"
 DEFAULT_KEY_FILE = Path.home() / "api_key.txt"
 DEFAULT_TENANT_ID = "tenant_default"
 PROMPT_SOURCE_ITEM_LIMIT = 3

@@ -134,7 +134,7 @@ def emit(key, value):
     print(f"{key}={shlex.quote(str(value))}")
 
 host = service.get("host", "127.0.0.1")
-port = int(service.get("port", 8000))
+port = int(service.get("port", 18741))
 log_level = service.get("log_level", "info")
 check_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
 

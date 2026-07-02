@@ -65,13 +65,13 @@ Defaults:
 
 ```text
 Service console: http://127.0.0.1:3000/service
-HTTP daemon:     http://127.0.0.1:8000
+HTTP daemon:     http://127.0.0.1:18741
 ```
 
 ## 4. Check Health And Readiness
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:18741/health
 ```
 
 If `service.service_token` is configured:
@@ -79,14 +79,14 @@ If `service.service_token` is configured:
 ```bash
 export SERVICE_TOKEN='replace-with-local-service-token'
 
-curl http://127.0.0.1:8000/ready \
+curl http://127.0.0.1:18741/ready \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
 ## 5. Send A Request
 
 ```bash
-curl http://127.0.0.1:8000/v1/chat/completions \
+curl http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
@@ -100,7 +100,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 Streaming:
 
 ```bash
-curl -N http://127.0.0.1:8000/v1/chat/completions \
+curl -N http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{

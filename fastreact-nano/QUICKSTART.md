@@ -19,7 +19,7 @@ Edit `.fastreact/config.json`:
   },
   "service": {
     "host": "127.0.0.1",
-    "port": 8000,
+    "port": 18741,
     "service_token": "replace-with-local-service-token"
   },
   "mcp": {
@@ -47,7 +47,7 @@ Test:
 ```bash
 export SERVICE_TOKEN='replace-with-local-service-token'
 
-curl http://127.0.0.1:8000/v1/chat/completions \
+curl http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
   -d '{
@@ -61,10 +61,10 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 Useful checks:
 
 ```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/ready -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
-curl http://127.0.0.1:8000/v1/tools
-curl http://127.0.0.1:8000/v1/skills
+curl http://127.0.0.1:18741/health
+curl http://127.0.0.1:18741/ready -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
+curl http://127.0.0.1:18741/v1/tools
+curl http://127.0.0.1:18741/v1/skills
 ```
 
 Next: [docs/HEADLESS_SERVICE.md](docs/HEADLESS_SERVICE.md).

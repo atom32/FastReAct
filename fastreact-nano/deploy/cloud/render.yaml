@@ -13,7 +13,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11
       - key: PORT
-        value: 8000
+        value: 18741
       - key: FASTREACT_MODEL
         sync: false
       - key: FASTREACT_API_KEY
