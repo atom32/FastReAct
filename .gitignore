@@ -11,6 +11,8 @@ node_modules/
 .pyc
 
 # Testing
+test/
+tests/
 /coverage
 /docs_archive/v1_code/
 /docs_archive/nano_debug/
