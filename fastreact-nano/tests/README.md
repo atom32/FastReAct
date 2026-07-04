@@ -11,10 +11,12 @@ The default gates are intentionally smaller than the historical suite:
 - **quick**: contracts plus core runtime integration and critical unit tests.
 - **integration**: HTTP/SSE runtime, MCP, and multitenant scenarios.
 - **release-llm**: manual real LLM efficiency gate, not run by default.
+- **pska-e2e**: manual live PSKA/FastReAct/LLM/HTTP MCP gate, not run by default.
 - **diagnostics**: local scripts under `scripts/diagnostics/`, not collected by pytest.
 
-Real API checks read `~/api_key.txt` only when `python3 run_tests.py release-llm`
-is invoked. Default CI/pytest should not depend on external LLM credentials.
+Manual real API checks run only for `python3 run_tests.py release-llm` or a live
+`python3 run_tests.py pska-e2e` environment. Default CI/pytest should not depend
+on external LLM credentials.
 
 **Quick Commands**:
 ```bash
@@ -32,6 +34,9 @@ python3 run_tests.py all
 
 # Manual real LLM gate
 python3 run_tests.py release-llm
+
+# Manual live PSKA + FastReAct + LLM + HTTP MCP gate
+python3 run_tests.py pska-e2e
 ```
 
 **For detailed test history and evolution, see**: `docs_archive/testing/`
@@ -358,8 +363,8 @@ assert_session_completed(events)
 assert_tool_called(events, "graphrag_search_graph")
 ```
 
-Use the PSKA-side `core/scripts/fastreact_http_sse_e2e.py` for cross-repo
-HTTP/SSE smoke testing.
+Use the PSKA-side `scripts/pska-fastreact-kb-scope-smoke` for cross-repo
+PSKA service + FastReAct daemon + real LLM + HTTP MCP smoke testing.
 
 ## Test Coverage Documentation
 

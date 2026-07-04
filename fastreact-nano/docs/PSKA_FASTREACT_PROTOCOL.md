@@ -598,6 +598,6 @@ The minimum interop test should:
 PSKA repo command:
 
 ```bash
-cd core
-python3 scripts/fastreact_http_sse_e2e.py --python ../.pska/venvs/pska-py312/bin/python
+cd "$PSKA_REPO"
+./scripts/pska-fastreact-kb-scope-smoke
 ```

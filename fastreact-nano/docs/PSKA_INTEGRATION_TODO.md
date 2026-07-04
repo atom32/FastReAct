@@ -79,12 +79,12 @@ can remain the reference implementation until those boundaries are clear.
 
 ## Validation
 
-PSKA repo E2E command that starts real FastReAct HTTP/SSE and a real PSKA MCP
-JSON-RPC subprocess:
+PSKA repo E2E command that uses the running PSKA service, running FastReAct
+daemon, real LLM API, and real PSKA HTTP MCP endpoint:
 
 ```bash
-cd core
-python3 scripts/fastreact_http_sse_e2e.py --python ../.pska/venvs/pska-py312/bin/python
+cd "$PSKA_REPO"
+./scripts/pska-fastreact-kb-scope-smoke
 ```
 
 FastReAct-side wrapper:
@@ -177,8 +177,8 @@ just feature-rich.
 
 - Make PSKA/FastReAct cross-repo E2E a first-class gate.
   FastReAct now provides `python3 run_tests.py pska-e2e`, which delegates to
-  PSKA's `core/scripts/fastreact_http_sse_e2e.py` when the PSKA checkout is
-  available. Remaining work is CI wiring across both repositories.
+  PSKA's `scripts/pska-fastreact-kb-scope-smoke` when the PSKA checkout and
+  live services are available. Remaining work is CI wiring across both repositories.
 
 ## Remaining Integration Work
 

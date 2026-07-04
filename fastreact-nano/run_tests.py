@@ -115,7 +115,7 @@ def main():
     if args.suite == "pska-e2e":
         return run_command(
             ["python3", str(project_root / "scripts" / "pska_e2e_gate.py")],
-            "PSKA/FastReAct HTTP SSE E2E Gate",
+            "Live PSKA/FastReAct MCP+LLM E2E Gate",
         )
 
     if args.suite == "contracts":
