@@ -8,7 +8,7 @@ from typing import AsyncIterator, Optional, TYPE_CHECKING
 from fastreact.runtime.timing import TimingSpan
 from fastreact.core.messages import Message, MessageQueue
 from fastreact.core.multitenant import UserContext
-from fastreact.runtime.tool_policy import filter_tool_registry, normalize_tool_policy, tool_policy_denial
+from fastreact.runtime.tool_policy import apply_tool_policy_scope, filter_tool_registry, normalize_tool_policy, tool_policy_denial
 
 logger = logging.getLogger(__name__)
 
@@ -540,6 +540,11 @@ class AgentRuntime:
                     ):
                         # Collect TOOL_CALL events for execution
                         if event.type == EventType.TOOL_CALL:
+                            scoped_args, scope_injected = apply_tool_policy_scope(event.tool_name or "", event.tool_args or {}, run_tool_policy)
+                            if scope_injected:
+                                event.tool_args = scoped_args
+                                event.metadata["tool_policy_scope_applied"] = True
+                                event.metadata["tool_policy"] = run_tool_policy.to_metadata()
                             denial = tool_policy_denial(event.tool_name or "", run_tool_policy)
                             if denial:
                                 event.metadata["tool_policy_denied"] = True
@@ -549,17 +554,17 @@ class AgentRuntime:
                                 tool_calls.append({
                                     "id": event.metadata.get("call_id", ""),
                                     "name": event.tool_name,
-                                    "arguments": event.tool_args,
+                                    "arguments": scoped_args,
                                     "tool_policy_denied": denial,
                                 })
                                 continue
-                            validation_error = budget_guard.validate(event.tool_name or "", event.tool_args)
+                            validation_error = budget_guard.validate(event.tool_name or "", scoped_args)
                             if validation_error:
                                 yield event
                                 tool_calls.append({
                                     "id": event.metadata.get("call_id", ""),
                                     "name": event.tool_name,
-                                    "arguments": event.tool_args,
+                                    "arguments": scoped_args,
                                     "validation_error": validation_error,
                                 })
                                 continue
@@ -577,7 +582,7 @@ class AgentRuntime:
                             tool_calls.append({
                                 "id": event.metadata.get("call_id", ""),
                                 "name": event.tool_name,
-                                "arguments": event.tool_args,
+                                "arguments": scoped_args,
                                 "validation_error": validation_error,
                             })
                             continue

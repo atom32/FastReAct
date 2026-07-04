@@ -5,9 +5,11 @@ from fastreact.core.config import PathsConfig
 from fastreact.core.events import EventType
 from fastreact.core.multitenant import UserContext
 from fastreact.core.prompts import get_system_prompt
+from fastreact.core.tools import Tool
 from fastreact.runtime.agent_runtime import DigestToolBudgetGuard
 from fastreact.runtime.run_service import RunService
 from fastreact.runtime.store_service import StoreService
+from fastreact.runtime.tool_policy import apply_tool_policy_scope, normalize_tool_policy
 
 
 def make_test_config(tmp_path):
@@ -115,6 +117,146 @@ def test_run_trace_records_pska_digest_tool_budget(tmp_path):
     assert trace["pska_digest_tool_budget"]["write_call_count"] == 2
     assert trace["pska_digest_tool_budget"]["job_context_call_count"] == 1
     assert trace["pska_digest_tool_budget"]["tool_budget_exceeded"] is True
+
+
+def test_tool_policy_preserves_and_applies_pska_scope() -> None:
+    policy = normalize_tool_policy(
+        {
+            "mode": "allowlist",
+            "allowed_tools": ["pska_pska_search"],
+            "scope": {
+                "mode": "hard",
+                "knowledge_base_ids": ["kb_alpha"],
+                "source_item_ids": ["src_alpha", "src_beta"],
+            },
+        }
+    )
+
+    params, injected = apply_tool_policy_scope(
+        "pska_pska_search",
+        {"query": "alpha", "source_item_ids": ["src_beta", "src_outside"]},
+        policy,
+    )
+
+    assert policy.to_metadata()["scope"] == {
+        "mode": "hard",
+        "scope_mode": "hard",
+        "knowledge_base_ids": ["kb_alpha"],
+        "source_item_ids": ["src_alpha", "src_beta"],
+    }
+    assert injected is True
+    assert params["knowledge_base_ids"] == ["kb_alpha"]
+    assert params["source_item_ids"] == ["src_beta"]
+    assert params["scope_mode"] == "hard"
+    assert params["scope"]["knowledge_base_ids"] == ["kb_alpha"]
+    assert params["scope"]["source_item_ids"] == ["src_beta"]
+    assert params["scope"]["mode"] == "hard"
+
+
+@pytest.mark.asyncio
+async def test_runtime_injects_pska_tool_policy_scope_into_tool_calls(tmp_path, monkeypatch) -> None:
+    from fastreact.providers.litellm import LLMResponse, ToolCall
+
+    class CapturingPSKASearchTool(Tool):
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        @property
+        def name(self) -> str:
+            return "pska_pska_search"
+
+        @property
+        def description(self) -> str:
+            return "Fake PSKA search."
+
+        @property
+        def parameters(self) -> dict:
+            return {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "knowledge_base_ids": {"type": "array"},
+                    "source_item_ids": {"type": "array"},
+                    "scope_mode": {"type": "string"},
+                    "scope": {"type": "object"},
+                },
+                "required": ["query"],
+            }
+
+        async def execute(self, user_context=None, **kwargs) -> str:
+            self.calls.append(dict(kwargs))
+            return "scoped PSKA result"
+
+    call_count = 0
+
+    async def mock_chat(self, messages, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return LLMResponse(
+                content="Searching PSKA",
+                tool_calls=[
+                    ToolCall(
+                        id="call-pska-001",
+                        name="pska_pska_search",
+                        params={"query": "alpha", "source_item_ids": ["src_outside"]},
+                    )
+                ],
+                model=self.model,
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+            )
+        return LLMResponse(
+            content="Scoped answer.",
+            tool_calls=[],
+            model=self.model,
+            usage={"prompt_tokens": 8, "completion_tokens": 4},
+        )
+
+    import fastreact.providers.litellm
+
+    monkeypatch.setattr(fastreact.providers.litellm.LiteLLMProvider, "chat", mock_chat)
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+    tool = CapturingPSKASearchTool()
+    agent._tools.register(tool)
+    agent._core.tools = agent._tools
+
+    events = []
+    async for event in agent.run_event_stream(
+        "Find alpha",
+        session_id="pska-scope-policy-session",
+        run_metadata={
+            "tool_policy": {
+                "mode": "allowlist",
+                "allowed_tools": ["pska_pska_search"],
+                "scope": {
+                    "mode": "hard",
+                    "knowledge_base_ids": ["kb_alpha"],
+                    "source_item_ids": ["src_alpha"],
+                },
+            }
+        },
+    ):
+        events.append(event)
+
+    tool_call_events = [event for event in events if event.type == EventType.TOOL_CALL and event.tool_name == "pska_pska_search"]
+
+    assert tool.calls == [
+        {
+            "query": "alpha",
+            "knowledge_base_ids": ["kb_alpha"],
+            "source_item_ids": [],
+            "scope_mode": "hard",
+            "scope": {
+                "knowledge_base_ids": ["kb_alpha"],
+                "source_item_ids": [],
+                "scope_mode": "hard",
+                "mode": "hard",
+            },
+        }
+    ]
+    assert tool_call_events[0].tool_args == tool.calls[0]
+    assert tool_call_events[0].metadata["tool_policy_scope_applied"] is True
+    assert tool_call_events[0].metadata["tool_policy"]["scope"]["knowledge_base_ids"] == ["kb_alpha"]
 
 
 def test_pska_digest_guard_validates_candidate_payloads_before_budget_count():

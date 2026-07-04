@@ -85,7 +85,13 @@ Request:
   "skills": ["optional-skill-name"],
   "tool_policy": {
     "mode": "allowlist",
-    "allowed_tools": ["pska_pska_search", "pska_pska_index_status"]
+    "allowed_tools": ["pska_pska_search", "pska_pska_index_status"],
+    "scope": {
+      "mode": "hard",
+      "scope_mode": "hard",
+      "knowledge_base_ids": ["kb_..."],
+      "source_item_ids": ["src_..."]
+    }
   },
   "metadata": {
     "caller": "pska",
@@ -106,17 +112,37 @@ Rules:
 - PSKA-specific identity should be duplicated in `metadata.pska_user_id` when PSKA tools need it.
 - `tool_policy={"mode":"none"}` hides all tool schemas from the model and denies all tool calls at execution time.
 - `tool_policy={"mode":"allowlist","allowed_tools":[...]}` exposes and executes only the named tools. Denied calls are recorded in the run trace.
+- `tool_policy.scope` is the caller-selected PSKA corpus boundary. When present
+  for PSKA MCP tools, FastReAct injects that scope into tool arguments before
+  execution and records the injected args in `tool_call` events/audit. Model
+  generated `source_item_ids` are intersected with policy `source_item_ids`; the
+  model cannot widen the selected KB/source scope.
 
 For Ask PSKA deep QA, FastReAct should receive only PSKA read-only tools:
 
 ```json
 {
   "mode": "allowlist",
-  "allowed_tools": ["pska_pska_search", "pska_pska_index_status"]
+  "allowed_tools": [
+    "pska_pska_search",
+    "pska_pska_index_status",
+    "pska_pska_read_evidence_context",
+    "pska_pska_graph_context",
+    "pska_pska_digest_context"
+  ],
+  "scope": {
+    "mode": "hard",
+    "scope_mode": "hard",
+    "knowledge_base_ids": ["kb_..."],
+    "source_item_ids": ["src_..."]
+  }
 }
 ```
 
 FastReAct must enforce this both when building model tool schemas and when executing tool calls. This is a runtime boundary, not a prompt convention.
+PSKA still revalidates tenant/user ACL and KB access on every MCP call; the
+FastReAct scope injection keeps deep Ask product behavior consistent with quick
+Ask, while PSKA remains the security authority.
 
 PSKA may translate FastReAct raw events into product-level `agent_step` records
 for Ask PSKA. FastReAct should keep emitting the standard raw event protocol;
@@ -148,7 +174,10 @@ Payload:
   "tool_args": {
     "query": "Question",
     "user_id": "user_primary",
-    "top_k": 5
+    "top_k": 5,
+    "knowledge_base_ids": ["kb_..."],
+    "source_item_ids": ["src_..."],
+    "scope_mode": "hard"
   },
   "tool_call_id": "call-id",
   "duration_ms": null,
@@ -169,10 +198,16 @@ Consumer rules:
 - Consumers must ignore unknown fields.
 - Consumers must tolerate new `type` values.
 - Consumers should use `schema` to select parser behavior.
+- Streaming chat consumers must retain the events they receive if they need a
+  product trace. Durable `/v1/traces/*` endpoints are guaranteed for background
+  runs; they are not the only audit source for `stream=true` chat completions.
 - Consumers must not parse FastReAct internal Python objects.
 - Tool result payloads may be text or JSON encoded by the MCP tool.
 - Final answer text must not expose GraphRAG, FastReAct, MCP, tool routing, or
   tool status. Those belong in events/trace, not the answer body.
+- PSKA public Ask traces may redact noisy fields, but they should preserve safe
+  scope audit fields from tool calls: `knowledge_base_ids`, `source_item_ids`,
+  `scope_mode`, and `metadata.tool_policy_scope_applied`.
 
 ## Non-Streaming Response
 

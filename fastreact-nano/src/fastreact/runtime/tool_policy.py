@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,6 +13,7 @@ from fastreact.core.tools import ToolRegistry
 class RunToolPolicy:
     mode: str = "default"
     allowed_tools: frozenset[str] = field(default_factory=frozenset)
+    scope: dict[str, Any] = field(default_factory=dict)
 
     @property
     def active(self) -> bool:
@@ -30,6 +32,8 @@ class RunToolPolicy:
             payload["allowed_tools"] = sorted(self.allowed_tools)
         if self.mode == "none":
             payload["allowed_tools"] = []
+        if self.scope:
+            payload["scope"] = deepcopy(self.scope)
         return payload
 
 
@@ -37,16 +41,62 @@ def normalize_tool_policy(value: Any) -> RunToolPolicy:
     if not isinstance(value, dict):
         return RunToolPolicy()
     mode = str(value.get("mode") or "default").strip().lower()
+    scope = _normalize_policy_scope(value.get("scope"))
     if mode in {"none", "off", "disabled", "no_tools"}:
-        return RunToolPolicy(mode="none")
+        return RunToolPolicy(mode="none", scope=scope)
     if mode in {"allowlist", "allowed_tools", "allow"}:
         allowed = {
             str(item).strip()
             for item in value.get("allowed_tools", []) or []
             if str(item).strip()
         }
-        return RunToolPolicy(mode="allowlist", allowed_tools=frozenset(allowed))
-    return RunToolPolicy()
+        return RunToolPolicy(mode="allowlist", allowed_tools=frozenset(allowed), scope=scope)
+    return RunToolPolicy(scope=scope)
+
+
+def apply_tool_policy_scope(tool_name: str, tool_params: dict[str, Any], policy: RunToolPolicy) -> tuple[dict[str, Any], bool]:
+    """Inject run-scoped PSKA corpus bounds into MCP read-tool arguments.
+
+    The LLM may choose query terms and tool-specific limits, but it must not
+    widen the knowledge/source scope selected by the caller.
+    """
+    params = dict(tool_params or {})
+    if not policy.scope or not _is_pska_tool(tool_name):
+        return params, False
+
+    policy_scope = policy.scope
+    nested_scope = dict(params.get("scope") or {}) if isinstance(params.get("scope"), dict) else {}
+    injected = False
+
+    knowledge_base_ids = _string_list(policy_scope.get("knowledge_base_ids"))
+    if knowledge_base_ids:
+        params["knowledge_base_ids"] = knowledge_base_ids
+        nested_scope["knowledge_base_ids"] = knowledge_base_ids
+        injected = True
+
+    policy_source_ids = _string_list(policy_scope.get("source_item_ids"))
+    if policy_source_ids:
+        requested_source_ids = _string_list(params.get("source_item_ids")) or _string_list(nested_scope.get("source_item_ids"))
+        if requested_source_ids:
+            policy_source_set = set(policy_source_ids)
+            source_item_ids = [source_id for source_id in requested_source_ids if source_id in policy_source_set]
+        else:
+            source_item_ids = policy_source_ids
+        params["source_item_ids"] = source_item_ids
+        nested_scope["source_item_ids"] = source_item_ids
+        injected = True
+
+    scope_mode = str(policy_scope.get("scope_mode") or policy_scope.get("mode") or "").strip().lower()
+    if scope_mode:
+        params["scope_mode"] = scope_mode
+        nested_scope["scope_mode"] = scope_mode
+        nested_scope["mode"] = scope_mode
+        injected = True
+
+    if nested_scope:
+        params["scope"] = nested_scope
+
+    return params, injected
 
 
 def filter_tool_registry(registry: ToolRegistry, policy: RunToolPolicy) -> ToolRegistry:
@@ -70,3 +120,44 @@ def tool_policy_denial(tool_name: str, policy: RunToolPolicy) -> str | None:
     if policy.mode == "allowlist":
         return f"tool '{tool_name}' is not in run tool_policy allowed_tools"
     return None
+
+
+def _normalize_policy_scope(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    scope: dict[str, Any] = {}
+    knowledge_base_ids = _string_list(value.get("knowledge_base_ids"))
+    source_item_ids = _string_list(value.get("source_item_ids"))
+    mode = str(value.get("mode") or value.get("scope_mode") or "").strip().lower()
+    if mode:
+        scope["mode"] = mode
+        scope["scope_mode"] = mode
+    if knowledge_base_ids:
+        scope["knowledge_base_ids"] = knowledge_base_ids
+    if source_item_ids:
+        scope["source_item_ids"] = source_item_ids
+    return scope
+
+
+def _string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        values = list(value)
+    else:
+        values = [value]
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _is_pska_tool(tool_name: str) -> bool:
+    return str(tool_name or "").startswith("pska_")

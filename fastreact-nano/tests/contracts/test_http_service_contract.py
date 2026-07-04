@@ -623,6 +623,11 @@ def test_chat_completions_passes_tool_policy_to_runtime_metadata():
                 "tool_policy": {
                     "mode": "allowlist",
                     "allowed_tools": ["pska_pska_search", "pska_pska_index_status"],
+                    "scope": {
+                        "mode": "hard",
+                        "knowledge_base_ids": ["kb_alpha"],
+                        "source_item_ids": ["src_alpha"],
+                    },
                 },
             },
         )
@@ -634,6 +639,11 @@ def test_chat_completions_passes_tool_policy_to_runtime_metadata():
     assert metadata["tool_policy"] == {
         "mode": "allowlist",
         "allowed_tools": ["pska_pska_search", "pska_pska_index_status"],
+        "scope": {
+            "mode": "hard",
+            "knowledge_base_ids": ["kb_alpha"],
+            "source_item_ids": ["src_alpha"],
+        },
     }
 
 
