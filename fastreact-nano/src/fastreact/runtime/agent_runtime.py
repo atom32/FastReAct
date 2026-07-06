@@ -84,6 +84,26 @@ def _positive_int(value: object) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def _run_max_iterations(configured_default: int, metadata: Optional[dict] = None) -> int:
+    """Resolve the per-run ReAct safety cap.
+
+    Normal reasoning budgets should live in the prompt. This value remains a
+    circuit breaker, but service callers can still lower or raise it for a
+    specific run through audited metadata.
+    """
+    metadata = metadata or {}
+    for key in ("max_iterations", "react_max_iterations", "hard_max_iterations"):
+        override = _positive_int(metadata.get(key))
+        if override:
+            return override
+    scope = metadata.get("scope") if isinstance(metadata.get("scope"), dict) else {}
+    for key in ("max_iterations", "react_max_iterations", "hard_max_iterations"):
+        override = _positive_int(scope.get(key))
+        if override:
+            return override
+    return max(1, int(configured_default or 25))
+
+
 class AgentRuntime:
     """
     Runtime boundary for Agent execution.
@@ -356,9 +376,15 @@ class AgentRuntime:
 
         try:
             # Emit SESSION_START with skills information
+            max_iterations = _run_max_iterations(
+                agent._config.react.max_iterations if agent._config else 25,
+                run_metadata,
+            )
+
             session_start = AgentEvent.session_start(query, session_id, skills=skills)
             session_start.metadata["tool_policy"] = run_tool_policy.to_metadata()
             session_start.metadata["visible_tools"] = run_tools.list_all()
+            session_start.metadata["max_iterations"] = max_iterations
             yield session_start
 
             # Validate and clean history
@@ -393,9 +419,10 @@ class AgentRuntime:
             # Interrupt flag
             interrupted = False
 
-            # Iteration counter with hard limit to prevent infinite loops
+            # Iteration counter with hard limit to prevent infinite loops.
+            # This is intentionally a circuit breaker; task-level iteration
+            # budgets should be expressed in the user prompt.
             iteration_count = 0
-            max_iterations = agent._config.react.max_iterations if agent._config else 25
 
             # === Outer loop: Process follow-up messages ===
             while True:

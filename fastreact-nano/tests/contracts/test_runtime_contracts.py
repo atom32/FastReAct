@@ -7,6 +7,7 @@ from fastreact.core.multitenant import UserContext
 from fastreact.core.prompts import get_system_prompt
 from fastreact.core.tools import Tool
 from fastreact.runtime.agent_runtime import DigestToolBudgetGuard
+from fastreact.runtime.mcp_bootstrapper import MCPBootstrapper
 from fastreact.runtime.run_service import RunService
 from fastreact.runtime.store_service import StoreService
 from fastreact.runtime.tool_policy import apply_tool_policy_scope, normalize_tool_policy
@@ -56,6 +57,78 @@ async def test_runtime_adds_timing_metadata(tmp_path, mock_llm_no_tools):
 
     traces = agent.store.read("traces", session_id="timing-contract")
     assert traces[-1]["llm_usage_total"]["total_tokens"] == 15
+
+
+@pytest.mark.asyncio
+async def test_runtime_honors_per_run_max_iterations_metadata(tmp_path, mock_llm_with_tools):
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+
+    events = []
+    async for event in agent.run_event_stream(
+        "Please read the file repeatedly.",
+        session_id="iteration-budget-contract",
+        run_metadata={"scope": {"max_iterations": 1}},
+    ):
+        events.append(event)
+
+    assert events[0].metadata["max_iterations"] == 1
+    assert events[-1].type == EventType.SESSION_END
+    assert "maximum iteration limit (1)" in events[-1].content
+
+
+@pytest.mark.asyncio
+async def test_mcp_bootstrapper_retries_when_required_server_not_ready():
+    class _Metadata:
+        mcp_servers = ["pska"]
+
+    class _Skill:
+        metadata = _Metadata()
+
+    class _Core:
+        _tools = None
+
+    class _Agent:
+        def __init__(self):
+            self._mcp_manager = object()
+            self._skills = {"pska_answer_with_citations": _Skill()}
+            self._core = _Core()
+            self._tools = object()
+            self.ready = False
+            self.load_calls = 0
+
+        async def _load_mcp_servers(self, **_kwargs):
+            self.load_calls += 1
+            self.ready = True
+
+        def list_mcp_server_status(self):
+            return [
+                {
+                    "name": "pska",
+                    "alive": self.ready,
+                    "loaded": self.ready,
+                    "tool_count": 1 if self.ready else 0,
+                }
+            ]
+
+    agent = _Agent()
+    bootstrapper = MCPBootstrapper(agent)
+    bootstrapper._last_required_skills = ("tenant:user", "pska_answer_with_citations")
+
+    result = await bootstrapper.ensure_loaded(
+        required_skills=["pska_answer_with_citations"],
+        user_key="user",
+        tenant_key="tenant",
+    )
+    cached = await bootstrapper.ensure_loaded(
+        required_skills=["pska_answer_with_citations"],
+        user_key="user",
+        tenant_key="tenant",
+    )
+
+    assert agent.load_calls == 1
+    assert result["metadata"]["cache_hit"] is False
+    assert result["metadata"]["mcp_ready"] is True
+    assert cached["metadata"]["cache_hit"] is True
 
 
 def test_store_task_service_jsonl_roundtrip(tmp_path):
@@ -400,6 +473,32 @@ def test_store_service_sanitizes_sensitive_nested_fields(tmp_path):
     assert record["tool_args"]["password"] == "***"
     assert record["tool_args"]["query"] == "safe"
     assert record["metadata"]["nested"]["long_text"].endswith("[... truncated ...]")
+
+
+def test_run_service_preserves_long_execution_inputs(tmp_path):
+    store = StoreService(tmp_path / ".fastreact")
+    runs = RunService(store)
+    long_query = "Answer from this evidence only. " + ("Q" * 1400)
+    long_system = "System instructions. " + ("S" * 1400)
+
+    runs.create(
+        run_id="run-long-input",
+        session_id="session-long-input",
+        query=long_query,
+        history=[{"role": "system", "content": long_system}],
+        metadata={
+            "authorization": "Bearer secret-token",
+            "scope": {"query": long_query, "max_iterations": 1},
+        },
+    )
+
+    record = runs.get("run-long-input")
+
+    assert record["query"] == long_query
+    assert record["history"][0]["content"] == long_system
+    assert record["metadata"]["scope"]["query"] == long_query
+    assert record["metadata"]["scope"]["max_iterations"] == 1
+    assert record["metadata"]["authorization"] == "***"
 
 
 def test_run_service_preserves_long_final_answer_with_previews(tmp_path):

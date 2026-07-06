@@ -343,12 +343,14 @@ class MultiTenantMCPManager:
                 try:
                     await self._get_shared_manager(server_config.name, server_config)
                 except Exception as e:
-                    # Log error but continue with other servers
+                    # Surface the failure to Agent._load_mcp_servers so server
+                    # health reports can expose last_error and future runs retry.
                     logger.warning(
                         "Failed to preload shared MCP server '%s': %s",
                         server_config.name,
                         e,
                     )
+                    raise RuntimeError(f"Failed to preload shared MCP server '{server_config.name}': {e}") from e
 
     def list_mcp_tools(self) -> list[str]:
         """

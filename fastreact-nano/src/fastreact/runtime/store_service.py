@@ -182,7 +182,10 @@ class StoreService:
 
     @classmethod
     def sanitize_for_stream(cls, stream: str, record: dict[str, Any]) -> dict[str, Any]:
-        cleaned = cls.sanitize(record)
+        # Durable runs are execution inputs, not just observability events. Long
+        # queries/history must survive round-trip so background workers and
+        # recovery runs execute the same request that was submitted.
+        cleaned = cls.sanitize(record, preserve_long_text=(stream == "runs"))
         if not isinstance(cleaned, dict):
             return cleaned
 
@@ -201,20 +204,22 @@ class StoreService:
         return cleaned
 
     @classmethod
-    def sanitize(cls, value: Any) -> Any:
+    def sanitize(cls, value: Any, *, preserve_long_text: bool = False) -> Any:
         if isinstance(value, dict):
             cleaned = {}
             for key, inner in value.items():
                 key_lower = str(key).lower()
                 if key_lower in SAFE_TOKEN_USAGE_KEYS:
-                    cleaned[key] = cls.sanitize(inner)
+                    cleaned[key] = cls.sanitize(inner, preserve_long_text=preserve_long_text)
                 elif any(secret in key_lower for secret in SENSITIVE_KEYS):
                     cleaned[key] = "***"
                 else:
-                    cleaned[key] = cls.sanitize(inner)
+                    cleaned[key] = cls.sanitize(inner, preserve_long_text=preserve_long_text)
             return cleaned
         if isinstance(value, list):
-            return [cls.sanitize(item) for item in value]
-        if isinstance(value, str) and (value.startswith("sk-") or len(value) > LONG_STRING_LIMIT):
-            return cls.preview_text(value) if len(value) > LONG_STRING_LIMIT else "***"
+            return [cls.sanitize(item, preserve_long_text=preserve_long_text) for item in value]
+        if isinstance(value, str) and value.startswith("sk-"):
+            return "***"
+        if isinstance(value, str) and len(value) > LONG_STRING_LIMIT:
+            return value if preserve_long_text else cls.preview_text(value)
         return value
