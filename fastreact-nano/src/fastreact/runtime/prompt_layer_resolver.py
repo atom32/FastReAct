@@ -170,7 +170,7 @@ class PromptLayerResolver:
     def workspace_profile_layers(
         self,
         user_context: Optional["UserContext"] = None,
-        max_chars_per_file: int = 4000,
+        max_chars_per_file: int | None = None,
     ) -> list[PromptLayer]:
         """Load AGENTS/AGENT before SOUL files and classify them into layers."""
 
@@ -193,7 +193,7 @@ class PromptLayerResolver:
                         continue
                     if not content.strip():
                         continue
-                    if len(content) > max_chars_per_file:
+                    if max_chars_per_file is not None and len(content) > max_chars_per_file:
                         content = content[:max_chars_per_file] + "\n[... workspace profile truncated ...]"
                     entries_by_layer[layer].append(
                         f"### {spec.name} ({resolved})\n{content.strip()}"

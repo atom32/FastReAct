@@ -653,6 +653,19 @@ def test_workspace_profile_context_loads_agents_and_soul_files(tmp_path):
     )
 
 
+def test_workspace_profile_context_preserves_long_profile_files(tmp_path):
+    config = make_test_config(tmp_path)
+    config.paths.gateway_workspace = tmp_path
+    long_profile = "Project convention: " + ("A" * 6000) + "\nKeep this tail marker."
+    (tmp_path / "AGENTS.md").write_text(long_profile, encoding="utf-8")
+    agent = Agent(config=config, multitenant=False)
+
+    _base_prompt, variable_content = agent.skill_resolver.build_prompt(skills=None)
+
+    assert long_profile in variable_content
+    assert "workspace profile truncated" not in variable_content
+
+
 def test_persona_layer_cannot_override_core_framework_or_policy(tmp_path):
     config = make_test_config(tmp_path)
     config.paths.gateway_workspace = tmp_path

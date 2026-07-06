@@ -537,7 +537,7 @@ class Agent:
 
         return base_prompt, variable_content
 
-    def _load_workspace_profile_context(self, max_chars_per_file: int = 4000) -> str:
+    def _load_workspace_profile_context(self, max_chars_per_file: int | None = None) -> str:
         """Load optional workspace profile files such as AGENTS.md or SOUL.md."""
         layers = self.prompt_layers.workspace_profile_layers(max_chars_per_file=max_chars_per_file)
         if not layers:
