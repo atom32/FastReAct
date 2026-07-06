@@ -12,6 +12,8 @@ from typing import Optional, Any
 
 AUTHNODE_TENANT_CLAIMS = ["tenant_key", "tenant_id", "tenant", "org_id"]
 DEFAULT_SERVICE_PORT = 18741
+DEFAULT_LLM_MAX_TOKENS = 8192
+DEFAULT_MAX_TOOL_OUTPUT_CHARS = 20000
 
 
 def _env_value(*names: str, default: str | None = None) -> str | None:
@@ -55,7 +57,7 @@ class LLMConfig:
     api_key: Optional[str] = None
     api_key_file: Optional[Path] = None
     temperature: float = 0.7
-    max_tokens: int = 4096
+    max_tokens: int = DEFAULT_LLM_MAX_TOKENS
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
@@ -66,7 +68,7 @@ class LLMConfig:
             api_key=os.getenv("FASTRACT_API_KEY") or os.getenv("OPENAI_API_KEY"),
             api_key_file=_expand_path(os.getenv("FASTRACT_API_KEY_FILE")) if os.getenv("FASTRACT_API_KEY_FILE") else None,
             temperature=float(os.getenv("FASTRACT_TEMPERATURE", "0.7")),
-            max_tokens=int(os.getenv("FASTRACT_MAX_TOKENS", "4096")),
+            max_tokens=int(os.getenv("FASTRACT_MAX_TOKENS", str(DEFAULT_LLM_MAX_TOKENS))),
         )
         return _apply_api_key_file(config)
 
@@ -156,7 +158,7 @@ class ReactConfig:
     # Context monitoring
     max_context_tokens: int = 128000
     context_warning_threshold: float = 0.8
-    max_tool_output_chars: int = 5000
+    max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS
     use_tiktoken: bool = True  # Use tiktoken for accurate token counting
     tiktoken_model: str = "gpt-4o"  # Model name for tiktoken encoding
     sliding_window_size: int = 15  # Number of recent messages to preserve in compression
@@ -182,7 +184,7 @@ class ReactConfig:
             steering_file=Path(steering_path) if steering_path else Path.cwd() / ".steering.jsonl",
             max_context_tokens=int(os.getenv("FASTRACT_MAX_CONTEXT_TOKENS", "128000")),
             context_warning_threshold=float(os.getenv("FASTRACT_CONTEXT_WARNING_THRESHOLD", "0.8")),
-            max_tool_output_chars=int(os.getenv("FASTRACT_MAX_TOOL_OUTPUT_CHARS", "5000")),
+            max_tool_output_chars=int(os.getenv("FASTRACT_MAX_TOOL_OUTPUT_CHARS", str(DEFAULT_MAX_TOOL_OUTPUT_CHARS))),
             use_tiktoken=os.getenv("FASTRACT_USE_TIKTOKEN", "true").lower() == "true",
             tiktoken_model=os.getenv("FASTRACT_TIKTOKEN_MODEL", "gpt-4o"),
             sliding_window_size=int(os.getenv("FASTRACT_SLIDING_WINDOW_SIZE", "15")),
@@ -613,7 +615,7 @@ class Config:
         FASTRACT_API_BASE: API base URL
         FASTRACT_API_KEY: API key (also checks OPENAI_API_KEY)
         FASTRACT_TEMPERATURE: Temperature (default: 0.7)
-        FASTRACT_MAX_TOKENS: Max tokens (default: 4096)
+        FASTRACT_MAX_TOKENS: Max tokens (default: 8192)
         FASTRACT_MAX_FILE_SIZE: Max file size in bytes (default: 1048576)
         FASTRACT_EXEC_TIMEOUT: Exec timeout in seconds (default: 30)
         FASTRACT_WORKING_DIR: Working directory for exec
@@ -623,7 +625,7 @@ class Config:
         FASTRACT_STEERING_FILE: Steering file path
         FASTRACT_MAX_CONTEXT_TOKENS: Max context window size (default: 128000)
         FASTRACT_CONTEXT_WARNING_THRESHOLD: Context warning threshold (default: 0.8)
-        FASTRACT_MAX_TOOL_OUTPUT_CHARS: Max tool output chars (default: 5000)
+        FASTRACT_MAX_TOOL_OUTPUT_CHARS: Max tool output chars for explicit preview/truncation helpers (default: 20000)
         FASTRACT_USE_TIKTOKEN: Use tiktoken for accurate token counting (default: true)
         FASTRACT_TIKTOKEN_MODEL: Model name for tiktoken encoding (default: gpt-4o)
         FASTRACT_SLIDING_WINDOW_SIZE: Number of recent messages to preserve (default: 15)
@@ -755,7 +757,7 @@ class Config:
                                 api_base=provider_data.get("base_url"),
                                 api_key=api_key,
                                 temperature=provider_data.get("temperature", 0.7),
-                                max_tokens=provider_data.get("max_tokens", 4096),
+                                max_tokens=provider_data.get("max_tokens", DEFAULT_LLM_MAX_TOKENS),
                             )
                             break
                 else:
@@ -767,7 +769,7 @@ class Config:
                         api_key=llm_data.get("api_key"),
                         api_key_file=_expand_path(api_key_file) if api_key_file else None,
                         temperature=llm_data.get("temperature", 0.7),
-                        max_tokens=llm_data.get("max_tokens", 4096),
+                        max_tokens=llm_data.get("max_tokens", DEFAULT_LLM_MAX_TOKENS),
                     )
                     llm_config = _apply_api_key_file(llm_config)
 

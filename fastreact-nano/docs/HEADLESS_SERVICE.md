@@ -185,7 +185,7 @@ curl http://127.0.0.1:18741/v1/traces \
   -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
 ```
 
-Runs expose status and events while the daemon is active. Traces provide summary/replay records through the store when available. For final answers, `session_end.content` and `trace.final_content` are the durable full text; `content_preview` and `final_content_preview` are UI/diagnostic previews and may be truncated.
+Runs expose status and events while the daemon is active. Traces provide summary/replay records through the store when available. Run event top-level `content` fields and `trace.final_content` are durable full text; `content_preview` and `final_content_preview` are UI/diagnostic previews and may be truncated.
 
 ## Headless Tool Approvals
 

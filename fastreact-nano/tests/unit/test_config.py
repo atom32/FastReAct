@@ -30,7 +30,7 @@ class TestLLMConfig:
         assert config.api_key is None
         assert config.api_key_file is None
         assert config.temperature == 0.7
-        assert config.max_tokens == 4096
+        assert config.max_tokens == 8192
 
     def test_from_env(self):
         """Test creating configuration from environment"""
@@ -65,7 +65,7 @@ class TestLLMConfig:
         config = LLMConfig.from_env()
         assert config.model == "gpt-4o-mini"
         assert config.temperature == 0.7
-        assert config.max_tokens == 4096
+        assert config.max_tokens == 8192
 
 
 class TestServiceConfig:

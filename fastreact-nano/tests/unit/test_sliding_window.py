@@ -134,6 +134,31 @@ class TestContextCompressionWithSlidingWindow:
         # Should preserve all messages when under token limit
         assert len(compressed) == len(messages)
 
+    @pytest.mark.asyncio
+    async def test_compress_context_does_not_truncate_tool_content(self):
+        """Compression may select a window, but it must not rewrite tool content."""
+        config = Config()
+        config.react.sliding_window_size = 3
+
+        agent = Agent(config=config)
+        long_tool_result = "TOOL-START" + ("x" * 6000) + "TOOL-END"
+        messages = [
+            {"role": "system", "content": "System"},
+            {"role": "user", "content": "Initial"},
+            {"role": "assistant", "content": "Older answer " + ("y" * 6000)},
+            {"role": "tool", "content": long_tool_result},
+            {"role": "user", "content": "Follow up"},
+        ]
+
+        compressed = agent._compress_context(messages, max_tokens=20)
+
+        tool_messages = [message for message in compressed if message.get("role") == "tool"]
+        assert tool_messages
+        assert tool_messages[0]["content"] == long_tool_result
+        assert "... [Context truncated] ..." not in tool_messages[0]["content"]
+        assert agent._last_compression_metadata["tool_output_truncation_count"] == 0
+        assert agent._last_compression_metadata["over_budget_after_window"] is True
+
 
 class TestSlidingWindowEdgeCases:
     """Test edge cases for sliding window configuration"""

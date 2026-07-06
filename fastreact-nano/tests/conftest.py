@@ -70,7 +70,7 @@ def config_file(tmp_path):
             "api_base": "http://localhost:8000",
             "api_key": "test-key",
             "temperature": 0.7,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
         },
         "tools": {
             "max_file_size": 10485760,
@@ -248,7 +248,7 @@ def sample_config_dict():
             "api_base": "https://api.openai.com/v1",
             "api_key": "sk-test",
             "temperature": 0.7,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
         },
         "tools": {
             "max_file_size": 10485760,

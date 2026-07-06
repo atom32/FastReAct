@@ -189,7 +189,7 @@ class StoreService:
         if not isinstance(cleaned, dict):
             return cleaned
 
-        if stream in {"run_events", "events"} and record.get("type") == "session_end":
+        if stream in {"run_events", "events"}:
             content = record.get("content")
             if isinstance(content, str):
                 cleaned["content"] = content

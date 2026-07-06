@@ -32,7 +32,7 @@ class TestCategoryAwareTruncation:
 
     def test_file_content_preserves_structure(self):
         """Test that file content (read_file) preserves structure"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         # Create a large file output
         file_content = "import sys\nimport os\n" + "x" * 10000 + "\nprint('done')"
@@ -48,7 +48,7 @@ class TestCategoryAwareTruncation:
 
     def test_file_operation_truncates_to_result(self):
         """Test that file operations (write_file, edit_file) show result only"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         # Write operation output
         write_output = "Successfully wrote 1500 bytes to /path/to/file.txt\n" + "x" * 1000
@@ -61,7 +61,7 @@ class TestCategoryAwareTruncation:
 
     def test_command_preserves_errors(self):
         """Test that commands (exec) preserve error messages"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         # Command output with error
         error_output = "Processing...\n" + "x" * 500 + "\n" + "Error: Command failed\n" + "y" * 300
@@ -75,7 +75,7 @@ class TestCategoryAwareTruncation:
 
     def test_search_preserves_matches(self):
         """Test that search (grep/find) preserve matches"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         # Create larger search output that will exceed limit
         search_lines = []
@@ -95,7 +95,7 @@ class TestCategoryAwareTruncation:
 
     def test_unknown_tool_uses_default(self):
         """Test that unknown tools use default balanced strategy"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         output = "x" * 10000
 
@@ -108,7 +108,7 @@ class TestCategoryAwareTruncation:
 
     def test_small_output_not_truncated(self):
         """Test that small outputs are not truncated"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         small_output = "Small output"
 
@@ -123,7 +123,7 @@ class TestTruncationStrategies:
 
     def test_structure_truncation_line_boundaries(self):
         """Test that structure truncation respects line boundaries"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         output = "\n".join([f"Line {i}" for i in range(100)])
 
@@ -134,7 +134,7 @@ class TestTruncationStrategies:
 
     def test_result_truncation_success(self):
         """Test that result truncation shows success"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         success_output = "File written successfully"
 
@@ -144,7 +144,7 @@ class TestTruncationStrategies:
 
     def test_result_truncation_error(self):
         """Test that result truncation preserves errors"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         error_output = "[ERROR] Failed to write file\nPermission denied\n"
 
@@ -154,7 +154,7 @@ class TestTruncationStrategies:
 
     def test_error_preservation_finds_errors(self):
         """Test that error preservation finds error patterns"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         error_output = "Processing...\n" + "x" * 500 + "\nERROR: Operation failed\n"
 
@@ -168,7 +168,7 @@ class TestTruncationStrategies:
 
     def test_key_info_removes_fluff(self):
         """Test that key info truncation removes fluff"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         fluff_output = "Here are the search results:\n\n" + "Actual result" + "x" * 500
 
@@ -224,7 +224,7 @@ class TestStatisticsTracking:
 
     def test_truncation_increments_count(self):
         """Test that truncation increments the counter"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         initial_count = monitor._stats.truncated_count
 
@@ -235,7 +235,7 @@ class TestStatisticsTracking:
 
     def test_truncation_records_last_tool(self):
         """Test that truncation records which tool was truncated"""
-        monitor = ContextMonitor()
+        monitor = ContextMonitor(max_tool_output_chars=5000)
 
         large_output = "x" * 10000
         monitor.truncate_by_category(large_output, "my_special_tool")

@@ -10,6 +10,8 @@ from typing import AsyncIterator, Optional, Any
 from dataclasses import dataclass
 import asyncio
 
+from fastreact.core.config import DEFAULT_LLM_MAX_TOKENS
+
 
 @dataclass
 class LLMResponse:
@@ -54,7 +56,7 @@ class LiteLLMProvider:
         api_base: Optional[str] = None,
         api_key: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_LLM_MAX_TOKENS,
     ):
         """
         Initialize LLM provider

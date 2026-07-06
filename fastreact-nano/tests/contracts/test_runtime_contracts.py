@@ -547,6 +547,43 @@ def test_run_service_preserves_long_final_answer_with_previews(tmp_path):
     assert runs.snapshot("run-long-final")["generation_options"] == {"model": "test-model", "max_tokens": 2048}
 
 
+def test_run_service_preserves_long_tool_result_with_previews(tmp_path):
+    store = StoreService(tmp_path / ".fastreact")
+    runs = RunService(store)
+    long_result = "TOOL-" + ("R" * 1300)
+
+    runs.create(
+        run_id="run-long-tool-result",
+        session_id="session-long-tool-result",
+        query="inspect",
+    )
+    runs.mark_running("run-long-tool-result", worker_id="worker-test")
+    runs.append_event(
+        "run-long-tool-result",
+        {
+            "type": "tool_result",
+            "tool_name": "long_output",
+            "content": long_result,
+            "sequence": 1,
+            "metadata": {
+                "authorization": "Bearer secret-token",
+                "nested": {"long_text": "x" * 1300},
+            },
+        },
+    )
+
+    run_event = store.read("run_events", limit=0, run_id="run-long-tool-result")[0]
+    compat_event = store.read("events", limit=0, run_id="run-long-tool-result")[0]
+
+    assert run_event["content"] == long_result
+    assert compat_event["content"] == long_result
+    assert run_event["content_preview"] == long_result[:600] + "\n[... truncated ...]"
+    assert run_event["content_truncated"] is True
+    assert run_event["content_length"] == len(long_result)
+    assert run_event["metadata"]["authorization"] == "***"
+    assert run_event["metadata"]["nested"]["long_text"].endswith("[... truncated ...]")
+
+
 @pytest.mark.asyncio
 async def test_runtime_passes_llm_options_to_provider(tmp_path, monkeypatch):
     from fastreact.providers.litellm import LLMResponse, LiteLLMProvider
@@ -729,6 +766,37 @@ async def test_tool_execution_audits_safe_tool(tmp_path):
     assert event.type == EventType.TOOL_RESULT
     assert audit[-1]["tool_name"] == "read_file"
     assert audit[-1]["decision_level"] in ("none", "safe")
+
+
+@pytest.mark.asyncio
+async def test_tool_execution_preserves_full_tool_result_in_flow(tmp_path):
+    class LongOutputTool(Tool):
+        @property
+        def name(self) -> str:
+            return "long_output"
+
+        @property
+        def description(self) -> str:
+            return "Return a long result."
+
+        async def execute(self, user_context=None, **kwargs):
+            return "START-" + ("x" * 12000) + "-END"
+
+    config = make_test_config(tmp_path)
+    config.react.max_tool_output_chars = 100
+    agent = Agent(config=config, multitenant=False)
+    agent._tools.register(LongOutputTool())
+
+    execution, event = await agent.tool_executor.execute(
+        tool_name="long_output",
+        tool_params={},
+        session_id="long-tool-session",
+    )
+
+    assert execution.result == "START-" + ("x" * 12000) + "-END"
+    assert event.content == execution.result
+    assert "[System: Tool output truncated]" not in event.content
+    assert agent._context_monitor.get_stats()["truncated_count"] == 0
 
 
 @pytest.mark.asyncio

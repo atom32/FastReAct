@@ -5,7 +5,7 @@
     "api_base": "https://api.deepseek.com",
     "api_key_file": "~/api_key.txt",
     "temperature": 0.7,
-    "max_tokens": 4096
+    "max_tokens": 8192
   },
   "service": {
     "host": "127.0.0.1",
@@ -45,7 +45,7 @@
     "max_iterations": 20,
     "max_context_tokens": 128000,
     "sliding_window_size": 15,
-    "max_tool_output_chars": 5000,
+    "max_tool_output_chars": 20000,
     "enable_safety": true,
     "auto_approve_safe": true,
     "enable_filesystem_memory": true

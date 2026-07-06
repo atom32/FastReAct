@@ -643,7 +643,7 @@ class Agent:
 
         Level 1: Estimate tokens and check if compression needed
         Level 2: Sliding window (preserve System + initial query + recent N messages)
-        Level 3: Character-level truncation (last resort)
+        Level 3: No in-flow truncation; if still over budget, surface metadata
 
         Args:
             messages: Message list to compress
@@ -662,6 +662,7 @@ class Agent:
             "compressed_message_count": len(messages),
             "dropped_count": 0,
             "tool_output_truncation_count": 0,
+            "over_budget_after_window": False,
             "preserved_message_indices": list(range(len(messages))),
         }
         # Use config value if not specified
@@ -734,35 +735,24 @@ class Agent:
             except ValueError:
                 pass
 
-        # Level 3: Character-level truncation (if still over limit)
-        # Estimate compressed tokens
+        # Level 3: estimate remaining budget pressure, but do not rewrite tool
+        # output. Full tool results must remain available to the workflow; UI and
+        # trace previews can truncate independently.
         compressed_tokens = 0
         for msg in compressed:
             content = msg.get("content", "")
             compressed_tokens += len(content) // 4
 
-        if compressed_tokens > max_tokens:
-            # Truncate tool outputs to fit
-            tool_output_truncation_count = 0
-            for msg in compressed:
-                if msg.get("role") == "tool":
-                    content = msg.get("content", "")
-                    # Truncate to 80% of original
-                    if len(content) > 2000:
-                        head = content[:1600]
-                        tail = content[-400:] if len(content) > 2000 else ""
-                        msg["content"] = f"{head}\n... [Context truncated] ...\n{tail}"
-                        tool_output_truncation_count += 1
-        else:
-            tool_output_truncation_count = 0
+        over_budget_after_window = compressed_tokens > max_tokens
 
         self._last_compression_metadata = {
             "compressed": True,
-            "reason": "sliding_window" if tool_output_truncation_count == 0 else "sliding_window_and_tool_truncation",
+            "reason": "sliding_window_over_budget" if over_budget_after_window else "sliding_window",
             "original_message_count": len(messages),
             "compressed_message_count": len(compressed),
             "dropped_count": max(0, len(messages) - len(compressed)),
-            "tool_output_truncation_count": tool_output_truncation_count,
+            "tool_output_truncation_count": 0,
+            "over_budget_after_window": over_budget_after_window,
             "preserved_message_indices": sorted(set(preserved_indices)),
             "estimated_tokens_before": total_tokens,
             "estimated_tokens_after": compressed_tokens,

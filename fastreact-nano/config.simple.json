@@ -3,7 +3,7 @@
     "model": "gpt-4o-mini",
     "api_key": "sk-your-openai-api-key-here",
     "temperature": 0.7,
-    "max_tokens": 4096
+    "max_tokens": 8192
   },
   "tools": {
     "max_file_size": 1048576,

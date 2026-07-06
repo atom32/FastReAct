@@ -44,7 +44,7 @@ except ImportError:  # pragma: no cover - exercised in minimal installs.
         return default
 
 from fastreact import Agent, Config
-from fastreact.core.config import AuthConfig, DEFAULT_SERVICE_PORT
+from fastreact.core.config import AuthConfig, DEFAULT_LLM_MAX_TOKENS, DEFAULT_MAX_TOOL_OUTPUT_CHARS, DEFAULT_SERVICE_PORT
 from fastreact.core.events import AgentEvent
 from fastreact.core.identity import (
     IdentityContext,
@@ -978,7 +978,7 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
             "api_base": request.api_base,
             "api_key_file": request.api_key_file,
             "temperature": 0.7,
-            "max_tokens": 4096,
+            "max_tokens": DEFAULT_LLM_MAX_TOKENS,
         },
         "service": {
             "host": request.host,
@@ -1001,7 +1001,7 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
             "max_iterations": 20,
             "max_context_tokens": 128000,
             "sliding_window_size": 15,
-            "max_tool_output_chars": 5000,
+            "max_tool_output_chars": DEFAULT_MAX_TOOL_OUTPUT_CHARS,
             "enable_safety": True,
             "auto_approve_safe": True,
             "enable_filesystem_memory": True,

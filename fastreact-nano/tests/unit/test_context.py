@@ -53,7 +53,7 @@ class TestContextMonitor:
         monitor = ContextMonitor()
         assert monitor._max_tokens == 128000
         assert monitor._warning_threshold == 0.8
-        assert monitor._max_tool_output_chars == 5000
+        assert monitor._max_tool_output_chars == 20000
         assert monitor._stats.total_tokens == 0
 
     def test_monitor_custom_initialization(self):
@@ -190,7 +190,7 @@ class TestContextMonitor:
     def test_reset_stats(self):
         """Test resetting statistics"""
         monitor = ContextMonitor()
-        monitor.truncate_tool_output("x" * 10000, "test_tool")
+        monitor.truncate_tool_output("x" * 30000, "test_tool")
         assert monitor._stats.truncated_count > 0
 
         monitor.reset_stats()

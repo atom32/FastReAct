@@ -8,7 +8,7 @@
     "api_base": null,
     "api_key": "sk-your-openai-api-key-here",
     "temperature": 0.7,
-    "max_tokens": 4096,
+    "max_tokens": 8192,
 
     "_comment_alternative": "方式2: 使用 Anthropic Claude",
     "_example_anthropic": {
@@ -33,7 +33,7 @@
           "base_url": "https://api.openai.com/v1",
           "api_key_env": "OPENAI_API_KEY",
           "temperature": 0.7,
-          "max_tokens": 4096
+          "max_tokens": 8192
         },
         "anthropic": {
           "enabled": false,
@@ -76,7 +76,7 @@
     "_comment": "上下文监控（Token Guard）",
     "max_context_tokens": 128000,
     "context_warning_threshold": 0.8,
-    "max_tool_output_chars": 5000,
+    "max_tool_output_chars": 20000,
 
     "_comment": "文件系统记忆（Ghost Map）",
     "enable_filesystem_memory": true,

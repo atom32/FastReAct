@@ -223,8 +223,6 @@ class ToolExecutionService:
                 tool_params,
                 user_context=user_context,
             )
-            if self._agent._context_monitor:
-                result = self._agent._context_monitor.truncate_tool_output(result)
             execution = ToolExecutionResult(tool_name=tool_name, result=result)
         except Exception as exc:
             result = f"[ERROR] {exc}"

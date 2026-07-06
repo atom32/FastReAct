@@ -321,7 +321,7 @@ class TestEnvironmentVariablePriority:
         # Should use defaults (since from_env() is called)
         assert config.llm.model == "gpt-4o-mini"
         assert config.llm.temperature == 0.7
-        assert config.llm.max_tokens == 4096
+        assert config.llm.max_tokens == 8192
 
     def test_openai_api_key_fallback(self, clean_env):
         """Test OPENAI_API_KEY fallback for api_key"""
@@ -725,7 +725,7 @@ class TestDefaultValueFallbacks:
 
         assert config.llm.model == "gpt-4o-mini"
         assert config.llm.temperature == 0.7
-        assert config.llm.max_tokens == 4096
+        assert config.llm.max_tokens == 8192
         assert config.llm.api_base is None
         assert config.llm.api_key is None
 
@@ -747,7 +747,7 @@ class TestDefaultValueFallbacks:
         assert config.react.enable_followup is True
         assert config.react.max_context_tokens == 128000
         assert config.react.context_warning_threshold == 0.8
-        assert config.react.max_tool_output_chars == 5000
+        assert config.react.max_tool_output_chars == 20000
         assert config.react.enable_filesystem_memory is True
         assert config.react.max_tree_depth == 3
         assert config.react.max_files_per_dir == 50
@@ -818,7 +818,7 @@ class TestInvalidConfigHandling:
         assert config.llm.api_base is None
         assert config.llm.api_key is None
         assert config.llm.temperature == 0.7  # Default
-        assert config.llm.max_tokens == 4096  # Default
+        assert config.llm.max_tokens == 8192  # Default
 
     def test_invalid_mcp_servers_json(self, clean_env):
         """Test handling of invalid MCP servers JSON"""

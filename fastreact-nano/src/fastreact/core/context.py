@@ -3,7 +3,7 @@ Context Monitor - Token circuit breaker for FastReAct Nano v2.0
 
 Prevents token explosion by:
 1. Monitoring total context size
-2. Truncating tool outputs (with category-aware strategies)
+2. Providing explicit preview/truncation helpers for diagnostics
 3. Managing conversation history
 4. Filesystem memory (Ghost Map)
 """
@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from pathlib import Path
 import re
+
+from fastreact.core.config import DEFAULT_MAX_TOOL_OUTPUT_CHARS
 
 # Try to import tiktoken for accurate token counting
 # Falls back to simple estimation if not available
@@ -110,7 +112,7 @@ class ContextMonitor:
         self,
         max_tokens: int = 128000,
         warning_threshold: float = 0.8,
-        max_tool_output_chars: int = 5000,
+        max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         model: str = "gpt-4o",
         use_tiktoken: bool = True,
     ):
@@ -120,7 +122,8 @@ class ContextMonitor:
         Args:
             max_tokens: Maximum context window size (default: 128k for GPT-4)
             warning_threshold: Warning threshold (0.0-1.0, default: 0.8)
-            max_tool_output_chars: Maximum chars per tool output (default: 5000)
+            max_tool_output_chars: Maximum chars per tool output for explicit
+                preview/truncation helpers (default: 20000)
             model: Model name for tiktoken encoding (default: gpt-4o)
             use_tiktoken: Whether to use tiktoken if available (default: True)
         """

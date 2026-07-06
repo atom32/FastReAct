@@ -833,8 +833,8 @@ class TestErrorHandling:
             await manager.get_manager("test-server", config, "user1")
 
     @pytest.mark.asyncio
-    async def test_preload_continues_on_error(self, tool_registry):
-        """Test that preload continues if one server fails"""
+    async def test_preload_surfaces_error_for_retry(self, tool_registry):
+        """Test that preload surfaces a failing shared server for retry/health."""
         manager = MultiTenantMCPManager(tool_registry)
 
         with patch.object(manager, '_get_shared_manager') as mock_get:
@@ -857,8 +857,8 @@ class TestErrorHandling:
                 config.per_user_args_template = None
                 configs.append(config)
 
-            # Should not raise error
-            await manager.preload_shared_servers(configs)
+            with pytest.raises(RuntimeError, match="Failed to preload shared MCP server 'server1'"):
+                await manager.preload_shared_servers(configs)
 
-            # Should have attempted all 3
-            assert mock_get.call_count == 3
+            # Stop at the failing server so Agent bootstrap can record the load error.
+            assert mock_get.call_count == 2

@@ -449,7 +449,7 @@ Replay responses include `count`, `total_event_count`, `next_after_sequence`,
 and `has_more`; clients should resume by passing the previous
 `next_after_sequence` as `after_sequence`.
 
-For completed runs, `session_end.content` and `trace.final_content` are durable
+Run event top-level `content` fields and `trace.final_content` are durable
 full-text fields. Preview fields such as `content_preview` and
 `final_content_preview` are only for display or diagnostics and may be
 truncated.
