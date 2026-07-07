@@ -2,13 +2,19 @@
 
 import asyncio
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
 from typing import Any, Optional, TYPE_CHECKING
 
 from fastreact.core.events import AgentEvent
 from fastreact.core.safety import SafetyDecision, SafetyLevel
+from fastreact.runtime.tool_output_governance import (
+    GovernedToolOutput,
+    govern_mcp_tool_output,
+    is_mcp_tool,
+    retry_params_for_tool,
+)
 
 if TYPE_CHECKING:
     from fastreact.agent import Agent
@@ -19,10 +25,12 @@ if TYPE_CHECKING:
 class ToolExecutionResult:
     tool_name: str
     result: str
+    context_result: Optional[str] = None
     allowed: bool = True
     blocked: bool = False
     error: Optional[str] = None
     request_id: Optional[str] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ToolExecutionService:
@@ -198,6 +206,7 @@ class ToolExecutionService:
             execution = ToolExecutionResult(
                 tool_name=tool_name,
                 result=result,
+                context_result=result,
                 allowed=False,
                 blocked=True,
                 request_id=request_id,
@@ -210,6 +219,7 @@ class ToolExecutionService:
             execution = ToolExecutionResult(
                 tool_name=tool_name,
                 result=result,
+                context_result=result,
                 allowed=False,
                 blocked=True,
                 request_id=request_id,
@@ -217,16 +227,39 @@ class ToolExecutionService:
             self._audit(tool_name, tool_params, decision, False, session_id, result, started, request_id)
             return execution, AgentEvent.tool_result(tool_name, result, session_id)
 
+        tool = self._agent._tools.get(tool_name) if hasattr(self._agent, "_tools") else None
         try:
-            result = await self._agent._tools.execute(
-                tool_name,
-                tool_params,
+            governed = await self._execute_and_govern(
+                tool=tool,
+                tool_name=tool_name,
+                tool_params=tool_params,
+                session_id=session_id,
                 user_context=user_context,
             )
-            execution = ToolExecutionResult(tool_name=tool_name, result=result)
+            result = governed.result
+            execution = ToolExecutionResult(
+                tool_name=tool_name,
+                result=result,
+                context_result=governed.context_result,
+                metadata=governed.metadata,
+            )
         except Exception as exc:
-            result = f"[ERROR] {exc}"
-            execution = ToolExecutionResult(tool_name=tool_name, result=result, error=str(exc))
+            raw_result = f"[ERROR] {type(exc).__name__}: {exc}"
+            governed = self._govern_mcp_result(
+                tool=tool,
+                tool_name=tool_name,
+                tool_params=tool_params,
+                result=raw_result,
+                session_id=session_id,
+            )
+            result = governed.result
+            execution = ToolExecutionResult(
+                tool_name=tool_name,
+                result=result,
+                context_result=governed.context_result,
+                error=None if governed.issue else str(exc),
+                metadata=governed.metadata,
+            )
 
         self._audit(tool_name, tool_params, decision, approved, session_id, result, started, request_id)
         event = AgentEvent.tool_result(tool_name, result, session_id)
@@ -236,7 +269,128 @@ class ToolExecutionService:
             "approved": approved,
             "request_id": request_id,
         })
+        event.metadata.update(execution.metadata)
         return execution, event
+
+    async def _execute_and_govern(
+        self,
+        *,
+        tool: Any,
+        tool_name: str,
+        tool_params: dict[str, Any],
+        session_id: str,
+        user_context: Optional["UserContext"],
+    ) -> GovernedToolOutput:
+        result = await self._agent._tools.execute(
+            tool_name,
+            tool_params,
+            user_context=user_context,
+        )
+        governed = self._govern_mcp_result(
+            tool=tool,
+            tool_name=tool_name,
+            tool_params=tool_params,
+            result=result,
+            session_id=session_id,
+        )
+        if not governed.issue or not is_mcp_tool(tool):
+            return governed
+
+        retry_attempts = max(
+            0,
+            int(getattr(getattr(self._agent._config, "react", None), "mcp_tool_output_retry_attempts", 1)),
+        )
+        if retry_attempts <= 0:
+            return governed
+
+        original_issue = dict(governed.metadata.get("tool_output_governance", {}))
+        current_params = dict(tool_params)
+        current_governed = governed
+        attempts = 0
+        for _ in range(retry_attempts):
+            retry_params = retry_params_for_tool(
+                current_params,
+                getattr(tool, "parameters", None),
+                self._mcp_output_budget_chars,
+            )
+            if not retry_params:
+                break
+            attempts += 1
+            retry_result = await self._agent._tools.execute(
+                tool_name,
+                retry_params,
+                user_context=user_context,
+            )
+            retry_governed = self._govern_mcp_result(
+                tool=tool,
+                tool_name=tool_name,
+                tool_params=retry_params,
+                result=retry_result,
+                session_id=session_id,
+            )
+            retry_metadata = {
+                "retried": True,
+                "retry_attempts": attempts,
+                "retry_params": self._changed_retry_params(current_params, retry_params),
+                "previous_issue": original_issue,
+            }
+            retry_governed.metadata.setdefault("tool_output_governance", {}).update(retry_metadata)
+            if not retry_governed.issue:
+                retry_governed.metadata["tool_output_governance"]["recovered"] = True
+                return retry_governed
+            retry_governed.metadata["tool_output_governance"]["recovered"] = False
+            current_params = retry_params
+            current_governed = retry_governed
+
+        if attempts == 0:
+            return current_governed
+        current_governed.metadata.setdefault("tool_output_governance", {}).update({
+            "retried": attempts > 0,
+            "retry_attempts": attempts,
+            "recovered": False,
+            "previous_issue": original_issue,
+        })
+        return current_governed
+
+    def _govern_mcp_result(
+        self,
+        *,
+        tool: Any,
+        tool_name: str,
+        tool_params: dict[str, Any],
+        result: Any,
+        session_id: str,
+    ) -> GovernedToolOutput:
+        if not is_mcp_tool(tool):
+            text = result if isinstance(result, str) else str(result)
+            return GovernedToolOutput(result=text, context_result=text)
+        return govern_mcp_tool_output(
+            tool_name=tool_name,
+            tool_params=tool_params,
+            tool_schema=getattr(tool, "parameters", None),
+            result=result,
+            configured_budget=self._mcp_output_budget_chars,
+            preview_chars=self._mcp_output_preview_chars,
+            session_id=session_id,
+            store=getattr(self._agent, "store", None),
+        )
+
+    @property
+    def _mcp_output_budget_chars(self) -> int:
+        react = getattr(getattr(self._agent, "_config", None), "react", None)
+        return int(getattr(react, "mcp_tool_output_budget_chars", 20000))
+
+    @property
+    def _mcp_output_preview_chars(self) -> int:
+        react = getattr(getattr(self._agent, "_config", None), "react", None)
+        return int(getattr(react, "mcp_tool_output_preview_chars", 1200))
+
+    def _changed_retry_params(self, before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+        changed: dict[str, Any] = {}
+        for key, value in after.items():
+            if before.get(key) != value and key.startswith("max_"):
+                changed[key] = value
+        return changed
 
     def _audit(
         self,

@@ -14,6 +14,8 @@ AUTHNODE_TENANT_CLAIMS = ["tenant_key", "tenant_id", "tenant", "org_id"]
 DEFAULT_SERVICE_PORT = 18741
 DEFAULT_LLM_MAX_TOKENS = 8192
 DEFAULT_MAX_TOOL_OUTPUT_CHARS = 20000
+DEFAULT_MCP_TOOL_OUTPUT_BUDGET_CHARS = 20000
+DEFAULT_MCP_TOOL_OUTPUT_PREVIEW_CHARS = 1200
 
 
 def _env_value(*names: str, default: str | None = None) -> str | None:
@@ -159,6 +161,9 @@ class ReactConfig:
     max_context_tokens: int = 128000
     context_warning_threshold: float = 0.8
     max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS
+    mcp_tool_output_budget_chars: int = DEFAULT_MCP_TOOL_OUTPUT_BUDGET_CHARS
+    mcp_tool_output_preview_chars: int = DEFAULT_MCP_TOOL_OUTPUT_PREVIEW_CHARS
+    mcp_tool_output_retry_attempts: int = 1
     use_tiktoken: bool = True  # Use tiktoken for accurate token counting
     tiktoken_model: str = "gpt-4o"  # Model name for tiktoken encoding
     sliding_window_size: int = 15  # Number of recent messages to preserve in compression
@@ -185,6 +190,21 @@ class ReactConfig:
             max_context_tokens=int(os.getenv("FASTRACT_MAX_CONTEXT_TOKENS", "128000")),
             context_warning_threshold=float(os.getenv("FASTRACT_CONTEXT_WARNING_THRESHOLD", "0.8")),
             max_tool_output_chars=int(os.getenv("FASTRACT_MAX_TOOL_OUTPUT_CHARS", str(DEFAULT_MAX_TOOL_OUTPUT_CHARS))),
+            mcp_tool_output_budget_chars=int(_env_value(
+                "FASTREACT_MCP_TOOL_OUTPUT_BUDGET_CHARS",
+                "FASTRACT_MCP_TOOL_OUTPUT_BUDGET_CHARS",
+                default=str(DEFAULT_MCP_TOOL_OUTPUT_BUDGET_CHARS),
+            )),
+            mcp_tool_output_preview_chars=int(_env_value(
+                "FASTREACT_MCP_TOOL_OUTPUT_PREVIEW_CHARS",
+                "FASTRACT_MCP_TOOL_OUTPUT_PREVIEW_CHARS",
+                default=str(DEFAULT_MCP_TOOL_OUTPUT_PREVIEW_CHARS),
+            )),
+            mcp_tool_output_retry_attempts=int(_env_value(
+                "FASTREACT_MCP_TOOL_OUTPUT_RETRY_ATTEMPTS",
+                "FASTRACT_MCP_TOOL_OUTPUT_RETRY_ATTEMPTS",
+                default="1",
+            )),
             use_tiktoken=os.getenv("FASTRACT_USE_TIKTOKEN", "true").lower() == "true",
             tiktoken_model=os.getenv("FASTRACT_TIKTOKEN_MODEL", "gpt-4o"),
             sliding_window_size=int(os.getenv("FASTRACT_SLIDING_WINDOW_SIZE", "15")),
@@ -626,6 +646,9 @@ class Config:
         FASTRACT_MAX_CONTEXT_TOKENS: Max context window size (default: 128000)
         FASTRACT_CONTEXT_WARNING_THRESHOLD: Context warning threshold (default: 0.8)
         FASTRACT_MAX_TOOL_OUTPUT_CHARS: Max tool output chars for explicit preview/truncation helpers (default: 20000)
+        FASTREACT_MCP_TOOL_OUTPUT_BUDGET_CHARS: MCP result budget before artifact/context governance (default: 20000)
+        FASTREACT_MCP_TOOL_OUTPUT_PREVIEW_CHARS: MCP issue preview metadata budget (default: 1200)
+        FASTREACT_MCP_TOOL_OUTPUT_RETRY_ATTEMPTS: Automatic MCP max_* shrink retries (default: 1)
         FASTRACT_USE_TIKTOKEN: Use tiktoken for accurate token counting (default: true)
         FASTRACT_TIKTOKEN_MODEL: Model name for tiktoken encoding (default: gpt-4o)
         FASTRACT_SLIDING_WINDOW_SIZE: Number of recent messages to preserve (default: 15)
@@ -797,6 +820,9 @@ class Config:
                     max_context_tokens=react_data.get("max_context_tokens", default_react.max_context_tokens),
                     context_warning_threshold=react_data.get("context_warning_threshold", default_react.context_warning_threshold),
                     max_tool_output_chars=react_data.get("max_tool_output_chars", default_react.max_tool_output_chars),
+                    mcp_tool_output_budget_chars=react_data.get("mcp_tool_output_budget_chars", default_react.mcp_tool_output_budget_chars),
+                    mcp_tool_output_preview_chars=react_data.get("mcp_tool_output_preview_chars", default_react.mcp_tool_output_preview_chars),
+                    mcp_tool_output_retry_attempts=react_data.get("mcp_tool_output_retry_attempts", default_react.mcp_tool_output_retry_attempts),
                     use_tiktoken=react_data.get("use_tiktoken", default_react.use_tiktoken),
                     tiktoken_model=react_data.get("tiktoken_model", default_react.tiktoken_model),
                     sliding_window_size=react_data.get("sliding_window_size", default_react.sliding_window_size),

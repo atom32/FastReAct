@@ -314,6 +314,7 @@ class RunService:
             for event in events
             if event.get("metadata", {}).get("compression") or event.get("metadata", {}).get("compression_event")
         )
+        tool_issues = self.tool_issues(events)
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         for event in events:
             usage = event.get("metadata", {}).get("llm_usage") or event.get("metadata", {}).get("llm_usage_total")
@@ -338,6 +339,8 @@ class RunService:
             "tool_name_counts": tool_name_counts,
             "approval_count": len(approvals),
             "compression_count": compression_count,
+            "tool_issue_count": len(tool_issues),
+            "tool_issues": tool_issues,
             "llm_usage_total": usage_total,
             "final_content": final_event.get("content") if final_event else "",
             "error": record.get("error") or (error_event.get("content") if error_event else None),
@@ -349,6 +352,27 @@ class RunService:
         if digest_budget:
             trace["pska_digest_tool_budget"] = digest_budget
         return self._store.upsert_snapshot("traces", "run_id", trace)
+
+    @staticmethod
+    def tool_issues(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        issues: list[dict[str, Any]] = []
+        for event in events:
+            metadata = event.get("metadata") or {}
+            issue = metadata.get("tool_output_governance")
+            if not isinstance(issue, dict):
+                continue
+            issues.append({
+                "tool_name": event.get("tool_name") or issue.get("tool_name"),
+                "error_code": issue.get("error_code"),
+                "issue_code": issue.get("issue_code"),
+                "estimated_size": issue.get("estimated_size"),
+                "estimated_size_available": issue.get("estimated_size_available"),
+                "configured_budget": issue.get("configured_budget"),
+                "artifact_id": issue.get("artifact_id"),
+                "retry_attempts": issue.get("retry_attempts", 0),
+                "recovered": issue.get("recovered"),
+            })
+        return issues
 
     def stats(self) -> dict[str, Any]:
         runs = self.list(limit=0)

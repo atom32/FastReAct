@@ -14,7 +14,7 @@ import pytest
 
 from fastreact.agent import Agent
 from fastreact.core.multitenant import UserContext
-from fastreact.core.config import Config, ExtensionConfig, MCPConfig, MCPServerConfig, PathsConfig
+from fastreact.core.config import Config, ExtensionConfig, MCPConfig, MCPServerConfig, PathsConfig, ReactConfig
 from fastreact.core.tools import ToolRegistry
 from fastreact.mcp.http_client import StreamableHTTPMCPClient
 from fastreact.mcp.manager import MCPToolManager, MCPToolWrapper
@@ -39,6 +39,44 @@ def _config_with_http_mcp(tmp_path: Path) -> Config:
             gateway_workspace=tmp_path / "workspace",
         ),
     )
+
+
+def _agent_with_generic_mcp_tool(
+    tmp_path: Path,
+    client: MagicMock,
+    *,
+    budget: int = 200,
+    parameters: dict | None = None,
+) -> tuple[Agent, str]:
+    workspace = tmp_path / "workspace"
+    config = Config(
+        paths=PathsConfig(
+            global_skills_dir=tmp_path / "missing-skills",
+            gateway_workspace=workspace,
+        ),
+        react=ReactConfig(
+            mcp_tool_output_budget_chars=budget,
+            mcp_tool_output_preview_chars=80,
+            mcp_tool_output_retry_attempts=1,
+            enable_filesystem_memory=False,
+            enable_safety=False,
+        ),
+    )
+    agent = Agent(config=config, multitenant=False)
+    wrapper = MCPToolWrapper(
+        tool_name="read",
+        server_name="generic",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="Generic MCP read tool",
+        parameters=parameters or {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+        },
+        transport="http",
+    )
+    agent._tools.register(wrapper)
+    return agent, wrapper.name
 
 
 @pytest.mark.asyncio
@@ -282,6 +320,160 @@ async def test_mcp_tool_passes_tenant_and_user_to_http_client(tmp_path):
         user_key="sso:alice",
         tenant_key="acme",
     )
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_output_governance_degrades_long_unbroken_text(tmp_path):
+    raw_output = "A" * 800
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value=raw_output)
+    agent, tool_name = _agent_with_generic_mcp_tool(tmp_path, client, budget=120)
+
+    execution, event = await agent.tool_executor.execute(
+        tool_name=tool_name,
+        tool_params={"query": "large"},
+        session_id="mcp-long-unbroken",
+    )
+
+    payload = json.loads(event.content)
+    assert payload["error_code"] == "tool_output_too_large"
+    assert payload["issue_code"] == "tool_result_over_budget"
+    assert payload["tool_name"] == tool_name
+    assert payload["estimated_size"] == len(raw_output)
+    assert payload["configured_budget"] == 120
+    assert "A" * 40 not in event.content
+    assert execution.context_result == event.content
+    assert event.metadata["tool_output_too_large"] is True
+    assert event.metadata["tool_result_over_budget"] is True
+    assert event.metadata["tool_output_governance"]["full_content_in_context"] is False
+
+    artifacts = agent.store.read("artifacts", limit=0)
+    assert artifacts[-1]["artifact_id"] == payload["artifact"]["artifact_id"]
+    assert artifacts[-1]["content"] == raw_output
+    assert artifacts[-1]["content_length"] == len(raw_output)
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_output_governance_degrades_long_text_with_separators(tmp_path):
+    raw_output = "\n".join(f"section-{idx}" for idx in range(120))
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value=raw_output)
+    agent, tool_name = _agent_with_generic_mcp_tool(tmp_path, client, budget=160)
+
+    execution, event = await agent.tool_executor.execute(
+        tool_name=tool_name,
+        tool_params={"query": "large"},
+        session_id="mcp-long-separated",
+    )
+
+    payload = json.loads(event.content)
+    assert payload["error_code"] == "tool_output_too_large"
+    assert payload["issue_code"] == "tool_result_over_budget"
+    assert payload["preview"]["text_segments_estimate"] > 1
+    assert "section-0" not in event.content
+    assert execution.context_result == event.content
+    assert agent.store.read("artifacts", limit=0)[-1]["content"] == raw_output
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_output_governance_hides_raw_separator_chunk_error(tmp_path):
+    client = MagicMock()
+    client.call_tool = AsyncMock(
+        side_effect=ValueError("Separator is found, but chunk is longer than limit")
+    )
+    agent, tool_name = _agent_with_generic_mcp_tool(tmp_path, client, budget=160)
+
+    execution, event = await agent.tool_executor.execute(
+        tool_name=tool_name,
+        tool_params={"query": "large"},
+        session_id="mcp-chunk-error",
+    )
+
+    payload = json.loads(event.content)
+    assert payload["error_code"] == "tool_output_too_large"
+    assert payload["issue_code"] == "upstream_chunk_limit"
+    assert payload["estimated_size_available"] is False
+    assert payload["artifact"]["available"] is False
+    assert "Separator is found" not in event.content
+    assert "chunk is longer than limit" not in event.content
+    assert execution.error is None
+    assert event.metadata["tool_output_too_large"] is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_output_governance_retries_with_smaller_max_params(tmp_path):
+    async def call_tool(name, params, **identity):
+        if params["max_chars"] > 100:
+            return "X" * 800
+        return "compact result"
+
+    client = MagicMock()
+    client.call_tool = AsyncMock(side_effect=call_tool)
+    agent, tool_name = _agent_with_generic_mcp_tool(
+        tmp_path,
+        client,
+        budget=200,
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_chars": {"type": "integer"},
+            },
+        },
+    )
+
+    execution, event = await agent.tool_executor.execute(
+        tool_name=tool_name,
+        tool_params={"query": "large", "max_chars": 1000},
+        session_id="mcp-retry",
+    )
+
+    assert execution.result == "compact result"
+    assert execution.context_result == "compact result"
+    assert event.content == "compact result"
+    assert client.call_tool.await_count == 2
+    second_call = client.call_tool.await_args_list[1]
+    assert second_call.args[1]["max_chars"] == 100
+    governance = event.metadata["tool_output_governance"]
+    assert governance["retried"] is True
+    assert governance["retry_attempts"] == 1
+    assert governance["recovered"] is True
+    assert governance["previous_issue"]["issue_code"] == "tool_result_over_budget"
+    assert agent.store.read("artifacts", limit=0)[-1]["content"] == "X" * 800
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_issue_persists_artifact_preview_context_and_trace_semantics(tmp_path):
+    raw_output = "B" * 700
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value=raw_output)
+    agent, tool_name = _agent_with_generic_mcp_tool(tmp_path, client, budget=100)
+
+    execution, event = await agent.tool_executor.execute(
+        tool_name=tool_name,
+        tool_params={"query": "large"},
+        session_id="mcp-run-event",
+    )
+    agent.runs.create(
+        run_id="run-mcp-governance",
+        session_id="mcp-run-event",
+        query="read generically",
+    )
+    saved_event = agent.runs.append_event("run-mcp-governance", event.to_dict())
+    trace = agent.runs.persist_trace("run-mcp-governance")
+
+    payload = json.loads(saved_event["content"])
+    artifact_id = payload["artifact"]["artifact_id"]
+    assert saved_event["content"] == execution.context_result
+    assert saved_event["metadata"]["tool_output_governance"]["artifact_id"] == artifact_id
+    assert saved_event["metadata"]["tool_output_governance"]["context_compressed"] is True
+    assert saved_event["metadata"]["tool_output_governance"]["full_content_in_context"] is False
+    assert "B" * 40 not in saved_event["content"]
+    assert agent.store.read("artifacts", limit=0)[-1]["content"] == raw_output
+    assert trace["status"] == "queued"
+    assert trace["tool_issue_count"] == 1
+    assert trace["tool_issues"][0]["artifact_id"] == artifact_id
+    assert trace["error"] is None
 
 
 def test_http_client_uses_path_url_as_mcp_endpoint():

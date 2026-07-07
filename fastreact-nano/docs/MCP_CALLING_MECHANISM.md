@@ -109,6 +109,39 @@ Supported config values:
 
 The exact behavior depends on the MCP manager and server transport. Do not treat `shared` as safe for user-private state.
 
+## Tool Output Governance
+
+MCP tool results pass through a generic output governance boundary before they
+are appended to the agent's next LLM context. This is not a domain-specific
+adapter and does not increase model token limits.
+
+- Oversized MCP results are converted to a structured `tool_output_too_large`
+  issue with `issue_code=tool_result_over_budget`.
+- Upstream parser failures such as separator/chunk limit errors are converted
+  to `tool_output_too_large` with `issue_code=upstream_chunk_limit`; raw parser
+  messages are not exposed to the LLM context.
+- The structured issue includes `tool_name`, estimated size when available,
+  configured budget, artifact handle, and retry hints. It does not include raw
+  tool content.
+- Full oversized content is stored in the runtime `artifacts` stream; the LLM
+  context receives only the compact issue envelope.
+- The runtime may retry once by shrinking numeric `max_*` arguments when the
+  tool schema or original call makes that possible.
+- A single MCP read issue remains a tool issue in events/traces, not an
+  automatic run failure.
+
+Relevant configuration:
+
+```json
+{
+  "react": {
+    "mcp_tool_output_budget_chars": 20000,
+    "mcp_tool_output_preview_chars": 1200,
+    "mcp_tool_output_retry_attempts": 1
+  }
+}
+```
+
 ## Policy And Approval
 
 Every MCP tool should be governed by the same policy model as native tools:

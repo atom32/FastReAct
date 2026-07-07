@@ -761,20 +761,29 @@ class AgentRuntime:
                                 approved=approved,
                                 request_id=request_id,
                             )
-                            self._record_span(session_id, "tool.execution", tool_span, tool_name=tool_name, result_length=len(execution.result or ""))
+                            context_result = execution.context_result if execution.context_result is not None else execution.result
+                            self._record_span(
+                                session_id,
+                                "tool.execution",
+                                tool_span,
+                                tool_name=tool_name,
+                                result_length=len(execution.result or ""),
+                                context_result_length=len(context_result or ""),
+                            )
                             result = execution.result
                             yield result_event
 
                             # Add tool result to history
                             logger.debug(
-                                "Tool result: tool_name=%s, call_id=%r, result_length=%s",
+                                "Tool result: tool_name=%s, call_id=%r, result_length=%s, context_result_length=%s",
                                 tool_name,
                                 call_id,
                                 len(result),
+                                len(context_result or ""),
                             )
                             messages.append(Message.tool(
                                 name=tool_name,
-                                result=result,
+                                result=context_result,
                                 call_id=call_id,
                             ).to_llm_format())
 

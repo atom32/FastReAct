@@ -185,7 +185,7 @@ class StoreService:
         # Durable runs are execution inputs, not just observability events. Long
         # queries/history must survive round-trip so background workers and
         # recovery runs execute the same request that was submitted.
-        cleaned = cls.sanitize(record, preserve_long_text=(stream == "runs"))
+        cleaned = cls.sanitize(record, preserve_long_text=(stream in {"runs", "artifacts"}))
         if not isinstance(cleaned, dict):
             return cleaned
 
