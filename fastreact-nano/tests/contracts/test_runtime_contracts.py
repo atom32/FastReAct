@@ -2,6 +2,7 @@ import pytest
 
 from fastreact import Agent, Config, LLMConfig, PolicyConfig, ReactConfig, ToolConfig
 from fastreact.core.config import PathsConfig
+from fastreact.core.context import ContextMonitor
 from fastreact.core.events import EventType
 from fastreact.core.multitenant import UserContext
 from fastreact.core.prompts import get_system_prompt
@@ -23,6 +24,23 @@ def make_test_config(tmp_path):
             enable_filesystem_memory=False,
         ),
     )
+
+
+def test_context_monitor_falls_back_when_tiktoken_initialization_fails(monkeypatch):
+    import fastreact.core.context as context_module
+
+    if not context_module._TIKTOKEN_AVAILABLE:
+        pytest.skip("tiktoken is not installed")
+
+    def fail_encoding_for_model(model):
+        raise RuntimeError("network interrupted while loading tokenizer")
+
+    monkeypatch.setattr(context_module.tiktoken, "encoding_for_model", fail_encoding_for_model)
+
+    monitor = ContextMonitor(model="gpt-4o", use_tiktoken=True)
+
+    assert monitor.estimate_tokens("abcd" * 10) == 10
+    assert "(estimate)" in monitor.get_progress_bar()
 
 
 def test_session_service_create_list_close(tmp_path):

@@ -11,6 +11,7 @@ Prevents token explosion by:
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from pathlib import Path
+import logging
 import re
 
 from fastreact.core.config import DEFAULT_MAX_TOOL_OUTPUT_CHARS
@@ -22,6 +23,9 @@ try:
     _TIKTOKEN_AVAILABLE = True
 except ImportError:
     _TIKTOKEN_AVAILABLE = False
+
+
+logger = logging.getLogger(__name__)
 
 
 # Tool categories for intelligent truncation
@@ -144,9 +148,21 @@ class ContextMonitor:
                 # Model not found, try cl100k_base encoding (GPT-4/GPT-3.5-turbo)
                 try:
                     self._tokenizer = tiktoken.get_encoding("cl100k_base")
-                except Exception:
+                except Exception as exc:
                     # Fallback to simple estimation
+                    logger.warning(
+                        "Falling back to estimated token counts; tiktoken cl100k_base initialization failed: %s",
+                        exc,
+                    )
                     self._use_tiktoken = False
+            except Exception as exc:
+                # Startup must not depend on downloading tokenizer assets.
+                logger.warning(
+                    "Falling back to estimated token counts; tiktoken initialization failed for model %s: %s",
+                    model,
+                    exc,
+                )
+                self._use_tiktoken = False
 
     def estimate_tokens(self, text: str) -> int:
         """
@@ -169,9 +185,13 @@ class ContextMonitor:
         if self._use_tiktoken and self._tokenizer:
             try:
                 return len(self._tokenizer.encode(text))
-            except Exception:
+            except Exception as exc:
                 # Fallback to simple estimation on error
-                pass
+                logger.warning(
+                    "Falling back to estimated token counts; tiktoken encode failed: %s",
+                    exc,
+                )
+                self._use_tiktoken = False
 
         # Fallback: simple estimation (1 token ≈ 4 characters)
         # This is reasonably accurate for English text
