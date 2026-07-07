@@ -17,6 +17,7 @@ from fastreact.runtime.tool_output_governance import (
     is_mcp_tool,
     retry_params_for_tool,
 )
+from fastreact.runtime.tool_policy import tool_policy_scope_applies
 
 if TYPE_CHECKING:
     from fastreact.agent import Agent
@@ -376,9 +377,14 @@ class ToolExecutionService:
         tool_name: str,
         tool_params: dict[str, Any],
         user_query: Optional[str] = None,
+        original_tool_params: Optional[dict[str, Any]] = None,
     ) -> ToolArgumentResolution:
-        original_params = dict(tool_params or {}) if isinstance(tool_params, dict) else {}
-        params = dict(original_params)
+        params = dict(tool_params or {}) if isinstance(tool_params, dict) else {}
+        original_params = (
+            dict(original_tool_params)
+            if isinstance(original_tool_params, dict)
+            else dict(params)
+        )
         tool = self._agent._tools.get(tool_name) if hasattr(self._agent, "_tools") else None
         if not tool:
             return ToolArgumentResolution(tool_name=tool_name, original_params=original_params, params=params)
@@ -482,6 +488,11 @@ class ToolExecutionService:
             tool_params,
             user_context=user_context,
         )
+        result, scope_result_metadata = self._enforce_hard_scope_on_result(
+            tool_name=tool_name,
+            tool_params=tool_params,
+            result=result,
+        )
         governed = self._govern_mcp_result(
             tool=tool,
             tool_name=tool_name,
@@ -489,6 +500,7 @@ class ToolExecutionService:
             result=result,
             session_id=session_id,
         )
+        governed.metadata.update(scope_result_metadata)
         if not governed.issue or not is_mcp_tool(tool):
             return governed
 
@@ -517,6 +529,11 @@ class ToolExecutionService:
                 retry_params,
                 user_context=user_context,
             )
+            retry_result, retry_scope_metadata = self._enforce_hard_scope_on_result(
+                tool_name=tool_name,
+                tool_params=retry_params,
+                result=retry_result,
+            )
             retry_governed = self._govern_mcp_result(
                 tool=tool,
                 tool_name=tool_name,
@@ -524,6 +541,7 @@ class ToolExecutionService:
                 result=retry_result,
                 session_id=session_id,
             )
+            retry_governed.metadata.update(retry_scope_metadata)
             retry_metadata = {
                 "retried": True,
                 "retry_attempts": attempts,
@@ -587,6 +605,118 @@ class ToolExecutionService:
             if before.get(key) != value and key.startswith("max_"):
                 changed[key] = value
         return changed
+
+    def _enforce_hard_scope_on_result(
+        self,
+        *,
+        tool_name: str,
+        tool_params: dict[str, Any],
+        result: Any,
+    ) -> tuple[Any, dict[str, Any]]:
+        allowed_source_ids = self._hard_scope_source_item_ids(tool_name, tool_params)
+        if not allowed_source_ids:
+            return result, {}
+        text = result if isinstance(result, str) else str(result)
+        parsed = self._try_parse_json(text)
+        if parsed is None:
+            return result, {
+                "tool_policy_scope_result_filter": {
+                    "applied": False,
+                    "reason": "non_json_result",
+                    "allowed_source_item_ids": sorted(allowed_source_ids),
+                }
+            }
+        filtered, removed = self._filter_out_of_scope_source_refs(parsed, allowed_source_ids)
+        metadata = {
+            "tool_policy_scope_result_filter": {
+                "applied": True,
+                "allowed_source_item_ids": sorted(allowed_source_ids),
+                "removed_source_ref_count": removed,
+            }
+        }
+        if removed <= 0:
+            return result, metadata
+        return json.dumps(filtered, ensure_ascii=False, sort_keys=True), metadata
+
+    def _hard_scope_source_item_ids(self, tool_name: str, tool_params: dict[str, Any]) -> set[str]:
+        if not tool_policy_scope_applies(tool_name):
+            return set()
+        params = tool_params if isinstance(tool_params, dict) else {}
+        nested_scope = params.get("scope") if isinstance(params.get("scope"), dict) else {}
+        scope_mode = str(
+            params.get("scope_mode")
+            or nested_scope.get("scope_mode")
+            or nested_scope.get("mode")
+            or ""
+        ).strip().lower()
+        if scope_mode != "hard":
+            return set()
+        return set(self._string_list(params.get("source_item_ids") or nested_scope.get("source_item_ids")))
+
+    def _filter_out_of_scope_source_refs(self, value: Any, allowed_source_ids: set[str]) -> tuple[Any, int]:
+        if isinstance(value, list):
+            filtered_items = []
+            removed = 0
+            for item in value:
+                filtered_item, item_removed = self._filter_out_of_scope_source_refs(item, allowed_source_ids)
+                removed += item_removed
+                if filtered_item is None:
+                    removed += 1
+                    continue
+                filtered_items.append(filtered_item)
+            return filtered_items, removed
+
+        if isinstance(value, dict):
+            source_id = self._source_ref_id(value)
+            if source_id and source_id not in allowed_source_ids:
+                return None, 0
+            filtered_dict: dict[str, Any] = {}
+            removed = 0
+            for key, inner in value.items():
+                filtered_inner, inner_removed = self._filter_out_of_scope_source_refs(inner, allowed_source_ids)
+                removed += inner_removed
+                if filtered_inner is None and isinstance(inner, dict) and self._source_ref_id(inner):
+                    removed += 1
+                    continue
+                filtered_dict[key] = filtered_inner
+            return filtered_dict, removed
+
+        return value, 0
+
+    def _source_ref_id(self, value: dict[str, Any]) -> str | None:
+        for key in ("source_item_id", "source_ref"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        return None
+
+    def _try_parse_json(self, text: str) -> Any:
+        stripped = text.strip()
+        if not stripped or stripped[0] not in "[{":
+            return None
+        try:
+            return json.loads(stripped)
+        except Exception:
+            return None
+
+    def _string_list(self, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            values = [value]
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            values = list(value)
+        else:
+            values = [value]
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in values:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            result.append(text)
+        return result
 
     def _audit(
         self,

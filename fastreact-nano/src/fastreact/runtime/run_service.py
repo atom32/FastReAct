@@ -316,6 +316,7 @@ class RunService:
         )
         tool_issues = self.tool_issues(events)
         tool_arg_issues = self.tool_arg_issues(events)
+        tool_scope_applications = self.tool_scope_applications(events)
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         for event in events:
             usage = event.get("metadata", {}).get("llm_usage") or event.get("metadata", {}).get("llm_usage_total")
@@ -344,6 +345,8 @@ class RunService:
             "tool_issues": tool_issues,
             "tool_arg_issue_count": len(tool_arg_issues),
             "tool_arg_issues": tool_arg_issues,
+            "tool_scope_application_count": len(tool_scope_applications),
+            "tool_scope_applications": tool_scope_applications,
             "llm_usage_total": usage_total,
             "final_content": final_event.get("content") if final_event else "",
             "error": record.get("error") or (error_event.get("content") if error_event else None),
@@ -398,6 +401,23 @@ class RunService:
                 "repair_reason": issue.get("repair_reason"),
             })
         return issues
+
+    @staticmethod
+    def tool_scope_applications(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        applications: list[dict[str, Any]] = []
+        for event in events:
+            metadata = event.get("metadata") or {}
+            if not metadata.get("tool_policy_scope_applied"):
+                continue
+            applications.append({
+                "event_type": event.get("type"),
+                "tool_name": event.get("tool_name"),
+                "raw_tool_args": metadata.get("raw_tool_args") or metadata.get("model_tool_args"),
+                "scope_injected_tool_args": metadata.get("scope_injected_tool_args"),
+                "tool_args": event.get("tool_args"),
+                "tool_policy": metadata.get("tool_policy"),
+            })
+        return applications
 
     def stats(self) -> dict[str, Any]:
         runs = self.list(limit=0)

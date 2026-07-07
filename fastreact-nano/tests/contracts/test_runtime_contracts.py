@@ -240,11 +240,45 @@ def test_tool_policy_preserves_and_applies_pska_scope() -> None:
     }
     assert injected is True
     assert params["knowledge_base_ids"] == ["kb_alpha"]
-    assert params["source_item_ids"] == ["src_beta"]
+    assert params["source_item_ids"] == ["src_alpha", "src_beta"]
     assert params["scope_mode"] == "hard"
     assert params["scope"]["knowledge_base_ids"] == ["kb_alpha"]
-    assert params["scope"]["source_item_ids"] == ["src_beta"]
+    assert params["scope"]["source_item_ids"] == ["src_alpha", "src_beta"]
     assert params["scope"]["mode"] == "hard"
+
+
+def test_tool_policy_applies_hard_scope_to_pska_read_only_tools() -> None:
+    policy = normalize_tool_policy(
+        {
+            "scope": {
+                "mode": "hard",
+                "scope_mode": "hard",
+                "knowledge_base_ids": ["kb_year_report"],
+                "source_item_ids": ["src_md", "src_xlsx"],
+            }
+        }
+    )
+
+    for tool_name in [
+        "pska_pska_search",
+        "pska_pska_read_evidence_context",
+        "pska_pska_graph_context",
+        "pska_pska_digest_context",
+    ]:
+        params, injected = apply_tool_policy_scope(
+            tool_name,
+            {"query": "x", "source_item_ids": ["src_outside"]},
+            policy,
+        )
+
+        assert injected is True
+        assert params["scope_mode"] == "hard"
+        assert params["knowledge_base_ids"] == ["kb_year_report"]
+        assert params["source_item_ids"] == ["src_md", "src_xlsx"]
+        assert params["scope"]["mode"] == "hard"
+        assert params["scope"]["scope_mode"] == "hard"
+        assert params["scope"]["knowledge_base_ids"] == ["kb_year_report"]
+        assert params["scope"]["source_item_ids"] == ["src_md", "src_xlsx"]
 
 
 @pytest.mark.asyncio
@@ -338,11 +372,11 @@ async def test_runtime_injects_pska_tool_policy_scope_into_tool_calls(tmp_path, 
         {
             "query": "alpha",
             "knowledge_base_ids": ["kb_alpha"],
-            "source_item_ids": [],
+            "source_item_ids": ["src_alpha"],
             "scope_mode": "hard",
             "scope": {
                 "knowledge_base_ids": ["kb_alpha"],
-                "source_item_ids": [],
+                "source_item_ids": ["src_alpha"],
                 "scope_mode": "hard",
                 "mode": "hard",
             },
@@ -351,6 +385,129 @@ async def test_runtime_injects_pska_tool_policy_scope_into_tool_calls(tmp_path, 
     assert tool_call_events[0].tool_args == tool.calls[0]
     assert tool_call_events[0].metadata["tool_policy_scope_applied"] is True
     assert tool_call_events[0].metadata["tool_policy"]["scope"]["knowledge_base_ids"] == ["kb_alpha"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_injects_hard_scope_into_mcp_search_args_and_trace(tmp_path, monkeypatch) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastreact.mcp.manager import MCPToolWrapper
+    from fastreact.providers.litellm import LLMResponse, ToolCall
+
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value="search evidence")
+    wrapper = MCPToolWrapper(
+        tool_name="pska_search",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="Search evidence.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "knowledge_base_ids": {"type": "array"},
+                "source_item_ids": {"type": "array"},
+                "scope_mode": {"type": "string"},
+                "scope": {"type": "object"},
+            },
+            "required": ["query"],
+        },
+        transport="http",
+    )
+
+    call_count = 0
+
+    async def mock_chat(self, messages, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return LLMResponse(
+                content="Searching evidence",
+                tool_calls=[
+                    ToolCall(
+                        id="call-search-hard-scope",
+                        name="pska_pska_search",
+                        params={"query": "x", "source_item_ids": ["src_outside"]},
+                    )
+                ],
+                model=self.model,
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+            )
+        return LLMResponse(
+            content="Scoped answer.",
+            tool_calls=[],
+            model=self.model,
+            usage={"prompt_tokens": 8, "completion_tokens": 4},
+        )
+
+    import fastreact.providers.litellm
+
+    monkeypatch.setattr(fastreact.providers.litellm.LiteLLMProvider, "chat", mock_chat)
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+    agent._tools.register(wrapper)
+    agent._core.tools = agent._tools
+
+    run_metadata = {
+        "tool_policy": {
+            "mode": "allowlist",
+            "allowed_tools": ["pska_pska_search"],
+            "scope": {
+                "mode": "hard",
+                "scope_mode": "hard",
+                "knowledge_base_ids": ["kb_report"],
+                "source_item_ids": ["src_allowed"],
+            },
+        }
+    }
+    events = []
+    async for event in agent.run_event_stream(
+        "Find x",
+        session_id="hard-scope-search-session",
+        run_metadata=run_metadata,
+    ):
+        events.append(event)
+
+    client.call_tool.assert_awaited_once()
+    _, mcp_args = client.call_tool.await_args.args[:2]
+    assert mcp_args == {
+        "query": "x",
+        "knowledge_base_ids": ["kb_report"],
+        "source_item_ids": ["src_allowed"],
+        "scope_mode": "hard",
+        "scope": {
+            "knowledge_base_ids": ["kb_report"],
+            "source_item_ids": ["src_allowed"],
+            "scope_mode": "hard",
+            "mode": "hard",
+        },
+    }
+
+    tool_call_event = next(
+        event for event in events if event.type == EventType.TOOL_CALL and event.tool_name == "pska_pska_search"
+    )
+    assert tool_call_event.metadata["raw_tool_args"] == {"query": "x", "source_item_ids": ["src_outside"]}
+    assert tool_call_event.metadata["scope_injected_tool_args"] == mcp_args
+    assert tool_call_event.metadata["tool_policy_scope_applied"] is True
+
+    run_id = f"run-hard-scope-search-{uuid.uuid4().hex}"
+    agent.runs.create(
+        run_id=run_id,
+        session_id="hard-scope-search-session",
+        query="Find x",
+        metadata=run_metadata,
+    )
+    for event in events:
+        agent.runs.append_event(run_id, event.to_dict())
+    trace = agent.runs.persist_trace(run_id)
+
+    assert trace["metadata"]["tool_policy"]["scope"]["scope_mode"] == "hard"
+    assert trace["tool_scope_application_count"] >= 1
+    application = next(
+        item for item in trace["tool_scope_applications"] if item["tool_name"] == "pska_pska_search"
+    )
+    assert application["raw_tool_args"] == {"query": "x", "source_item_ids": ["src_outside"]}
+    assert application["scope_injected_tool_args"] == mcp_args
 
 
 @pytest.mark.asyncio
@@ -410,37 +567,63 @@ async def test_runtime_repairs_missing_query_for_search_mcp_tool(tmp_path, monke
     agent._core.tools = agent._tools
 
     events = []
-    async for event in agent.run_event_stream(user_query, session_id="missing-query-repair-session"):
+    run_metadata = {
+        "tool_policy": {
+            "mode": "allowlist",
+            "allowed_tools": ["pska_pska_search"],
+            "scope": {
+                "mode": "hard",
+                "scope_mode": "hard",
+                "knowledge_base_ids": ["kb_report"],
+                "source_item_ids": ["src_allowed"],
+            },
+        }
+    }
+    async for event in agent.run_event_stream(
+        user_query,
+        session_id="missing-query-repair-session",
+        run_metadata=run_metadata,
+    ):
         events.append(event)
 
     client.call_tool.assert_awaited_once()
     tool_name, tool_args = client.call_tool.await_args.args[:2]
     assert tool_name == "pska_search"
     assert tool_args["query"] == user_query
+    assert tool_args["scope_mode"] == "hard"
+    assert tool_args["knowledge_base_ids"] == ["kb_report"]
+    assert tool_args["source_item_ids"] == ["src_allowed"]
+    assert tool_args["scope"]["source_item_ids"] == ["src_allowed"]
 
     tool_call_event = next(
         event for event in events if event.type == EventType.TOOL_CALL and event.tool_name == "pska_pska_search"
     )
-    assert tool_call_event.tool_args == {"query": user_query}
+    assert tool_call_event.tool_args == tool_args
     assert tool_call_event.metadata["tool_args_repaired"] is True
     assert tool_call_event.metadata["validation_error"] == "Validation errors: Missing required parameter: query"
     assert tool_call_event.metadata["tool_arg_validation"]["original_tool_args"] == {}
-    assert tool_call_event.metadata["tool_arg_validation"]["effective_tool_args"] == {"query": user_query}
+    assert tool_call_event.metadata["tool_arg_validation"]["effective_tool_args"] == tool_args
+    assert tool_call_event.metadata["tool_policy_scope_applied"] is True
+    assert tool_call_event.metadata["raw_tool_args"] == {}
+    assert tool_call_event.metadata["scope_injected_tool_args"]["source_item_ids"] == ["src_allowed"]
 
     tool_result_event = next(
         event for event in events if event.type == EventType.TOOL_RESULT and event.tool_name == "pska_pska_search"
     )
     assert tool_result_event.content == "search evidence"
     assert "ValidationError" not in tool_result_event.content
-    assert tool_result_event.tool_args == {"query": user_query}
+    assert tool_result_event.tool_args == tool_args
     assert tool_result_event.metadata["tool_args_repaired"] is True
     assert tool_result_event.metadata["tool_arg_validation"]["original_tool_args"] == {}
+    assert tool_result_event.metadata["tool_policy_scope_applied"] is True
+    assert tool_result_event.metadata["scope_injected_tool_args"]["source_item_ids"] == ["src_allowed"]
 
     run_id = f"run-missing-query-repair-{uuid.uuid4().hex}"
     agent.runs.create(
         run_id=run_id,
         session_id="missing-query-repair-session",
         query=user_query,
+        metadata=run_metadata,
     )
     for event in events:
         agent.runs.append_event(run_id, event.to_dict())
@@ -452,9 +635,10 @@ async def test_runtime_repairs_missing_query_for_search_mcp_tool(tmp_path, monke
         issue for issue in trace["tool_arg_issues"] if issue["tool_name"] == "pska_pska_search"
     )
     assert repaired_issue["original_tool_args"] == {}
-    assert repaired_issue["effective_tool_args"] == {"query": user_query}
+    assert repaired_issue["effective_tool_args"] == tool_args
     assert repaired_issue["tool_args_repaired"] is True
     assert repaired_issue["invalid_tool_args"] is False
+    assert trace["tool_scope_application_count"] >= 1
 
 
 @pytest.mark.asyncio
@@ -497,6 +681,120 @@ async def test_tool_execution_returns_structured_invalid_tool_args_when_query_ca
     assert event.metadata["validation_error"] == "Validation errors: Missing required parameter: query"
     assert event.metadata["tool_arg_validation"]["original_tool_args"] == {}
     client.call_tool.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_hard_scope_filters_out_of_scope_source_refs_from_mcp_result(tmp_path, monkeypatch) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastreact.mcp.manager import MCPToolWrapper
+    from fastreact.providers.litellm import LLMResponse, ToolCall
+
+    raw_result = {
+        "answer": "scoped evidence",
+        "source_refs": [
+            {"source_item_id": "src_allowed", "quote": "inside"},
+            {"source_item_id": "src_outside", "quote": "outside"},
+        ],
+        "source_items": [
+            {"source_item_id": "src_allowed", "title": "inside.md"},
+            {"source_item_id": "src_outside", "title": "outside.xlsx"},
+        ],
+    }
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value=json.dumps(raw_result, ensure_ascii=False))
+    wrapper = MCPToolWrapper(
+        tool_name="pska_read_evidence_context",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="Read evidence context.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "source_refs": {"type": "array"},
+                "knowledge_base_ids": {"type": "array"},
+                "source_item_ids": {"type": "array"},
+                "scope_mode": {"type": "string"},
+                "scope": {"type": "object"},
+            },
+        },
+        transport="http",
+    )
+
+    call_count = 0
+
+    async def mock_chat(self, messages, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return LLMResponse(
+                content="Reading evidence",
+                tool_calls=[
+                    ToolCall(
+                        id="call-read-hard-scope",
+                        name="pska_pska_read_evidence_context",
+                        params={"source_refs": [{"source_item_id": "src_outside"}]},
+                    )
+                ],
+                model=self.model,
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+            )
+        return LLMResponse(
+            content="Scoped answer.",
+            tool_calls=[],
+            model=self.model,
+            usage={"prompt_tokens": 8, "completion_tokens": 4},
+        )
+
+    import fastreact.providers.litellm
+
+    monkeypatch.setattr(fastreact.providers.litellm.LiteLLMProvider, "chat", mock_chat)
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+    agent._tools.register(wrapper)
+    agent._core.tools = agent._tools
+
+    run_metadata = {
+        "tool_policy": {
+            "mode": "allowlist",
+            "allowed_tools": ["pska_pska_read_evidence_context"],
+            "scope": {
+                "mode": "hard",
+                "scope_mode": "hard",
+                "knowledge_base_ids": ["kb_report"],
+                "source_item_ids": ["src_allowed"],
+            },
+        }
+    }
+
+    events = []
+    async for event in agent.run_event_stream(
+        "Read selected evidence",
+        session_id="hard-scope-result-filter-session",
+        run_metadata=run_metadata,
+    ):
+        events.append(event)
+
+    _, mcp_args = client.call_tool.await_args.args[:2]
+    assert mcp_args["scope_mode"] == "hard"
+    assert mcp_args["source_item_ids"] == ["src_allowed"]
+    assert mcp_args["source_refs"] == []
+    assert mcp_args["scope"]["source_item_ids"] == ["src_allowed"]
+
+    tool_result_event = next(
+        event
+        for event in events
+        if event.type == EventType.TOOL_RESULT and event.tool_name == "pska_pska_read_evidence_context"
+    )
+    filtered = json.loads(tool_result_event.content)
+    assert filtered["source_refs"] == [{"quote": "inside", "source_item_id": "src_allowed"}]
+    assert filtered["source_items"] == [{"source_item_id": "src_allowed", "title": "inside.md"}]
+    assert "src_outside" not in tool_result_event.content
+    assert tool_result_event.metadata["tool_policy_scope_result_filter"] == {
+        "applied": True,
+        "allowed_source_item_ids": ["src_allowed"],
+        "removed_source_ref_count": 2,
+    }
 
 
 def test_pska_digest_guard_validates_candidate_payloads_before_budget_count():

@@ -8,6 +8,13 @@ from typing import Any
 
 from fastreact.core.tools import ToolRegistry
 
+SCOPED_READ_TOOL_NAMES = frozenset({
+    "pska_pska_search",
+    "pska_pska_read_evidence_context",
+    "pska_pska_graph_context",
+    "pska_pska_digest_context",
+})
+
 
 @dataclass(frozen=True)
 class RunToolPolicy:
@@ -61,12 +68,14 @@ def apply_tool_policy_scope(tool_name: str, tool_params: dict[str, Any], policy:
     widen the knowledge/source scope selected by the caller.
     """
     params = dict(tool_params or {})
-    if not policy.scope or not _is_pska_tool(tool_name):
+    if not policy.scope or not tool_policy_scope_applies(tool_name):
         return params, False
 
     policy_scope = policy.scope
     nested_scope = dict(params.get("scope") or {}) if isinstance(params.get("scope"), dict) else {}
     injected = False
+    scope_mode = str(policy_scope.get("scope_mode") or policy_scope.get("mode") or "").strip().lower()
+    hard_scope = scope_mode == "hard"
 
     knowledge_base_ids = _string_list(policy_scope.get("knowledge_base_ids"))
     if knowledge_base_ids:
@@ -76,17 +85,22 @@ def apply_tool_policy_scope(tool_name: str, tool_params: dict[str, Any], policy:
 
     policy_source_ids = _string_list(policy_scope.get("source_item_ids"))
     if policy_source_ids:
-        requested_source_ids = _string_list(params.get("source_item_ids")) or _string_list(nested_scope.get("source_item_ids"))
-        if requested_source_ids:
-            policy_source_set = set(policy_source_ids)
+        policy_source_set = set(policy_source_ids)
+        requested_source_ids = _string_list(params.get("source_item_ids")) or _string_list(
+            nested_scope.get("source_item_ids")
+        )
+        if hard_scope:
+            source_item_ids = policy_source_ids
+        elif requested_source_ids:
             source_item_ids = [source_id for source_id in requested_source_ids if source_id in policy_source_set]
         else:
             source_item_ids = policy_source_ids
         params["source_item_ids"] = source_item_ids
         nested_scope["source_item_ids"] = source_item_ids
+        if hard_scope and "source_refs" in params:
+            params["source_refs"] = _filter_source_refs(params.get("source_refs"), policy_source_set)
         injected = True
 
-    scope_mode = str(policy_scope.get("scope_mode") or policy_scope.get("mode") or "").strip().lower()
     if scope_mode:
         params["scope_mode"] = scope_mode
         nested_scope["scope_mode"] = scope_mode
@@ -120,6 +134,10 @@ def tool_policy_denial(tool_name: str, policy: RunToolPolicy) -> str | None:
     if policy.mode == "allowlist":
         return f"tool '{tool_name}' is not in run tool_policy allowed_tools"
     return None
+
+
+def tool_policy_scope_applies(tool_name: str) -> bool:
+    return str(tool_name or "") in SCOPED_READ_TOOL_NAMES
 
 
 def _normalize_policy_scope(value: Any) -> dict[str, Any]:
@@ -159,5 +177,28 @@ def _string_list(value: Any) -> list[str]:
     return result
 
 
-def _is_pska_tool(tool_name: str) -> bool:
-    return str(tool_name or "").startswith("pska_")
+def _filter_source_refs(value: Any, allowed_source_ids: set[str]) -> Any:
+    if isinstance(value, list):
+        filtered = []
+        for item in value:
+            item_source_id = _source_ref_id(item)
+            if item_source_id and item_source_id not in allowed_source_ids:
+                continue
+            filtered.append(item)
+        return filtered
+    item_source_id = _source_ref_id(value)
+    if item_source_id and item_source_id not in allowed_source_ids:
+        return []
+    return value
+
+
+def _source_ref_id(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value.strip() or None
+    if not isinstance(value, dict):
+        return None
+    for key in ("source_item_id", "source_ref"):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None

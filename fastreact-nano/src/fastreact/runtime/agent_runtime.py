@@ -569,16 +569,19 @@ class AgentRuntime:
                         if event.type == EventType.TOOL_CALL:
                             model_args = event.tool_args if isinstance(event.tool_args, dict) else {}
                             scoped_args, scope_injected = apply_tool_policy_scope(event.tool_name or "", model_args, run_tool_policy)
+                            event.metadata["raw_tool_args"] = model_args
                             if scope_injected:
                                 event.tool_args = scoped_args
                                 event.metadata["tool_policy_scope_applied"] = True
                                 event.metadata["tool_policy"] = run_tool_policy.to_metadata()
                                 event.metadata["model_tool_args"] = model_args
+                                event.metadata["scope_injected_tool_args"] = scoped_args
 
                             argument_resolution = agent.tool_executor.resolve_tool_arguments(
                                 tool_name=event.tool_name or "",
                                 tool_params=scoped_args,
                                 user_query=query,
+                                original_tool_params=model_args,
                             )
                             if argument_resolution.repaired or argument_resolution.invalid:
                                 event.metadata["tool_arg_validation"] = argument_resolution.to_metadata()
@@ -600,6 +603,9 @@ class AgentRuntime:
                                     "arguments": scoped_args,
                                     "tool_policy_denied": denial,
                                     "argument_resolution": argument_resolution,
+                                    "model_args": model_args,
+                                    "scope_injected": scope_injected,
+                                    "scope_injected_args": scoped_args if scope_injected else None,
                                 })
                                 continue
                             if argument_resolution.invalid:
@@ -610,6 +616,9 @@ class AgentRuntime:
                                     "arguments": argument_resolution.params,
                                     "invalid_tool_args": True,
                                     "argument_resolution": argument_resolution,
+                                    "model_args": model_args,
+                                    "scope_injected": scope_injected,
+                                    "scope_injected_args": scoped_args if scope_injected else None,
                                 })
                                 continue
                             validation_error = budget_guard.validate(event.tool_name or "", scoped_args)
@@ -621,6 +630,9 @@ class AgentRuntime:
                                     "arguments": scoped_args,
                                     "validation_error": validation_error,
                                     "argument_resolution": argument_resolution,
+                                    "model_args": model_args,
+                                    "scope_injected": scope_injected,
+                                    "scope_injected_args": scoped_args if scope_injected else None,
                                 })
                                 continue
                             if not budget_guard.allow(event.tool_name or ""):
@@ -640,6 +652,9 @@ class AgentRuntime:
                                 "arguments": scoped_args,
                                 "validation_error": validation_error,
                                 "argument_resolution": argument_resolution,
+                                "model_args": model_args,
+                                "scope_injected": scope_injected,
+                                "scope_injected_args": scoped_args if scope_injected else None,
                             })
                             continue
 
@@ -689,6 +704,9 @@ class AgentRuntime:
                             validation_error = tool_call.get("validation_error")
                             tool_policy_denied = tool_call.get("tool_policy_denied")
                             argument_resolution = tool_call.get("argument_resolution")
+                            model_args = tool_call.get("model_args") if isinstance(tool_call.get("model_args"), dict) else {}
+                            scope_injected = bool(tool_call.get("scope_injected"))
+                            scope_injected_args = tool_call.get("scope_injected_args")
 
                             if tool_policy_denied:
                                 result = f"[TOOL_POLICY_DENIED] {tool_policy_denied}"
@@ -698,6 +716,9 @@ class AgentRuntime:
                                     "tool_policy_denied": True,
                                     "tool_policy": run_tool_policy.to_metadata(),
                                     "denial_reason": tool_policy_denied,
+                                    "raw_tool_args": model_args,
+                                    "tool_policy_scope_applied": scope_injected,
+                                    "scope_injected_tool_args": scope_injected_args,
                                 })
                                 yield result_event
                                 messages.append(Message.tool(
@@ -717,6 +738,10 @@ class AgentRuntime:
                                     argument_resolution=argument_resolution,
                                 )
                                 result_event.metadata["request_id"] = call_id
+                                result_event.metadata["raw_tool_args"] = model_args
+                                result_event.metadata["tool_policy_scope_applied"] = scope_injected
+                                if scope_injected_args is not None:
+                                    result_event.metadata["scope_injected_tool_args"] = scope_injected_args
                                 yield result_event
                                 messages.append(Message.tool(
                                     name=tool_name,
@@ -731,6 +756,9 @@ class AgentRuntime:
                                 result_event.metadata.update({
                                     "request_id": call_id,
                                     "digest_validation_error": True,
+                                    "raw_tool_args": model_args,
+                                    "tool_policy_scope_applied": scope_injected,
+                                    "scope_injected_tool_args": scope_injected_args,
                                 })
                                 yield result_event
                                 messages.append(Message.tool(
@@ -821,6 +849,10 @@ class AgentRuntime:
                                 context_result_length=len(context_result or ""),
                             )
                             result = execution.result
+                            result_event.metadata["raw_tool_args"] = model_args
+                            result_event.metadata["tool_policy_scope_applied"] = scope_injected
+                            if scope_injected_args is not None:
+                                result_event.metadata["scope_injected_tool_args"] = scope_injected_args
                             yield result_event
 
                             # Add tool result to history
