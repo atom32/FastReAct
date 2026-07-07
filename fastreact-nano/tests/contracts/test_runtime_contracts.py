@@ -1,3 +1,6 @@
+import json
+import uuid
+
 import pytest
 
 from fastreact import Agent, Config, LLMConfig, PolicyConfig, ReactConfig, ToolConfig
@@ -348,6 +351,152 @@ async def test_runtime_injects_pska_tool_policy_scope_into_tool_calls(tmp_path, 
     assert tool_call_events[0].tool_args == tool.calls[0]
     assert tool_call_events[0].metadata["tool_policy_scope_applied"] is True
     assert tool_call_events[0].metadata["tool_policy"]["scope"]["knowledge_base_ids"] == ["kb_alpha"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_repairs_missing_query_for_search_mcp_tool(tmp_path, monkeypatch) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastreact.mcp.manager import MCPToolWrapper
+    from fastreact.providers.litellm import LLMResponse, ToolCall
+
+    user_query = "生成一份2025年海康威视年报分析报告"
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value="search evidence")
+    wrapper = MCPToolWrapper(
+        tool_name="pska_search",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="Search evidence.",
+        parameters={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        transport="http",
+    )
+
+    call_count = 0
+
+    async def mock_chat(self, messages, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return LLMResponse(
+                content="Searching evidence",
+                tool_calls=[
+                    ToolCall(
+                        id="call-search-missing-query",
+                        name="pska_pska_search",
+                        params={},
+                    )
+                ],
+                model=self.model,
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+            )
+        return LLMResponse(
+            content="Report answer with citations.",
+            tool_calls=[],
+            model=self.model,
+            usage={"prompt_tokens": 8, "completion_tokens": 4},
+        )
+
+    import fastreact.providers.litellm
+
+    monkeypatch.setattr(fastreact.providers.litellm.LiteLLMProvider, "chat", mock_chat)
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+    agent._tools.register(wrapper)
+    agent._core.tools = agent._tools
+
+    events = []
+    async for event in agent.run_event_stream(user_query, session_id="missing-query-repair-session"):
+        events.append(event)
+
+    client.call_tool.assert_awaited_once()
+    tool_name, tool_args = client.call_tool.await_args.args[:2]
+    assert tool_name == "pska_search"
+    assert tool_args["query"] == user_query
+
+    tool_call_event = next(
+        event for event in events if event.type == EventType.TOOL_CALL and event.tool_name == "pska_pska_search"
+    )
+    assert tool_call_event.tool_args == {"query": user_query}
+    assert tool_call_event.metadata["tool_args_repaired"] is True
+    assert tool_call_event.metadata["validation_error"] == "Validation errors: Missing required parameter: query"
+    assert tool_call_event.metadata["tool_arg_validation"]["original_tool_args"] == {}
+    assert tool_call_event.metadata["tool_arg_validation"]["effective_tool_args"] == {"query": user_query}
+
+    tool_result_event = next(
+        event for event in events if event.type == EventType.TOOL_RESULT and event.tool_name == "pska_pska_search"
+    )
+    assert tool_result_event.content == "search evidence"
+    assert "ValidationError" not in tool_result_event.content
+    assert tool_result_event.tool_args == {"query": user_query}
+    assert tool_result_event.metadata["tool_args_repaired"] is True
+    assert tool_result_event.metadata["tool_arg_validation"]["original_tool_args"] == {}
+
+    run_id = f"run-missing-query-repair-{uuid.uuid4().hex}"
+    agent.runs.create(
+        run_id=run_id,
+        session_id="missing-query-repair-session",
+        query=user_query,
+    )
+    for event in events:
+        agent.runs.append_event(run_id, event.to_dict())
+    trace = agent.runs.persist_trace(run_id)
+
+    assert trace["tool_name_counts"]["pska_pska_search"] == 1
+    assert trace["tool_arg_issue_count"] >= 1
+    repaired_issue = next(
+        issue for issue in trace["tool_arg_issues"] if issue["tool_name"] == "pska_pska_search"
+    )
+    assert repaired_issue["original_tool_args"] == {}
+    assert repaired_issue["effective_tool_args"] == {"query": user_query}
+    assert repaired_issue["tool_args_repaired"] is True
+    assert repaired_issue["invalid_tool_args"] is False
+
+
+@pytest.mark.asyncio
+async def test_tool_execution_returns_structured_invalid_tool_args_when_query_cannot_be_repaired(tmp_path) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastreact.mcp.manager import MCPToolWrapper
+
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value="should not execute")
+    wrapper = MCPToolWrapper(
+        tool_name="pska_search",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="Search evidence.",
+        parameters={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        transport="http",
+    )
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+    agent._tools.register(wrapper)
+
+    execution, event = await agent.tool_executor.execute(
+        tool_name="pska_pska_search",
+        tool_params={},
+        session_id="invalid-query-session",
+    )
+
+    payload = json.loads(event.content)
+    assert payload["error_code"] == "invalid_tool_args"
+    assert payload["tool_name"] == "pska_pska_search"
+    assert payload["missing_required"] == ["query"]
+    assert "ValidationError" not in event.content
+    assert execution.blocked is True
+    assert event.metadata["invalid_tool_args"] is True
+    assert event.metadata["validation_error"] == "Validation errors: Missing required parameter: query"
+    assert event.metadata["tool_arg_validation"]["original_tool_args"] == {}
+    client.call_tool.assert_not_awaited()
 
 
 def test_pska_digest_guard_validates_candidate_payloads_before_budget_count():

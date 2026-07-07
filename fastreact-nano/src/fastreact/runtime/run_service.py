@@ -315,6 +315,7 @@ class RunService:
             if event.get("metadata", {}).get("compression") or event.get("metadata", {}).get("compression_event")
         )
         tool_issues = self.tool_issues(events)
+        tool_arg_issues = self.tool_arg_issues(events)
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         for event in events:
             usage = event.get("metadata", {}).get("llm_usage") or event.get("metadata", {}).get("llm_usage_total")
@@ -341,6 +342,8 @@ class RunService:
             "compression_count": compression_count,
             "tool_issue_count": len(tool_issues),
             "tool_issues": tool_issues,
+            "tool_arg_issue_count": len(tool_arg_issues),
+            "tool_arg_issues": tool_arg_issues,
             "llm_usage_total": usage_total,
             "final_content": final_event.get("content") if final_event else "",
             "error": record.get("error") or (error_event.get("content") if error_event else None),
@@ -371,6 +374,28 @@ class RunService:
                 "artifact_id": issue.get("artifact_id"),
                 "retry_attempts": issue.get("retry_attempts", 0),
                 "recovered": issue.get("recovered"),
+            })
+        return issues
+
+    @staticmethod
+    def tool_arg_issues(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        issues: list[dict[str, Any]] = []
+        for event in events:
+            metadata = event.get("metadata") or {}
+            issue = metadata.get("tool_arg_validation")
+            if not isinstance(issue, dict):
+                continue
+            issues.append({
+                "event_type": event.get("type"),
+                "tool_name": event.get("tool_name") or issue.get("tool_name"),
+                "tool_args": event.get("tool_args"),
+                "original_tool_args": issue.get("original_tool_args"),
+                "effective_tool_args": issue.get("effective_tool_args"),
+                "validation_error": issue.get("validation_error"),
+                "missing_required": issue.get("missing_required"),
+                "tool_args_repaired": issue.get("tool_args_repaired"),
+                "invalid_tool_args": issue.get("invalid_tool_args"),
+                "repair_reason": issue.get("repair_reason"),
             })
         return issues
 

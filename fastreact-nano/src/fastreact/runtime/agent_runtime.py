@@ -567,11 +567,27 @@ class AgentRuntime:
                     ):
                         # Collect TOOL_CALL events for execution
                         if event.type == EventType.TOOL_CALL:
-                            scoped_args, scope_injected = apply_tool_policy_scope(event.tool_name or "", event.tool_args or {}, run_tool_policy)
+                            model_args = event.tool_args if isinstance(event.tool_args, dict) else {}
+                            scoped_args, scope_injected = apply_tool_policy_scope(event.tool_name or "", model_args, run_tool_policy)
                             if scope_injected:
                                 event.tool_args = scoped_args
                                 event.metadata["tool_policy_scope_applied"] = True
                                 event.metadata["tool_policy"] = run_tool_policy.to_metadata()
+                                event.metadata["model_tool_args"] = model_args
+
+                            argument_resolution = agent.tool_executor.resolve_tool_arguments(
+                                tool_name=event.tool_name or "",
+                                tool_params=scoped_args,
+                                user_query=query,
+                            )
+                            if argument_resolution.repaired or argument_resolution.invalid:
+                                event.metadata["tool_arg_validation"] = argument_resolution.to_metadata()
+                                event.metadata["validation_error"] = argument_resolution.validation_error
+                                event.metadata["tool_args_repaired"] = argument_resolution.repaired
+                                event.metadata["invalid_tool_args"] = argument_resolution.invalid
+                                if argument_resolution.repaired:
+                                    event.tool_args = argument_resolution.params
+                                    scoped_args = argument_resolution.params
                             denial = tool_policy_denial(event.tool_name or "", run_tool_policy)
                             if denial:
                                 event.metadata["tool_policy_denied"] = True
@@ -583,6 +599,17 @@ class AgentRuntime:
                                     "name": event.tool_name,
                                     "arguments": scoped_args,
                                     "tool_policy_denied": denial,
+                                    "argument_resolution": argument_resolution,
+                                })
+                                continue
+                            if argument_resolution.invalid:
+                                yield event
+                                tool_calls.append({
+                                    "id": event.metadata.get("call_id", ""),
+                                    "name": event.tool_name,
+                                    "arguments": argument_resolution.params,
+                                    "invalid_tool_args": True,
+                                    "argument_resolution": argument_resolution,
                                 })
                                 continue
                             validation_error = budget_guard.validate(event.tool_name or "", scoped_args)
@@ -593,6 +620,7 @@ class AgentRuntime:
                                     "name": event.tool_name,
                                     "arguments": scoped_args,
                                     "validation_error": validation_error,
+                                    "argument_resolution": argument_resolution,
                                 })
                                 continue
                             if not budget_guard.allow(event.tool_name or ""):
@@ -611,6 +639,7 @@ class AgentRuntime:
                                 "name": event.tool_name,
                                 "arguments": scoped_args,
                                 "validation_error": validation_error,
+                                "argument_resolution": argument_resolution,
                             })
                             continue
 
@@ -659,6 +688,7 @@ class AgentRuntime:
                             call_id = tool_call.get("id", "")
                             validation_error = tool_call.get("validation_error")
                             tool_policy_denied = tool_call.get("tool_policy_denied")
+                            argument_resolution = tool_call.get("argument_resolution")
 
                             if tool_policy_denied:
                                 result = f"[TOOL_POLICY_DENIED] {tool_policy_denied}"
@@ -673,6 +703,24 @@ class AgentRuntime:
                                 messages.append(Message.tool(
                                     name=tool_name,
                                     result=result,
+                                    call_id=call_id,
+                                ).to_llm_format())
+                                continue
+
+                            if tool_call.get("invalid_tool_args"):
+                                execution, result_event = await agent.tool_executor.execute(
+                                    tool_name=tool_name,
+                                    tool_params=tool_params,
+                                    session_id=session_id,
+                                    user_context=user_context,
+                                    user_query=query,
+                                    argument_resolution=argument_resolution,
+                                )
+                                result_event.metadata["request_id"] = call_id
+                                yield result_event
+                                messages.append(Message.tool(
+                                    name=tool_name,
+                                    result=execution.context_result or execution.result,
                                     call_id=call_id,
                                 ).to_llm_format())
                                 continue
@@ -757,9 +805,11 @@ class AgentRuntime:
                                 tool_params=tool_params,
                                 session_id=session_id,
                                 user_context=user_context,
+                                user_query=query,
                                 decision=decision,
                                 approved=approved,
                                 request_id=request_id,
+                                argument_resolution=argument_resolution,
                             )
                             context_result = execution.context_result if execution.context_result is not None else execution.result
                             self._record_span(

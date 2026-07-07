@@ -1,6 +1,7 @@
 """Tool execution boundary for safety, approvals, audit, and result shaping."""
 
 import asyncio
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from fastreact.core.events import AgentEvent
 from fastreact.core.safety import SafetyDecision, SafetyLevel
+from fastreact.core.tools import ValidationError
 from fastreact.runtime.tool_output_governance import (
     GovernedToolOutput,
     govern_mcp_tool_output,
@@ -31,6 +33,32 @@ class ToolExecutionResult:
     error: Optional[str] = None
     request_id: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ToolArgumentResolution:
+    tool_name: str
+    original_params: dict[str, Any]
+    params: dict[str, Any]
+    validation_error: Optional[str] = None
+    missing_required: list[str] = field(default_factory=list)
+    repaired: bool = False
+    invalid: bool = False
+    repair_reason: Optional[str] = None
+
+    def to_metadata(self) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "tool_name": self.tool_name,
+            "original_tool_args": self.original_params,
+            "effective_tool_args": self.params,
+            "validation_error": self.validation_error,
+            "missing_required": self.missing_required,
+            "tool_args_repaired": self.repaired,
+            "invalid_tool_args": self.invalid,
+        }
+        if self.repair_reason:
+            metadata["repair_reason"] = self.repair_reason
+        return metadata
 
 
 class ToolExecutionService:
@@ -183,11 +211,45 @@ class ToolExecutionService:
         tool_params: dict[str, Any],
         session_id: str,
         user_context: Optional["UserContext"] = None,
+        user_query: Optional[str] = None,
         decision: SafetyDecision | None = None,
         approved: Optional[bool] = None,
         request_id: Optional[str] = None,
+        argument_resolution: Optional[ToolArgumentResolution] = None,
     ) -> tuple[ToolExecutionResult, AgentEvent]:
         started = perf_counter()
+        tool = self._agent._tools.get(tool_name) if hasattr(self._agent, "_tools") else None
+        argument_resolution = argument_resolution or self.resolve_tool_arguments(
+            tool_name=tool_name,
+            tool_params=tool_params,
+            user_query=user_query,
+        )
+        tool_params = argument_resolution.params
+
+        if argument_resolution.invalid:
+            result, metadata = self._invalid_tool_args_payload(argument_resolution)
+            execution = ToolExecutionResult(
+                tool_name=tool_name,
+                result=result,
+                context_result=result,
+                allowed=False,
+                blocked=True,
+                error=argument_resolution.validation_error,
+                request_id=request_id,
+                metadata=metadata,
+            )
+            self._audit(tool_name, tool_params, decision, False, session_id, result, started, request_id)
+            event = AgentEvent.tool_result(tool_name, result, session_id)
+            event.tool_args = argument_resolution.original_params
+            event.metadata.update({
+                "duration_ms": round((perf_counter() - started) * 1000, 2),
+                "decision_level": decision.level.value if decision else "none",
+                "approved": approved,
+                "request_id": request_id,
+            })
+            event.metadata.update(metadata)
+            return execution, event
+
         if self._agent._safety_policy and decision is None:
             user_key = getattr(user_context, "user_key", None) if user_context else None
             tenant_key = (
@@ -212,7 +274,9 @@ class ToolExecutionService:
                 request_id=request_id,
             )
             self._audit(tool_name, tool_params, decision, False, session_id, result, started, request_id)
-            return execution, AgentEvent.tool_result(tool_name, result, session_id)
+            event = AgentEvent.tool_result(tool_name, result, session_id)
+            event.tool_args = tool_params
+            return execution, event
 
         if decision and decision.level == SafetyLevel.DANGER and not approved:
             result = f"[SAFETY_DENIED] {decision.reason}"
@@ -225,9 +289,10 @@ class ToolExecutionService:
                 request_id=request_id,
             )
             self._audit(tool_name, tool_params, decision, False, session_id, result, started, request_id)
-            return execution, AgentEvent.tool_result(tool_name, result, session_id)
+            event = AgentEvent.tool_result(tool_name, result, session_id)
+            event.tool_args = tool_params
+            return execution, event
 
-        tool = self._agent._tools.get(tool_name) if hasattr(self._agent, "_tools") else None
         try:
             governed = await self._execute_and_govern(
                 tool=tool,
@@ -241,10 +306,42 @@ class ToolExecutionService:
                 tool_name=tool_name,
                 result=result,
                 context_result=governed.context_result,
-                metadata=governed.metadata,
+                metadata={**governed.metadata, **self._argument_metadata(argument_resolution)},
             )
         except Exception as exc:
             raw_result = f"[ERROR] {type(exc).__name__}: {exc}"
+            if isinstance(exc, ValidationError):
+                invalid_resolution = ToolArgumentResolution(
+                    tool_name=tool_name,
+                    original_params=argument_resolution.original_params,
+                    params=tool_params,
+                    validation_error=str(exc),
+                    missing_required=self._missing_required_from_errors(getattr(exc, "errors", [])),
+                    invalid=True,
+                )
+                result, metadata = self._invalid_tool_args_payload(invalid_resolution)
+                execution = ToolExecutionResult(
+                    tool_name=tool_name,
+                    result=result,
+                    context_result=result,
+                    allowed=False,
+                    blocked=True,
+                    error=str(exc),
+                    request_id=request_id,
+                    metadata=metadata,
+                )
+                self._audit(tool_name, tool_params, decision, approved, session_id, result, started, request_id)
+                event = AgentEvent.tool_result(tool_name, result, session_id)
+                event.tool_args = invalid_resolution.original_params
+                event.metadata.update({
+                    "duration_ms": round((perf_counter() - started) * 1000, 2),
+                    "decision_level": decision.level.value if decision else "none",
+                    "approved": approved,
+                    "request_id": request_id,
+                })
+                event.metadata.update(metadata)
+                return execution, event
+
             governed = self._govern_mcp_result(
                 tool=tool,
                 tool_name=tool_name,
@@ -258,11 +355,12 @@ class ToolExecutionService:
                 result=result,
                 context_result=governed.context_result,
                 error=None if governed.issue else str(exc),
-                metadata=governed.metadata,
+                metadata={**governed.metadata, **self._argument_metadata(argument_resolution)},
             )
 
         self._audit(tool_name, tool_params, decision, approved, session_id, result, started, request_id)
         event = AgentEvent.tool_result(tool_name, result, session_id)
+        event.tool_args = tool_params
         event.metadata.update({
             "duration_ms": round((perf_counter() - started) * 1000, 2),
             "decision_level": decision.level.value if decision else "none",
@@ -271,6 +369,104 @@ class ToolExecutionService:
         })
         event.metadata.update(execution.metadata)
         return execution, event
+
+    def resolve_tool_arguments(
+        self,
+        *,
+        tool_name: str,
+        tool_params: dict[str, Any],
+        user_query: Optional[str] = None,
+    ) -> ToolArgumentResolution:
+        original_params = dict(tool_params or {}) if isinstance(tool_params, dict) else {}
+        params = dict(original_params)
+        tool = self._agent._tools.get(tool_name) if hasattr(self._agent, "_tools") else None
+        if not tool:
+            return ToolArgumentResolution(tool_name=tool_name, original_params=original_params, params=params)
+
+        errors = tool.validate_params(params)
+        if not errors:
+            return ToolArgumentResolution(tool_name=tool_name, original_params=original_params, params=params)
+
+        missing_required = self._missing_required_from_errors(errors)
+        validation_error = f"Validation errors: {', '.join(errors)}"
+        if (
+            "query" in missing_required
+            and self._is_search_tool(tool_name)
+            and self._query_missing(params)
+            and isinstance(user_query, str)
+            and user_query.strip()
+        ):
+            repaired_params = dict(params)
+            repaired_params["query"] = user_query.strip()
+            repaired_errors = tool.validate_params(repaired_params)
+            if not repaired_errors:
+                return ToolArgumentResolution(
+                    tool_name=tool_name,
+                    original_params=original_params,
+                    params=repaired_params,
+                    validation_error=validation_error,
+                    missing_required=missing_required,
+                    repaired=True,
+                    repair_reason="filled_missing_query_from_run_query",
+                )
+            errors = repaired_errors
+            missing_required = self._missing_required_from_errors(errors)
+            validation_error = f"Validation errors: {', '.join(errors)}"
+
+        return ToolArgumentResolution(
+            tool_name=tool_name,
+            original_params=original_params,
+            params=params,
+            validation_error=validation_error,
+            missing_required=missing_required,
+            invalid=True,
+        )
+
+    def _argument_metadata(self, resolution: ToolArgumentResolution) -> dict[str, Any]:
+        if not resolution.repaired and not resolution.invalid:
+            return {}
+        metadata = resolution.to_metadata()
+        metadata["tool_arg_validation"] = resolution.to_metadata()
+        metadata["validation_error"] = resolution.validation_error
+        metadata["tool_args_repaired"] = resolution.repaired
+        metadata["invalid_tool_args"] = resolution.invalid
+        return metadata
+
+    def _invalid_tool_args_payload(self, resolution: ToolArgumentResolution) -> tuple[str, dict[str, Any]]:
+        metadata = self._argument_metadata(resolution)
+        metadata["invalid_tool_args"] = True
+        metadata["tool_arg_validation"]["invalid_tool_args"] = True
+        payload = {
+            "type": "tool_argument_issue",
+            "error_code": "invalid_tool_args",
+            "tool_name": resolution.tool_name,
+            "validation_error": resolution.validation_error,
+            "missing_required": resolution.missing_required,
+            "retry": {
+                "recommended": True,
+                "hint": "Re-plan the tool call with all required parameters from the tool schema.",
+            },
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True), metadata
+
+    def _missing_required_from_errors(self, errors: list[str]) -> list[str]:
+        missing: list[str] = []
+        prefix = "Missing required parameter:"
+        for error in errors:
+            if not isinstance(error, str) or not error.startswith(prefix):
+                continue
+            field = error[len(prefix):].strip()
+            if field:
+                missing.append(field)
+        return missing
+
+    def _is_search_tool(self, tool_name: str) -> bool:
+        normalized = str(tool_name or "").lower().replace(".", "_").replace("-", "_")
+        return normalized == "search" or normalized.endswith("_search")
+
+    def _query_missing(self, params: dict[str, Any]) -> bool:
+        value = params.get("query")
+        return value is None or (isinstance(value, str) and not value.strip())
 
     async def _execute_and_govern(
         self,
