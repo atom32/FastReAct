@@ -789,6 +789,9 @@ async def test_hard_scope_filters_out_of_scope_source_refs_from_mcp_result(tmp_p
     filtered = json.loads(tool_result_event.content)
     assert filtered["source_refs"] == [{"quote": "inside", "source_item_id": "src_allowed"}]
     assert filtered["source_items"] == [{"source_item_id": "src_allowed", "title": "inside.md"}]
+    assert filtered["scope_filter"]["reason"] == "hard_scope_filtered_out_of_scope_source_refs"
+    assert filtered["scope_filter"]["removed_source_ref_count"] == 2
+    assert filtered["diagnostics"]["tool_policy_scope_result_filter"]["removed_source_ref_count"] == 2
     assert "src_outside" not in tool_result_event.content
     assert tool_result_event.metadata["tool_policy_scope_result_filter"] == {
         "applied": True,

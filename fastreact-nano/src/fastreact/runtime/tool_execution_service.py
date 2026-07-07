@@ -636,6 +636,11 @@ class ToolExecutionService:
         }
         if removed <= 0:
             return result, metadata
+        filtered = self._annotate_scope_filter_notice(
+            filtered,
+            allowed_source_ids=allowed_source_ids,
+            removed=removed,
+        )
         return json.dumps(filtered, ensure_ascii=False, sort_keys=True), metadata
 
     def _hard_scope_source_item_ids(self, tool_name: str, tool_params: dict[str, Any]) -> set[str]:
@@ -682,6 +687,33 @@ class ToolExecutionService:
             return filtered_dict, removed
 
         return value, 0
+
+    def _annotate_scope_filter_notice(
+        self,
+        value: Any,
+        *,
+        allowed_source_ids: set[str],
+        removed: int,
+    ) -> Any:
+        notice = {
+            "applied": True,
+            "reason": "hard_scope_filtered_out_of_scope_source_refs",
+            "removed_source_ref_count": removed,
+            "allowed_source_item_ids": sorted(allowed_source_ids),
+            "feedback": (
+                "Some MCP result entries were outside the caller-selected hard scope. "
+                "Their contents were withheld, but this marker is preserved for answer diagnostics."
+            ),
+        }
+        if isinstance(value, dict):
+            annotated = dict(value)
+            diagnostics = annotated.get("diagnostics")
+            diagnostics = dict(diagnostics) if isinstance(diagnostics, dict) else {}
+            diagnostics["tool_policy_scope_result_filter"] = notice
+            annotated["diagnostics"] = diagnostics
+            annotated["scope_filter"] = notice
+            return annotated
+        return value
 
     def _source_ref_id(self, value: dict[str, Any]) -> str | None:
         for key in ("source_item_id", "source_ref"):
