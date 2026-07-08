@@ -11,7 +11,7 @@
     "exec_timeout": 30
   },
   "react": {
-    "max_iterations": 20,
+    "max_iterations": 128,
     "max_context_tokens": 128000,
     "enable_safety": true,
     "strict_mode": false

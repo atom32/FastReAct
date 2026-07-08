@@ -40,7 +40,7 @@ Minimal request:
 ```bash
 curl http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT" \
   -d '{
     "messages": [
       {"role": "user", "content": "Say hello from FastReAct."}
@@ -111,8 +111,13 @@ Minimal config:
   "service": {
     "host": "127.0.0.1",
     "port": 18741,
-    "log_level": "info",
-    "service_token": "replace-with-local-service-token"
+    "log_level": "info"
+  },
+  "auth": {
+    "mode": "jwt",
+    "jwt_secret_env": "AUTHNODE_JWT_SECRET",
+    "jwt_issuer": "authnode.local",
+    "jwt_audience": "fastreact"
   },
   "mcp": {
     "servers": []

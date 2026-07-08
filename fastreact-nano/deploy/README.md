@@ -306,7 +306,7 @@ Create `~/.fastreact/config.json`:
   },
   "react": {
     "enable_safety": true,
-    "max_iterations": 20
+    "max_iterations": 128
   }
 }
 ```

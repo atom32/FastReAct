@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,8 @@ from fastreact.runtime.tool_output_governance import (
     retry_params_for_tool,
 )
 from fastreact.runtime.tool_policy import tool_policy_scope_applies
+
+MALFORMED_TOOL_ARGS_KEY = "__fastreact_malformed_tool_args__"
 
 if TYPE_CHECKING:
     from fastreact.agent import Agent
@@ -389,6 +392,26 @@ class ToolExecutionService:
         if not tool:
             return ToolArgumentResolution(tool_name=tool_name, original_params=original_params, params=params)
 
+        malformed_resolution = self._resolve_malformed_tool_args(
+            tool_name=tool_name,
+            tool_params=params,
+            original_params=original_params,
+            user_query=user_query,
+            tool=tool,
+        )
+        if malformed_resolution:
+            return malformed_resolution
+
+        prompt_wrapper_resolution = self._resolve_prompt_wrapper_query(
+            tool_name=tool_name,
+            tool_params=params,
+            original_params=original_params,
+            user_query=user_query,
+            tool=tool,
+        )
+        if prompt_wrapper_resolution:
+            return prompt_wrapper_resolution
+
         errors = tool.validate_params(params)
         if not errors:
             return ToolArgumentResolution(tool_name=tool_name, original_params=original_params, params=params)
@@ -473,6 +496,164 @@ class ToolExecutionService:
     def _query_missing(self, params: dict[str, Any]) -> bool:
         value = params.get("query")
         return value is None or (isinstance(value, str) and not value.strip())
+
+    def _resolve_malformed_tool_args(
+        self,
+        *,
+        tool_name: str,
+        tool_params: dict[str, Any],
+        original_params: dict[str, Any],
+        user_query: Optional[str],
+        tool: Any,
+    ) -> ToolArgumentResolution | None:
+        malformed = tool_params.get(MALFORMED_TOOL_ARGS_KEY)
+        if not isinstance(malformed, dict):
+            return None
+
+        clean_params = {key: value for key, value in tool_params.items() if key != MALFORMED_TOOL_ARGS_KEY}
+        estimated_size = malformed.get("estimated_size")
+        error = str(malformed.get("error") or "malformed function arguments")
+        validation_error = (
+            "Malformed tool arguments JSON"
+            + (f" (estimated_size={estimated_size})" if estimated_size is not None else "")
+            + f": {error}"
+        )
+
+        if self._is_search_tool(tool_name):
+            repaired_query = self._search_query_candidate(user_query) or self._search_query_candidate(clean_params.get("query"))
+            if not repaired_query and isinstance(user_query, str) and user_query.strip():
+                repaired_query = user_query.strip()
+            if repaired_query and not self._query_looks_like_prompt_wrapper(repaired_query):
+                repaired_params = dict(clean_params)
+                repaired_params["query"] = repaired_query
+                repaired_errors = tool.validate_params(repaired_params)
+                if not repaired_errors:
+                    return ToolArgumentResolution(
+                        tool_name=tool_name,
+                        original_params=original_params,
+                        params=repaired_params,
+                        validation_error=validation_error,
+                        repaired=True,
+                        repair_reason="repaired_malformed_json_args_from_run_query",
+                    )
+
+        errors = tool.validate_params(clean_params)
+        missing_required = self._missing_required_from_errors(errors)
+        return ToolArgumentResolution(
+            tool_name=tool_name,
+            original_params=original_params,
+            params=clean_params,
+            validation_error=validation_error,
+            missing_required=missing_required,
+            invalid=True,
+        )
+
+    def _resolve_prompt_wrapper_query(
+        self,
+        *,
+        tool_name: str,
+        tool_params: dict[str, Any],
+        original_params: dict[str, Any],
+        user_query: Optional[str],
+        tool: Any,
+    ) -> ToolArgumentResolution | None:
+        if not self._is_search_tool(tool_name):
+            return None
+        query = tool_params.get("query")
+        if not isinstance(query, str) or not query.strip():
+            return None
+        if not self._query_looks_like_prompt_wrapper(query):
+            return None
+
+        validation_error = (
+            "Invalid search query: query appears to contain prompt wrapper/system instructions "
+            "instead of concise search terms"
+        )
+        repaired_query = self._search_query_candidate(user_query) or self._search_query_candidate(query)
+        if repaired_query and not self._query_looks_like_prompt_wrapper(repaired_query):
+            repaired_params = dict(tool_params)
+            repaired_params["query"] = repaired_query
+            repaired_errors = tool.validate_params(repaired_params)
+            if not repaired_errors:
+                return ToolArgumentResolution(
+                    tool_name=tool_name,
+                    original_params=original_params,
+                    params=repaired_params,
+                    validation_error=validation_error,
+                    repaired=True,
+                    repair_reason="replaced_prompt_wrapper_query",
+                )
+        return ToolArgumentResolution(
+            tool_name=tool_name,
+            original_params=original_params,
+            params=tool_params,
+            validation_error=validation_error,
+            invalid=True,
+        )
+
+    def _query_looks_like_prompt_wrapper(self, query: str) -> bool:
+        text = re.sub(r"\s+", " ", str(query or "")).strip()
+        if not text:
+            return False
+        lowered = text.casefold()
+        markers = [
+            "handle this user request",
+            "return json when possible",
+            "answer this pska knowledge question",
+            "tool query arguments must be concise",
+            "available tools",
+            "tool_policy",
+            "tool policy",
+            "retrieval_plan",
+            "source_refs",
+            "citations",
+            "scope:",
+            "user request:",
+            "user question:",
+        ]
+        marker_count = sum(1 for marker in markers if marker in lowered)
+        strong_markers = [
+            "handle this user request",
+            "answer this pska knowledge question",
+            "you are the configured external agentic service",
+        ]
+        if any(lowered.startswith(marker) for marker in strong_markers):
+            return True
+        if marker_count >= 2:
+            return True
+        return len(text) > 900 and marker_count >= 1
+
+    def _search_query_candidate(self, text: Optional[str]) -> str:
+        if not isinstance(text, str) or not text.strip():
+            return ""
+        candidates: list[str] = []
+        patterns = [
+            r"(?:ACTUAL_USER_QUERY|Actual user query)\s*[:：]\s*(?P<value>.+)$",
+            r"(?:User question|Question)\s*:\s*(?P<value>.+)$",
+            r"(?:用户问题|问题)\s*[:：]\s*(?P<value>.+)$",
+            r"(?:User request)\s*:\s*(?P<value>.+)$",
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE | re.DOTALL):
+                candidate = self._clean_search_query_candidate(match.group("value"))
+                if candidate:
+                    candidates.append(candidate)
+        if candidates:
+            # Prefer the most specific trailing question marker, e.g. PSKA deep
+            # prompts end with "User question: ...".
+            for candidate in reversed(candidates):
+                if not self._query_looks_like_prompt_wrapper(candidate):
+                    return candidate
+            return candidates[-1]
+        return ""
+
+    def _clean_search_query_candidate(self, value: str) -> str:
+        text = str(value or "").strip()
+        text = re.split(r"\n(?:Surface|Scope|Return JSON|Tool query arguments)\s*:", text, maxsplit=1)[0].strip()
+        text = re.sub(r"\s+", " ", text).strip("` \t\r\n")
+        if len(text) > 500:
+            text = text[:500].rsplit(" ", 1)[0].strip() or text[:500].strip()
+        return text
 
     async def _execute_and_govern(
         self,

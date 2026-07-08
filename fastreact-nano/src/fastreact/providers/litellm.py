@@ -12,6 +12,8 @@ import asyncio
 
 from fastreact.core.config import DEFAULT_LLM_MAX_TOKENS
 
+MALFORMED_TOOL_ARGS_KEY = "__fastreact_malformed_tool_args__"
+
 
 @dataclass
 class LLMResponse:
@@ -342,21 +344,29 @@ class LiteLLMProvider:
 
         # Attempt 1: Normal parsing
         try:
-            return json.loads(arguments)
+            parsed = json.loads(arguments)
+            if isinstance(parsed, dict):
+                return parsed
+            return self._malformed_tool_args_payload(
+                arguments,
+                f"function arguments must be a JSON object, got {type(parsed).__name__}",
+            )
         except json.JSONDecodeError as e:
-            print(f"[WARNING] JSON parsing failed, attempting repair...", file=sys.stderr)
-            print(f"[DEBUG] JSON error: {e}", file=sys.stderr)
-            print(f"[DEBUG] Raw input (first 200 chars): {arguments[:200]}", file=sys.stderr)
+            print("[WARNING] JSON function arguments parsing failed, attempting repair...", file=sys.stderr)
+            print(f"[DEBUG] JSON error: {e}; size={len(arguments or '')}", file=sys.stderr)
+            final_error: Exception = e
 
         # Attempt 2: Fix missing quotes around keys (common LLM error)
         try:
             # Fix: {key: "value"} → {"key": "value"}
             fixed = re.sub(r'(\w+):', r'"\1":', arguments)
             result = json.loads(fixed)
+            if not isinstance(result, dict):
+                raise ValueError(f"function arguments must be a JSON object, got {type(result).__name__}")
             print(f"[OK] JSON repaired: added quotes to keys", file=sys.stderr)
             return result
-        except json.JSONDecodeError:
-            pass
+        except (json.JSONDecodeError, ValueError) as e:
+            final_error = e
 
         # Attempt 3: Fix trailing commas (another common error)
         try:
@@ -364,20 +374,24 @@ class LiteLLMProvider:
             fixed = re.sub(r',\s*}', '}', arguments)
             fixed = re.sub(r',\s*]', ']', fixed)
             result = json.loads(fixed)
+            if not isinstance(result, dict):
+                raise ValueError(f"function arguments must be a JSON object, got {type(result).__name__}")
             print(f"[OK] JSON repaired: removed trailing commas", file=sys.stderr)
             return result
-        except json.JSONDecodeError:
-            pass
+        except (json.JSONDecodeError, ValueError) as e:
+            final_error = e
 
         # Attempt 4: Fix single quotes instead of double quotes
         try:
             # Fix: {'key': 'value'} → {"key": "value"}
             fixed = arguments.replace("'", '"')
             result = json.loads(fixed)
+            if not isinstance(result, dict):
+                raise ValueError(f"function arguments must be a JSON object, got {type(result).__name__}")
             print(f"[OK] JSON repaired: single quotes to double quotes", file=sys.stderr)
             return result
-        except json.JSONDecodeError:
-            pass
+        except (json.JSONDecodeError, ValueError) as e:
+            final_error = e
 
         # Attempt 5: Combination of fixes (try them all together)
         try:
@@ -386,15 +400,24 @@ class LiteLLMProvider:
             fixed = re.sub(r',\s*}', '}', fixed)  # Remove trailing commas
             fixed = re.sub(r',\s*]', ']', fixed)
             result = json.loads(fixed)
+            if not isinstance(result, dict):
+                raise ValueError(f"function arguments must be a JSON object, got {type(result).__name__}")
             print(f"[OK] JSON repaired: combination of fixes", file=sys.stderr)
             return result
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, ValueError) as e:
+            final_error = e
             print(f"[ERROR] All JSON repair attempts failed", file=sys.stderr)
-            print(f"[ERROR] Final error: {e}", file=sys.stderr)
+            print(f"[ERROR] Final error: {e}; size={len(arguments or '')}", file=sys.stderr)
 
-        # Final fallback: Return empty dict to prevent tool execution crash
-        print(f"[WARNING] Returning empty dict for malformed JSON", file=sys.stderr)
-        return {}
+        return self._malformed_tool_args_payload(arguments, str(final_error))
+
+    def _malformed_tool_args_payload(self, arguments: str, error: str) -> dict[str, Any]:
+        return {
+            MALFORMED_TOOL_ARGS_KEY: {
+                "error": str(error or "malformed function arguments"),
+                "estimated_size": len(arguments or ""),
+            }
+        }
 
     async def chat_stream(
         self,

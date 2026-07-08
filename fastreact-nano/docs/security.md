@@ -2,34 +2,37 @@
 
 FastReAct Nano security is policy plus service authentication plus audit. It is not an OS sandbox.
 
-## Service Authentication
+## Identity Authentication
 
 FastReAct does not implement password login, user registration, or an
 organization admin console. It accepts identity that has already been verified
 by a caller, gateway, customer platform, or lightweight identity broker.
 
-Set `service.service_token` in JSON config:
+Configure JWT or trusted headers in JSON config:
 
 ```json
 {
-  "service": {
-    "service_token": "replace-with-local-service-token"
+  "auth": {
+    "mode": "jwt",
+    "jwt_secret_env": "AUTHNODE_JWT_SECRET",
+    "jwt_issuer": "authnode.local",
+    "jwt_audience": "fastreact"
   }
 }
 ```
 
-Clients authenticate with either:
+Clients authenticate with:
 
 ```http
-X-FastReAct-Service-Token: replace-with-local-service-token
-Authorization: Bearer replace-with-local-service-token
+Authorization: Bearer <authnode-or-idp-jwt>
 ```
 
-`GET /health`, `GET /v1/tools`, and `GET /v1/skills` are currently public. Operational endpoints such as `/ready`, setup, metrics, runs, traces, tasks, approvals, policy, and workspace profile require service auth when configured.
+`GET /health`, `GET /v1/tools`, and `GET /v1/skills` are currently public.
+Operational endpoints such as `/ready`, setup, metrics, runs, traces, tasks,
+approvals, policy, and workspace profile require a verified identity.
 
 For user-facing deployments, configure `auth.mode`:
 
-- `service_token`: local/headless service calls; body `user_key` remains compatible.
 - `trusted_headers`: a trusted gateway injects `X-FastReAct-User-Key`,
   `X-FastReAct-Tenant-Key`, roles, groups, and profile headers.
 - `jwt`: FastReAct verifies a JWT from an external platform or identity broker
@@ -41,12 +44,8 @@ audience `fastreact`, and tenant claim order
 `tenant_key,tenant_id,tenant,org_id`. AuthNode's `sub` claim remains the full
 FastReAct `user_key`, for example `pska:user_primary`.
 
-If `service.service_token` is configured, service-to-service callers such as
-PSKA may use `X-FastReAct-Service-Token` with `auth.mode=trusted_headers` or
-`auth.mode=jwt`. This bypass is only for trusted backends that already verified
-the browser session; the request body must carry `user_key` and, for explicit
-tenant isolation, `metadata.tenant_key`. FastReAct records this as
-`auth_provider=service_token` in run metadata.
+`service_token` auth is deprecated and rejected. It is not a tenant identity
+and must not be used as a multi-tenant bypass.
 
 Customer SSO should live outside FastReAct. Use the customer's existing platform
 or a small OIDC/SAML/LDAP identity broker to authenticate users, then send
@@ -59,7 +58,7 @@ Secrets must stay out of the repository and frontend bundle.
 
 - LLM keys: local JSON config or `llm.api_key_file`.
 - MCP service tokens: local credentials file referenced by `auth_token_ref`.
-- Service token: local JSON config or local key file.
+- AuthNode/IdP JWT secrets: deployment secret manager or local-only config.
 - GitHub PATs and other provider tokens: local-only files or external secret managers.
 
 The store and audit path sanitize common sensitive keys such as `api_key`, `token`, `pat`, `password`, `secret`, and `authorization`.

@@ -10,7 +10,7 @@ from fastreact.core.events import EventType
 from fastreact.core.multitenant import UserContext
 from fastreact.core.prompts import get_system_prompt
 from fastreact.core.tools import Tool
-from fastreact.runtime.agent_runtime import DigestToolBudgetGuard
+from fastreact.runtime.agent_runtime import RuntimeToolBudgetGuard, SearchQueryLedger
 from fastreact.runtime.mcp_bootstrapper import MCPBootstrapper
 from fastreact.runtime.run_service import RunService
 from fastreact.runtime.store_service import StoreService
@@ -44,6 +44,19 @@ def test_context_monitor_falls_back_when_tiktoken_initialization_fails(monkeypat
 
     assert monitor.estimate_tokens("abcd" * 10) == 10
     assert "(estimate)" in monitor.get_progress_bar()
+
+
+def test_litellm_provider_reports_malformed_tool_args_without_raw_content() -> None:
+    from fastreact.providers.litellm import LiteLLMProvider, MALFORMED_TOOL_ARGS_KEY
+
+    provider = object.__new__(LiteLLMProvider)
+
+    parsed = provider._parse_function_args('{"query": "sensitive prompt text"')
+
+    assert MALFORMED_TOOL_ARGS_KEY in parsed
+    issue = parsed[MALFORMED_TOOL_ARGS_KEY]
+    assert issue["estimated_size"] == len('{"query": "sensitive prompt text"')
+    assert "sensitive prompt text" not in json.dumps(issue, ensure_ascii=False)
 
 
 def test_session_service_create_list_close(tmp_path):
@@ -94,7 +107,7 @@ async def test_runtime_honors_per_run_max_iterations_metadata(tmp_path, mock_llm
 
     assert events[0].metadata["max_iterations"] == 1
     assert events[-1].type == EventType.SESSION_END
-    assert "maximum iteration limit (1)" in events[-1].content
+    assert "Runtime circuit breaker reached (1)" in events[-1].content
 
 
 @pytest.mark.asyncio
@@ -261,6 +274,7 @@ def test_tool_policy_applies_hard_scope_to_pska_read_only_tools() -> None:
 
     for tool_name in [
         "pska_pska_search",
+        "pska_pska_index_status",
         "pska_pska_read_evidence_context",
         "pska_pska_graph_context",
         "pska_pska_digest_context",
@@ -642,6 +656,261 @@ async def test_runtime_repairs_missing_query_for_search_mcp_tool(tmp_path, monke
 
 
 @pytest.mark.asyncio
+async def test_runtime_repairs_prompt_wrapper_query_for_search_mcp_tool(tmp_path, monkeypatch) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastreact.mcp.manager import MCPToolWrapper
+    from fastreact.providers.litellm import LLMResponse, ToolCall
+
+    user_query = "生成一份历年来海康威视年报分析报告"
+    prompt_wrapper_query = (
+        "Handle this user request. Return JSON when possible with keys answer, retrieval, trace, "
+        "source_refs, and citations.\n\n"
+        "User request: Answer this PSKA knowledge question for a user-facing Ask PSKA surface.\n"
+        "Scope: {\"mode\":\"hard\"}\n"
+        f"User question: {user_query}"
+    )
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value="search evidence")
+    wrapper = MCPToolWrapper(
+        tool_name="pska_search",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="Search evidence.",
+        parameters={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        transport="http",
+    )
+
+    call_count = 0
+
+    async def mock_chat(self, messages, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return LLMResponse(
+                content="Searching evidence",
+                tool_calls=[
+                    ToolCall(
+                        id="call-search-prompt-wrapper",
+                        name="pska_pska_search",
+                        params={"query": prompt_wrapper_query},
+                    )
+                ],
+                model=self.model,
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+            )
+        return LLMResponse(
+            content="Report answer with citations.",
+            tool_calls=[],
+            model=self.model,
+            usage={"prompt_tokens": 8, "completion_tokens": 4},
+        )
+
+    import fastreact.providers.litellm
+
+    monkeypatch.setattr(fastreact.providers.litellm.LiteLLMProvider, "chat", mock_chat)
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+    agent._tools.register(wrapper)
+    agent._core.tools = agent._tools
+
+    events = []
+    async for event in agent.run_event_stream(
+        prompt_wrapper_query,
+        session_id="prompt-wrapper-query-repair-session",
+    ):
+        events.append(event)
+
+    client.call_tool.assert_awaited_once()
+    _, tool_args = client.call_tool.await_args.args[:2]
+    assert tool_args["query"] == user_query
+    assert "Handle this user request" not in tool_args["query"]
+
+    tool_call_event = next(
+        event for event in events if event.type == EventType.TOOL_CALL and event.tool_name == "pska_pska_search"
+    )
+    assert tool_call_event.metadata["tool_args_repaired"] is True
+    assert tool_call_event.metadata["validation_error"].startswith("Invalid search query")
+    assert tool_call_event.metadata["tool_arg_validation"]["repair_reason"] == "replaced_prompt_wrapper_query"
+    assert tool_call_event.metadata["tool_arg_validation"]["original_tool_args"] == {"query": prompt_wrapper_query}
+    assert tool_call_event.metadata["tool_arg_validation"]["effective_tool_args"]["query"] == user_query
+
+
+@pytest.mark.asyncio
+async def test_runtime_repairs_malformed_search_args_from_run_query(tmp_path, monkeypatch) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastreact.mcp.manager import MCPToolWrapper
+    from fastreact.providers.litellm import LLMResponse, MALFORMED_TOOL_ARGS_KEY, ToolCall
+
+    user_query = "Analyze annual report revenue and profit."
+    malformed_args = {
+        MALFORMED_TOOL_ARGS_KEY: {
+            "estimated_size": 2048,
+            "error": "Unterminated string starting at line 1 column 11",
+        }
+    }
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value="search evidence")
+    wrapper = MCPToolWrapper(
+        tool_name="pska_search",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="Search evidence.",
+        parameters={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        transport="http",
+    )
+
+    call_count = 0
+
+    async def mock_chat(self, messages, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return LLMResponse(
+                content="Searching evidence",
+                tool_calls=[
+                    ToolCall(
+                        id="call-search-malformed-json",
+                        name="pska_pska_search",
+                        params=malformed_args,
+                    )
+                ],
+                model=self.model,
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+            )
+        return LLMResponse(
+            content="Answer from repaired search.",
+            tool_calls=[],
+            model=self.model,
+            usage={"prompt_tokens": 8, "completion_tokens": 4},
+        )
+
+    import fastreact.providers.litellm
+
+    monkeypatch.setattr(fastreact.providers.litellm.LiteLLMProvider, "chat", mock_chat)
+    agent = Agent(config=make_test_config(tmp_path), multitenant=False)
+    agent._tools.register(wrapper)
+    agent._core.tools = agent._tools
+
+    events = []
+    async for event in agent.run_event_stream(
+        user_query,
+        session_id="malformed-search-args-repair-session",
+    ):
+        events.append(event)
+
+    client.call_tool.assert_awaited_once()
+    _, tool_args = client.call_tool.await_args.args[:2]
+    assert tool_args == {"query": user_query}
+
+    tool_call_event = next(
+        event for event in events if event.type == EventType.TOOL_CALL and event.tool_name == "pska_pska_search"
+    )
+    assert tool_call_event.tool_args == {"query": user_query}
+    assert tool_call_event.metadata["tool_args_repaired"] is True
+    assert tool_call_event.metadata["tool_arg_validation"]["repair_reason"] == "repaired_malformed_json_args_from_run_query"
+    assert tool_call_event.metadata["tool_arg_validation"]["original_tool_args"] == malformed_args
+    assert tool_call_event.metadata["tool_arg_validation"]["effective_tool_args"] == {"query": user_query}
+    assert "Malformed tool arguments JSON" in tool_call_event.metadata["validation_error"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_returns_structured_repeated_search_query_issue(tmp_path, monkeypatch) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastreact.mcp.manager import MCPToolWrapper
+    from fastreact.providers.litellm import LLMResponse, ToolCall
+
+    client = MagicMock()
+    client.call_tool = AsyncMock(return_value="search evidence")
+    wrapper = MCPToolWrapper(
+        tool_name="pska_search",
+        server_name="pska",
+        mcp_client=client,
+        mcp_manager=MagicMock(),
+        description="Search evidence.",
+        parameters={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        transport="http",
+    )
+
+    repeated_query = "Atlas annual report revenue margin"
+    call_count = 0
+
+    async def mock_chat(self, messages, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 3:
+            return LLMResponse(
+                content="Searching evidence",
+                tool_calls=[
+                    ToolCall(
+                        id=f"call-repeated-search-{call_count}",
+                        name="pska_pska_search",
+                        params={"query": repeated_query},
+                    )
+                ],
+                model=self.model,
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+            )
+        return LLMResponse(
+            content="Answer from collected evidence.",
+            tool_calls=[],
+            model=self.model,
+            usage={"prompt_tokens": 8, "completion_tokens": 4},
+        )
+
+    import fastreact.providers.litellm
+
+    monkeypatch.setattr(fastreact.providers.litellm.LiteLLMProvider, "chat", mock_chat)
+    config = make_test_config(tmp_path)
+    config.react.max_iterations = 6
+    agent = Agent(config=config, multitenant=False)
+    agent._tools.register(wrapper)
+    agent._core.tools = agent._tools
+
+    events = []
+    async for event in agent.run_event_stream(
+        "Analyze Atlas annual report.",
+        session_id="repeated-search-query-session",
+    ):
+        events.append(event)
+
+    assert client.call_tool.await_count == 2
+    repeated_result = next(
+        event
+        for event in events
+        if event.type == EventType.TOOL_RESULT and event.metadata.get("repeated_search_query")
+    )
+    payload = json.loads(repeated_result.content)
+    assert payload["error_code"] == "repeated_search_query"
+    assert payload["tool_name"] == "pska_pska_search"
+    assert payload["retry"]["recommended"] is True
+    assert "Runtime circuit breaker" not in events[-1].content
+
+    run_id = f"run-repeated-search-{uuid.uuid4().hex}"
+    agent.runs.create(run_id=run_id, session_id="repeated-search-query-session", query="Analyze Atlas annual report.")
+    for event in events:
+        agent.runs.append_event(run_id, event.to_dict())
+    trace = agent.runs.persist_trace(run_id)
+    assert trace["tool_query_issue_count"] >= 1
+    assert trace["tool_query_issues"][0]["error_code"] == "repeated_search_query"
+
+
+@pytest.mark.asyncio
 async def test_tool_execution_returns_structured_invalid_tool_args_when_query_cannot_be_repaired(tmp_path) -> None:
     from unittest.mock import AsyncMock, MagicMock
 
@@ -801,7 +1070,7 @@ async def test_hard_scope_filters_out_of_scope_source_refs_from_mcp_result(tmp_p
 
 
 def test_pska_digest_guard_validates_candidate_payloads_before_budget_count():
-    guard = DigestToolBudgetGuard({"caller": "pska_digest_worker", "purpose": "digest"})
+    guard = RuntimeToolBudgetGuard({"caller": "pska_digest_worker", "purpose": "digest"})
 
     empty_error = guard.validate("pska_pska_write_candidates", {"source_refs": []})
     assert "requires at least one candidate" in empty_error
@@ -828,6 +1097,53 @@ def test_pska_digest_guard_validates_candidate_payloads_before_budget_count():
     assert valid_error is None
     assert guard.allow("pska_pska_write_candidates") is True
     assert guard.counts["pska_pska_write_candidates"] == 1
+
+
+def test_pska_ask_read_guard_returns_structured_budget_denial():
+    guard = RuntimeToolBudgetGuard({"caller": "pska", "purpose": "agentic_search", "ask_read_tool_budget": {"pska_pska_search": 1}})
+
+    assert guard.allow("pska_pska_search") is True
+    assert guard.allow("pska_pska_search") is False
+
+    denial = guard.denial("pska_pska_search")
+    assert denial["error_code"] == "tool_budget_exceeded"
+    assert denial["profile"] == "pska_ask_read"
+    assert denial["configured_budget"] == 1
+    assert denial["observed_count"] == 1
+    assert "synthesize" in denial["retry"]["hint"]
+
+
+def test_pska_ask_read_guard_uses_tool_policy_and_canonical_names():
+    guard = RuntimeToolBudgetGuard(
+        {
+            "tool_policy": {
+                "mode": "allowlist",
+                "allowed_tools": ["pska_search", "pska_read_evidence_context"],
+            },
+            "ask_read_tool_budget": {"pska_search": 1},
+        }
+    )
+
+    assert guard.enabled is True
+    assert guard.allow("pska_search") is True
+    assert guard.allow("pska_pska_search") is False
+
+    denial = guard.denial("pska_pska_search")
+    assert denial["canonical_tool_name"] == "pska_pska_search"
+    assert denial["configured_budget"] == 1
+    assert denial["observed_count"] == 1
+
+
+def test_search_query_ledger_catches_similar_cjk_metric_queries():
+    ledger = SearchQueryLedger(max_similar_calls=2)
+
+    assert ledger.assess("pska_pska_search", {"query": "海康威视 2023 营业收入 归母净利润 研发投入 年报"}) is None
+    assert ledger.assess("pska_pska_search", {"query": "营业收入 归母净利润 研发投入 2023年 海康威视"}) is None
+    issue = ledger.assess("pska_pska_search", {"query": "2023年 海康威视 营业收入 归母净利润 研发投入"})
+
+    assert issue is not None
+    assert issue["error_code"] == "repeated_search_query"
+    assert issue["similar_query_count"] == 2
 
 
 @pytest.mark.asyncio

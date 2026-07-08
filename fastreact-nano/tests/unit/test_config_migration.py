@@ -73,7 +73,7 @@ class TestV1ToV2Migration:
                 "protected_paths": ["/etc/passwd"]
             },
             "react": {
-                "max_iterations": 20
+                "max_iterations": 128
             }
         }
 
@@ -742,7 +742,7 @@ class TestDefaultValueFallbacks:
         """Test react configuration defaults"""
         config = Config()
 
-        assert config.react.max_iterations == 20
+        assert config.react.max_iterations == 128
         assert config.react.enable_steering is True
         assert config.react.enable_followup is True
         assert config.react.max_context_tokens == 128000

@@ -1,7 +1,9 @@
 """Agent runtime facade for the ReAct execution loop."""
 
+from difflib import SequenceMatcher
 import json
 import logging
+import re
 import uuid
 from typing import AsyncIterator, Optional, TYPE_CHECKING
 
@@ -17,34 +19,77 @@ if TYPE_CHECKING:
     from fastreact.core.events import AgentEvent
 
 
-class DigestToolBudgetGuard:
-    """Per-run MCP tool budget guard for constrained PSKA digest worker runs."""
+class RuntimeToolBudgetGuard:
+    """Per-run MCP tool budget guard for constrained PSKA tool profiles."""
 
-    DEFAULT_BUDGET = {
+    DEFAULT_DIGEST_BUDGET = {
         "pska_pska_write_candidates": 1,
         "pska_pska_job_context": 1,
+    }
+    DEFAULT_ASK_READ_BUDGET = {
+        "pska_pska_search": 6,
+        "pska_pska_read_evidence_context": 8,
+        "pska_pska_graph_context": 3,
+        "pska_pska_digest_context": 2,
+        "pska_pska_index_status": 1,
     }
 
     def __init__(self, metadata: Optional[dict] = None):
         metadata = metadata or {}
-        self.enabled = metadata.get("caller") == "pska_digest_worker" or metadata.get("purpose") == "digest"
-        configured_budget = metadata.get("tool_budget") if isinstance(metadata.get("tool_budget"), dict) else {}
+        self.profile = ""
+        if metadata.get("caller") == "pska_digest_worker" or metadata.get("purpose") == "digest":
+            self.profile = "pska_digest"
+            default_budget = self.DEFAULT_DIGEST_BUDGET
+        elif metadata.get("purpose") == "agentic_search" or _metadata_has_pska_read_policy(metadata):
+            self.profile = "pska_ask_read"
+            default_budget = self.DEFAULT_ASK_READ_BUDGET
+        else:
+            default_budget = {}
+        self.enabled = bool(default_budget)
+        configured_budget = (
+            metadata.get("tool_budget")
+            if isinstance(metadata.get("tool_budget"), dict)
+            else metadata.get("ask_read_tool_budget")
+            if isinstance(metadata.get("ask_read_tool_budget"), dict)
+            else {}
+        )
         self.budget = {
-            name: int(configured_budget.get(name, default) or default)
-            for name, default in self.DEFAULT_BUDGET.items()
+            name: int(_configured_budget_for_tool(configured_budget, name, default) or default)
+            for name, default in default_budget.items()
         }
         self.counts = {name: 0 for name in self.budget}
 
     def allow(self, tool_name: str) -> bool:
-        if not self.enabled or tool_name not in self.budget:
+        canonical_name = _canonical_pska_tool_name(tool_name)
+        if not self.enabled or canonical_name not in self.budget:
             return True
-        if self.counts.get(tool_name, 0) >= self.budget[tool_name]:
+        if self.counts.get(canonical_name, 0) >= self.budget[canonical_name]:
             return False
-        self.counts[tool_name] = self.counts.get(tool_name, 0) + 1
+        self.counts[canonical_name] = self.counts.get(canonical_name, 0) + 1
         return True
 
+    def denial(self, tool_name: str) -> dict:
+        canonical_name = _canonical_pska_tool_name(tool_name)
+        return {
+            "type": "tool_budget_governance",
+            "error_code": "tool_budget_exceeded",
+            "tool_name": tool_name,
+            "canonical_tool_name": canonical_name,
+            "profile": self.profile,
+            "configured_budget": self.budget.get(canonical_name),
+            "observed_count": self.counts.get(canonical_name, 0),
+            "message": (
+                f"{tool_name} exceeded the per-run {self.profile or 'tool'} budget. "
+                "Use existing tool evidence and produce the best supported answer with explicit gaps."
+            ),
+            "retry": {
+                "recommended": False,
+                "hint": "Do not call more broad retrieval tools in this run; synthesize from existing evidence.",
+            },
+        }
+
     def validate(self, tool_name: str, tool_args: Optional[dict] = None) -> str | None:
-        if not self.enabled or tool_name != "pska_pska_write_candidates":
+        if not self.enabled or _canonical_pska_tool_name(tool_name) != "pska_pska_write_candidates":
             return None
         args = tool_args if isinstance(tool_args, dict) else {}
         counts = _pska_candidate_counts(args)
@@ -59,6 +104,118 @@ class DigestToolBudgetGuard:
                 "knowledge_claim in the same pska_pska_write_candidates payload."
             )
         return None
+
+
+class SearchQueryLedger:
+    """Run-local guard against repeating equivalent search tool calls."""
+
+    def __init__(self, max_similar_calls: int = 2):
+        self.max_similar_calls = max(1, max_similar_calls)
+        self._queries_by_tool: dict[str, list[str]] = {}
+
+    def assess(self, tool_name: str, tool_args: Optional[dict]) -> dict | None:
+        if not _is_search_tool_name(tool_name):
+            return None
+        args = tool_args if isinstance(tool_args, dict) else {}
+        query = args.get("query")
+        if not isinstance(query, str) or not query.strip():
+            return None
+        normalized = _normalize_search_query(query)
+        if not normalized:
+            return None
+        prior = self._queries_by_tool.setdefault(str(tool_name or ""), [])
+        similar = [seen for seen in prior if _search_queries_similar(normalized, seen)]
+        if len(similar) >= self.max_similar_calls:
+            return {
+                "type": "tool_query_governance",
+                "error_code": "repeated_search_query",
+                "tool_name": tool_name,
+                "query": query,
+                "similar_query_count": len(similar),
+                "configured_budget": self.max_similar_calls,
+                "retry": {
+                    "recommended": True,
+                    "hint": (
+                        "Do not repeat an equivalent broad search. Use existing evidence, read known source_refs, "
+                        "ask a narrower missing-evidence query, or synthesize if evidence is sufficient."
+                    ),
+                },
+            }
+        prior.append(normalized)
+        return None
+
+
+def _is_search_tool_name(tool_name: str) -> bool:
+    normalized = str(tool_name or "").lower().replace(".", "_").replace("-", "_")
+    return normalized == "search" or normalized.endswith("_search")
+
+
+def _metadata_has_pska_read_policy(metadata: dict) -> bool:
+    tool_policy = metadata.get("tool_policy") if isinstance(metadata.get("tool_policy"), dict) else {}
+    allowed = tool_policy.get("allowed_tools")
+    if not isinstance(allowed, list):
+        return False
+    canonical = {_canonical_pska_tool_name(str(name)) for name in allowed}
+    read_tools = set(RuntimeToolBudgetGuard.DEFAULT_ASK_READ_BUDGET)
+    return bool(canonical & read_tools)
+
+
+def _configured_budget_for_tool(configured_budget: dict, canonical_name: str, default: int) -> int:
+    if canonical_name in configured_budget:
+        return int(configured_budget.get(canonical_name) or default)
+    short_name = canonical_name.removeprefix("pska_pska_")
+    for alias in (f"pska_{short_name}", short_name):
+        if alias in configured_budget:
+            return int(configured_budget.get(alias) or default)
+    return default
+
+
+def _canonical_pska_tool_name(tool_name: str) -> str:
+    normalized = str(tool_name or "").strip().lower().replace(".", "_").replace("-", "_")
+    if not normalized:
+        return ""
+    if normalized.startswith("pska_pska_"):
+        return normalized
+    if normalized.startswith("pska_"):
+        return f"pska_{normalized}"
+    if normalized in {
+        "search",
+        "read_evidence_context",
+        "graph_context",
+        "digest_context",
+        "index_status",
+        "write_candidates",
+        "job_context",
+    }:
+        return f"pska_pska_{normalized}"
+    return normalized
+
+
+def _normalize_search_query(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").casefold()).strip()
+    text = re.sub(r"(\d{4})年", r"\1", text)
+    # Keep CJK and alphanumeric anchors while removing punctuation noise.
+    text = re.sub(r"[^\w\u4e00-\u9fff]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _search_queries_similar(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    left_tokens = set(left.split())
+    right_tokens = set(right.split())
+    if left_tokens and right_tokens:
+        overlap = len(left_tokens & right_tokens) / max(1, min(len(left_tokens), len(right_tokens)))
+        if overlap >= 0.72 and len(left_tokens & right_tokens) >= 3:
+            return True
+        if overlap >= 0.82 and SequenceMatcher(None, left, right).ratio() >= 0.72:
+            return True
+    shorter, longer = sorted((left, right), key=len)
+    if len(shorter) >= 12 and shorter in longer:
+        return True
+    return SequenceMatcher(None, left, right).ratio() >= 0.9
 
 
 def _pska_candidate_counts(args: dict) -> dict[str, int]:
@@ -92,12 +249,12 @@ def _run_max_iterations(configured_default: int, metadata: Optional[dict] = None
     specific run through audited metadata.
     """
     metadata = metadata or {}
-    for key in ("max_iterations", "react_max_iterations", "hard_max_iterations"):
+    for key in ("max_iterations", "react_max_iterations"):
         override = _positive_int(metadata.get(key))
         if override:
             return override
     scope = metadata.get("scope") if isinstance(metadata.get("scope"), dict) else {}
-    for key in ("max_iterations", "react_max_iterations", "hard_max_iterations"):
+    for key in ("max_iterations", "react_max_iterations"):
         override = _positive_int(scope.get(key))
         if override:
             return override
@@ -306,7 +463,8 @@ class AgentRuntime:
         from fastreact.core.events import AgentEvent, EventType
 
         agent = self._agent
-        budget_guard = DigestToolBudgetGuard(run_metadata)
+        budget_guard = RuntimeToolBudgetGuard(run_metadata)
+        search_query_ledger = SearchQueryLedger()
         llm_options = {key: value for key, value in (llm_options or {}).items() if value is not None}
         tenant_key = (run_metadata or {}).get("tenant_key")
         run_tool_policy = normalize_tool_policy((run_metadata or {}).get("tool_policy"))
@@ -426,15 +584,14 @@ class AgentRuntime:
 
             # === Outer loop: Process follow-up messages ===
             while True:
-                # HARD LIMIT: Prevent infinite loops
+                # Runtime circuit breaker: prevent infinite loops.
                 iteration_count += 1
                 if iteration_count > max_iterations:
-                    # Circuit breaker: immediately terminate with clear error message
+                    # Circuit breaker: terminate with an auditable runtime signal.
                     yield AgentEvent.session_end(
                         session_id,
-                        f"[STOPPED] Task stopped due to maximum iteration limit ({max_iterations}). "
-                        f"This usually means the agent is stuck in a loop or the task is too complex. "
-                        f"Please try breaking down the task into smaller steps."
+                        f"[STOPPED] Runtime circuit breaker reached ({max_iterations}) before a final answer. "
+                        f"The trace may contain usable tool evidence; continue from the evidence or resume with a follow-up run."
                     )
                     return
                 has_more_tool_calls = True
@@ -635,14 +792,37 @@ class AgentRuntime:
                                     "scope_injected_args": scoped_args if scope_injected else None,
                                 })
                                 continue
+                            query_governance_issue = search_query_ledger.assess(event.tool_name or "", scoped_args)
+                            if query_governance_issue:
+                                event.metadata["tool_query_governance"] = query_governance_issue
+                                event.metadata["repeated_search_query"] = True
+                                yield event
+                                tool_calls.append({
+                                    "id": event.metadata.get("call_id", ""),
+                                    "name": event.tool_name,
+                                    "arguments": scoped_args,
+                                    "query_governance_issue": query_governance_issue,
+                                    "argument_resolution": argument_resolution,
+                                    "model_args": model_args,
+                                    "scope_injected": scope_injected,
+                                    "scope_injected_args": scoped_args if scope_injected else None,
+                                })
+                                continue
                             if not budget_guard.allow(event.tool_name or ""):
-                                yield AgentEvent.think(
-                                    f"[TOOL_BUDGET_DENIED] {event.tool_name} exceeded per-run budget",
-                                    session_id,
-                                    tool_name=event.tool_name,
-                                    budget=budget_guard.budget.get(event.tool_name or ""),
-                                    tool_budget_denied=True,
-                                )
+                                tool_budget_denied = budget_guard.denial(event.tool_name or "")
+                                event.metadata["tool_budget_denied"] = True
+                                event.metadata["tool_budget_governance"] = tool_budget_denied
+                                yield event
+                                tool_calls.append({
+                                    "id": event.metadata.get("call_id", ""),
+                                    "name": event.tool_name,
+                                    "arguments": scoped_args,
+                                    "tool_budget_denied": tool_budget_denied,
+                                    "argument_resolution": argument_resolution,
+                                    "model_args": model_args,
+                                    "scope_injected": scope_injected,
+                                    "scope_injected_args": scoped_args if scope_injected else None,
+                                })
                                 continue
                             # Forward allowed tool call intents only after budget filtering.
                             yield event
@@ -703,10 +883,52 @@ class AgentRuntime:
                             call_id = tool_call.get("id", "")
                             validation_error = tool_call.get("validation_error")
                             tool_policy_denied = tool_call.get("tool_policy_denied")
+                            tool_budget_denied = tool_call.get("tool_budget_denied")
                             argument_resolution = tool_call.get("argument_resolution")
                             model_args = tool_call.get("model_args") if isinstance(tool_call.get("model_args"), dict) else {}
                             scope_injected = bool(tool_call.get("scope_injected"))
                             scope_injected_args = tool_call.get("scope_injected_args")
+                            query_governance_issue = tool_call.get("query_governance_issue")
+
+                            if isinstance(query_governance_issue, dict):
+                                result = json.dumps(query_governance_issue, ensure_ascii=False, sort_keys=True)
+                                result_event = AgentEvent.tool_result(tool_name, result, session_id)
+                                result_event.tool_args = tool_params
+                                result_event.metadata.update({
+                                    "request_id": call_id,
+                                    "tool_query_governance": query_governance_issue,
+                                    "repeated_search_query": True,
+                                    "raw_tool_args": model_args,
+                                    "tool_policy_scope_applied": scope_injected,
+                                    "scope_injected_tool_args": scope_injected_args,
+                                })
+                                yield result_event
+                                messages.append(Message.tool(
+                                    name=tool_name,
+                                    result=result,
+                                    call_id=call_id,
+                                ).to_llm_format())
+                                continue
+
+                            if isinstance(tool_budget_denied, dict):
+                                result = json.dumps(tool_budget_denied, ensure_ascii=False, sort_keys=True)
+                                result_event = AgentEvent.tool_result(tool_name, result, session_id)
+                                result_event.tool_args = tool_params
+                                result_event.metadata.update({
+                                    "request_id": call_id,
+                                    "tool_budget_denied": True,
+                                    "tool_budget_governance": tool_budget_denied,
+                                    "raw_tool_args": model_args,
+                                    "tool_policy_scope_applied": scope_injected,
+                                    "scope_injected_tool_args": scope_injected_args,
+                                })
+                                yield result_event
+                                messages.append(Message.tool(
+                                    name=tool_name,
+                                    result=result,
+                                    call_id=call_id,
+                                ).to_llm_format())
+                                continue
 
                             if tool_policy_denied:
                                 result = f"[TOOL_POLICY_DENIED] {tool_policy_denied}"

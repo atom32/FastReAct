@@ -26,25 +26,22 @@ http://127.0.0.1:18741
 
 ## Authentication
 
-If `service.service_token` is configured, protected endpoints require one of:
+Protected endpoints require a verified identity. In JWT mode, send:
 
 ```http
-X-FastReAct-Service-Token: replace-with-local-service-token
-Authorization: Bearer replace-with-local-service-token
+Authorization: Bearer <authnode-or-idp-jwt>
 ```
 
-`GET /health` is public. Operational endpoints such as `/ready`, `/v1/setup`, `/v1/metrics`, runs, traces, tasks, approvals, policy, and workspace profile require service auth when a token is configured.
+`GET /health` is public. Operational endpoints such as `/ready`, `/v1/setup`, `/v1/metrics`, runs, traces, tasks, approvals, policy, and workspace profile require `jwt` or `trusted_headers` authentication.
 
-For user-facing calls, `auth.mode` may be `service_token`, `trusted_headers`, or
-`jwt`. FastReAct does not provide a login page or password store; existing
+For user-facing calls, `auth.mode` may be `jwt` or `trusted_headers`.
+FastReAct does not provide a login page or password store; existing
 platforms or an external identity broker should authenticate the user and pass
 verified identity claims into FastReAct.
 
-When `service.service_token` is configured, trusted backend callers may still
-use `X-FastReAct-Service-Token` even when `auth.mode` is `trusted_headers` or
-`jwt`. In that path the caller must provide `user_key` and, when needed,
-`metadata.tenant_key`; FastReAct records the identity as `service_token`. Do not
-send the service token to browsers.
+`service_token` auth is deprecated and rejected. Tenant-bearing requests must
+carry a verifiable tenant/user identity, not a shared service secret plus
+caller-provided body fields.
 
 ## Endpoint Map
 
@@ -102,7 +99,7 @@ Non-streaming:
 ```bash
 curl http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT" \
   -d '{
     "messages": [
       {"role": "user", "content": "Say hello from FastReAct."}
@@ -116,7 +113,7 @@ Streaming:
 ```bash
 curl -N http://127.0.0.1:18741/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT" \
   -d '{
     "messages": [
       {"role": "user", "content": "List your available tools."}
@@ -162,7 +159,7 @@ Create a background run:
 ```bash
 curl http://127.0.0.1:18741/v1/runs \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT" \
   -d '{
     "messages": [
       {"role": "user", "content": "Summarize the available skills."}
@@ -179,10 +176,10 @@ Inspect:
 
 ```bash
 curl http://127.0.0.1:18741/v1/runs \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT"
 
 curl http://127.0.0.1:18741/v1/traces \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT"
 ```
 
 Runs expose status and events while the daemon is active. Traces provide summary/replay records through the store when available. Run event top-level `content` fields and `trace.final_content` are durable full text; `content_preview` and `final_content_preview` are UI/diagnostic previews and may be truncated.
@@ -193,16 +190,16 @@ When a tool requires approval, FastReAct emits an `ask_user` event and stores an
 
 ```bash
 curl http://127.0.0.1:18741/v1/approvals \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT"
 
 curl -X POST http://127.0.0.1:18741/v1/approvals/approval-123/approve \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT" \
   -d '{"reason":"operator approved"}'
 
 curl -X POST http://127.0.0.1:18741/v1/approvals/approval-123/deny \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT" \
   -d '{"reason":"unsafe command"}'
 ```
 
@@ -245,7 +242,7 @@ Inspect:
 
 ```bash
 curl http://127.0.0.1:18741/v1/policy \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT"
 ```
 
 Dry-run:
@@ -253,7 +250,7 @@ Dry-run:
 ```bash
 curl http://127.0.0.1:18741/v1/policy/check \
   -H 'Content-Type: application/json' \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN" \
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT" \
   -d '{"tool_name":"exec","tool_args":{"cmd":"pwd"},"user_key":"local:user"}'
 ```
 
@@ -265,10 +262,10 @@ Readiness and diagnostics:
 
 ```bash
 curl http://127.0.0.1:18741/ready \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT"
 
 curl http://127.0.0.1:18741/v1/skills/diagnostics \
-  -H "X-FastReAct-Service-Token: $SERVICE_TOKEN"
+  -H "Authorization: Bearer $AUTHNODE_FASTREACT_JWT"
 ```
 
 See [MCP_CALLING_MECHANISM.md](MCP_CALLING_MECHANISM.md) and [SKILLS_AND_MCP.md](SKILLS_AND_MCP.md).

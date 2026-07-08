@@ -14,8 +14,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import inspect
 import json
+import logging
 import os
 from pathlib import Path
+import sys
 import time
 from typing import Any, AsyncIterator, Optional
 import uuid
@@ -59,6 +61,8 @@ from fastreact.runtime.run_service import RunService, TERMINAL_RUN_STATUSES
 
 SERVICE_EVENT_SCHEMA_VERSION = "fastreact.agent_event.v1"
 MAX_PAGE_LIMIT = 1000
+logger = logging.getLogger(__name__)
+SERVICE_TOKEN_DEPRECATED_DETAIL = "FastReAct service_token auth is deprecated; configure auth.mode as jwt or trusted_headers."
 
 _agent: Optional[Agent] = None
 _service_config = None
@@ -225,27 +229,15 @@ def generation_options_from_request(chat_request: ChatRequest) -> dict[str, Any]
 
 
 def configured_service_token() -> str | None:
-    config_token = getattr(_service_config, "service_token", None)
-    return config_token.strip() if isinstance(config_token, str) and config_token.strip() else None
+    return None
 
 
 def require_service_auth(request: Request) -> None:  # type: ignore[valid-type]
-    expected = configured_service_token()
-    if not expected:
-        return
-
-    if service_token_matches_request(request):
-        return
-    raise HTTPException(status_code=401, detail="FastReAct service token required")
+    require_control_identity(request)
 
 
 def service_token_matches_request(request: Request) -> bool:  # type: ignore[valid-type]
-    expected = configured_service_token()
-    if not expected:
-        return False
-    bearer_token = bearer_token_from_request(request)
-    header_token = request.headers.get("x-fastreact-service-token", "").strip()
-    return bearer_token == expected or header_token == expected
+    return False
 
 
 def current_auth_config(agent: Any | None = None) -> AuthConfig:
@@ -262,51 +254,30 @@ def require_request_identity(
     agent: Any | None = None,
 ) -> IdentityContext:
     auth_config = current_auth_config(agent)
-    mode = str(getattr(auth_config, "mode", "service_token") or "service_token").strip().lower()
-    service_identity = service_token_identity_from_request(request, chat_request)
+    mode = str(getattr(auth_config, "mode", "jwt") or "jwt").strip().lower()
     if mode == "service_token":
-        if service_identity:
-            return service_identity
-        require_service_auth(request)
-        return service_token_identity_from_chat_request(chat_request)
+        raise HTTPException(status_code=500, detail=SERVICE_TOKEN_DEPRECATED_DETAIL)
     if mode == "trusted_headers":
-        if service_identity:
-            return service_identity
         return identity_from_trusted_headers(request, auth_config)
     if mode == "jwt":
-        if service_identity:
-            return service_identity
         return identity_from_jwt(request, auth_config)
     raise HTTPException(status_code=500, detail=f"Unsupported auth mode: {mode}")
 
 
-def service_token_identity_from_request(
+def require_control_identity(
     request: Request,  # type: ignore[valid-type]
-    chat_request: ChatRequest,
-) -> IdentityContext | None:
-    if not service_token_matches_request(request):
-        return None
-    return service_token_identity_from_chat_request(chat_request, request=request)
-
-
-def service_token_identity_from_chat_request(
-    chat_request: ChatRequest,
     *,
-    request: Request | None = None,  # type: ignore[valid-type]
+    agent: Any | None = None,
 ) -> IdentityContext:
-    metadata = dict(chat_request.metadata or {})
-    user_key = chat_request.user_key or ""
-    tenant_key_hint = metadata.get("tenant_key")
-    if request is not None:
-        user_key = user_key or request.headers.get("x-fastreact-user-key", "").strip()
-        tenant_key_hint = tenant_key_hint or request.headers.get("x-fastreact-tenant-key", "").strip()
-    tenant_key = infer_tenant_key(user_key, tenant_key_hint)
-    return IdentityContext(
-        tenant_key=tenant_key,
-        user_key=user_key,
-        subject=user_key,
-        auth_provider="service_token",
-    )
+    auth_config = current_auth_config(agent)
+    mode = str(getattr(auth_config, "mode", "jwt") or "jwt").strip().lower()
+    if mode == "service_token":
+        raise HTTPException(status_code=500, detail=SERVICE_TOKEN_DEPRECATED_DETAIL)
+    if mode == "trusted_headers":
+        return identity_from_trusted_headers(request, auth_config)
+    if mode == "jwt":
+        return identity_from_jwt(request, auth_config)
+    raise HTTPException(status_code=500, detail=f"Unsupported auth mode: {mode}")
 
 
 def identity_from_trusted_headers(request: Request, auth_config: AuthConfig) -> IdentityContext:  # type: ignore[valid-type]
@@ -331,12 +302,12 @@ def identity_from_trusted_headers(request: Request, auth_config: AuthConfig) -> 
 
 
 def identity_from_jwt(request: Request, auth_config: AuthConfig) -> IdentityContext:  # type: ignore[valid-type]
-    secret = getattr(auth_config, "jwt_secret", None)
-    if not secret:
-        raise HTTPException(status_code=500, detail="JWT auth requires jwt_secret")
     token = bearer_token_from_request(request)
     if not token:
         raise HTTPException(status_code=401, detail="Bearer JWT required")
+    secret = getattr(auth_config, "jwt_secret", None)
+    if not secret:
+        raise HTTPException(status_code=500, detail="JWT auth requires jwt_secret")
     try:
         claims = verify_hs256_jwt(
             token,
@@ -386,6 +357,56 @@ def metadata_with_identity(metadata: dict[str, Any] | None, identity: IdentityCo
         merged["user_key"] = identity.user_key
     merged["identity"] = identity_metadata["identity"]
     return merged
+
+
+def log_inbound_identity(
+    *,
+    endpoint: str,
+    identity: IdentityContext,
+    chat_request: "ChatRequest",
+    request_user_key: str | None,
+    run_metadata: dict[str, Any],
+) -> None:
+    metadata_scope = run_metadata.get("scope") if isinstance(run_metadata.get("scope"), dict) else {}
+    tool_policy = run_metadata.get("tool_policy") if isinstance(run_metadata.get("tool_policy"), dict) else {}
+    policy_scope = tool_policy.get("scope") if isinstance(tool_policy.get("scope"), dict) else {}
+    log_record = {
+        "event": "fastreact.http_inbound_identity",
+        "endpoint": endpoint,
+        "auth_provider": identity.auth_provider,
+        "tenant_key": identity.tenant_key,
+        "user_key": identity.user_key,
+        "request_user_key": request_user_key,
+        "subject": identity.subject,
+        "metadata_scope_tenant": metadata_scope.get("tenant_id"),
+        "metadata_scope_user": metadata_scope.get("user_id"),
+        "tool_policy_scope_mode": policy_scope.get("scope_mode") or policy_scope.get("mode"),
+        "tool_policy_knowledge_base_ids": policy_scope.get("knowledge_base_ids")
+        if isinstance(policy_scope.get("knowledge_base_ids"), list)
+        else [],
+        "tool_policy_source_item_count": len(policy_scope.get("source_item_ids") or [])
+        if isinstance(policy_scope.get("source_item_ids"), list)
+        else 0,
+    }
+    logger.info(
+        "FastReAct inbound identity endpoint=%s auth_provider=%s tenant_key=%s user_key=%s "
+        "request_user_key=%s subject=%s metadata_scope_tenant=%s metadata_scope_user=%s "
+        "tool_policy_scope_mode=%s tool_policy_kb_ids=%s "
+        "tool_policy_source_item_count=%s",
+        endpoint,
+        identity.auth_provider,
+        identity.tenant_key,
+        identity.user_key,
+        request_user_key,
+        identity.subject,
+        metadata_scope.get("tenant_id"),
+        metadata_scope.get("user_id"),
+        policy_scope.get("scope_mode") or policy_scope.get("mode"),
+        policy_scope.get("knowledge_base_ids") if isinstance(policy_scope.get("knowledge_base_ids"), list) else [],
+        len(policy_scope.get("source_item_ids") or []) if isinstance(policy_scope.get("source_item_ids"), list) else 0,
+    )
+    sys.stderr.write(json.dumps(log_record, ensure_ascii=False, sort_keys=True) + "\n")
+    sys.stderr.flush()
 
 
 def metadata_with_tool_policy(metadata: dict[str, Any], chat_request: ChatRequest) -> dict[str, Any]:
@@ -789,10 +810,12 @@ def readiness_payload(agent: Agent) -> dict[str, Any]:
         "agent_ready": agent is not None,
         "service_contract": SERVICE_EVENT_SCHEMA_VERSION,
         "auth": {
-            "required": configured_service_token() is not None,
-            "mode": getattr(auth_config, "mode", "service_token"),
-            "header": "Authorization: Bearer <token>",
-            "alternate_header": "X-FastReAct-Service-Token",
+            "required": True,
+            "mode": getattr(auth_config, "mode", "jwt"),
+            "header": "Authorization: Bearer <jwt>" if getattr(auth_config, "mode", "jwt") == "jwt" else "trusted identity headers",
+            "legacy_service_token_configured": configured_service_token() is not None,
+            "service_token_accepted": False,
+            "deprecated": "service_token auth is rejected; use jwt or trusted_headers.",
         },
         "model": {
             "name": getattr(getattr(config, "llm", None), "model", None),
@@ -890,7 +913,6 @@ def write_workspace_profile(agent: Any, update: WorkspaceProfileUpdateRequest) -
 
 
 def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
-    token = request.service_token.strip() if request.service_token else f"fr-{uuid.uuid4().hex}"
     mcp_servers = []
     if request.include_pska:
         if request.pska_http_url:
@@ -901,7 +923,7 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
                     "url": request.pska_http_url,
                     "isolation": "shared",
                     "identity_forwarding": {
-                        "mode": "service_token_params_dev",
+                        "mode": "identity_params",
                         "audience": "pska",
                     },
                     "description": "PSKA HTTP MCP endpoint.",
@@ -916,7 +938,7 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
                     "args": ["mcp-server"],
                     "isolation": "shared",
                     "identity_forwarding": {
-                        "mode": "service_token_params_dev",
+                        "mode": "identity_params",
                         "audience": "pska",
                         "stdio_dev_only": True,
                     },
@@ -984,7 +1006,6 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
             "host": request.host,
             "port": request.port,
             "log_level": "info",
-            "service_token": token,
             "approval_timeout_seconds": 300,
             "run_lease_seconds": 300,
             "run_max_attempts": 3,
@@ -997,8 +1018,16 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
             "workspaces_root": "~/FastReAct_workspaces",
             "gateway_workspace": request.workspace,
         },
+        "auth": {
+            "mode": "jwt",
+            "jwt_secret_env": "AUTHNODE_JWT_SECRET",
+            "jwt_issuer": "authnode.local",
+            "jwt_audience": "fastreact",
+            "jwt_tenant_claims": ["tenant_key", "tenant_id", "tenant", "org_id"],
+            "jwt_user_claim": "sub",
+        },
         "react": {
-            "max_iterations": 20,
+            "max_iterations": 128,
             "max_context_tokens": 128000,
             "sliding_window_size": 15,
             "max_tool_output_chars": DEFAULT_MAX_TOOL_OUTPUT_CHARS,
@@ -1016,11 +1045,12 @@ def setup_config_draft(request: SetupConfigDraftRequest) -> dict[str, Any]:
         "preset": request.preset,
         "write_supported": False,
         "recommended_path": "~/.fastreact/config.json",
-        "service_token": token,
+        "service_token": None,
         "config": config,
         "warnings": [
             "This endpoint returns a draft only and does not write ~/.fastreact/config.json.",
             "The draft uses api_key_file and never includes a raw LLM API key.",
+            "service_token auth is deprecated; configure AuthNode/JWT or trusted headers for every request identity.",
             "Review MCP commands and policy before using the draft in production.",
         ],
     }
@@ -1390,7 +1420,8 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
             "service": {
                 "host": getattr(service, "host", None),
                 "port": getattr(service, "port", None),
-                "auth_required": configured_service_token() is not None,
+                "auth_required": True,
+                "legacy_service_token_configured": configured_service_token() is not None,
                 "approval_timeout_seconds": getattr(service, "approval_timeout_seconds", None),
                 "run_lease_seconds": getattr(service, "run_lease_seconds", None),
                 "run_max_attempts": getattr(service, "run_max_attempts", None),
@@ -1462,6 +1493,13 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         identity = require_request_identity(request, chat_request, agent=agent)
         request_user_key = identity.user_key or chat_request.user_key
         run_metadata = metadata_with_tool_policy(metadata_with_identity(chat_request.metadata, identity), chat_request)
+        log_inbound_identity(
+            endpoint="/v1/chat/completions",
+            identity=identity,
+            chat_request=chat_request,
+            request_user_key=request_user_key,
+            run_metadata=run_metadata,
+        )
         require_user_access(request_user_key)
         require_rate_limit(request_user_key)
         if not chat_request.messages:
@@ -1592,6 +1630,13 @@ def create_app() -> FastAPI:  # type: ignore[valid-type]
         identity = require_request_identity(request, chat_request, agent=agent)
         request_user_key = identity.user_key or chat_request.user_key
         run_metadata = metadata_with_tool_policy(metadata_with_identity(chat_request.metadata, identity), chat_request)
+        log_inbound_identity(
+            endpoint="/v1/runs",
+            identity=identity,
+            chat_request=chat_request,
+            request_user_key=request_user_key,
+            run_metadata=run_metadata,
+        )
         require_user_access(request_user_key)
         require_rate_limit(request_user_key)
         if not chat_request.messages:

@@ -166,6 +166,13 @@ def signed_hs256_jwt(claims, secret="secret"):
     return f"{header}.{payload}.{encoded_signature}"
 
 
+def trusted_headers(user_key="web:alice", tenant_key="tenant_default"):
+    return {
+        "X-FastReAct-User-Key": user_key,
+        "X-FastReAct-Tenant-Key": tenant_key,
+    }
+
+
 class FakeSkillMetadata:
     version = "1.0.0"
     tags = ["demo"]
@@ -431,10 +438,12 @@ def test_chat_completions_non_streaming_endpoint():
     testclient = pytest.importorskip("fastapi.testclient")
 
     set_agent_for_testing(FakeAgent())
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/chat/completions",
+            headers=trusted_headers(),
             json={
                 "messages": [{"role": "user", "content": "search Atlas"}],
                 "stream": False,
@@ -464,10 +473,12 @@ def test_chat_completions_streaming_endpoint_emits_sse_frames():
     testclient = pytest.importorskip("fastapi.testclient")
 
     set_agent_for_testing(FakeAgent())
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/chat/completions",
+            headers=trusted_headers(),
             json={
                 "messages": [{"role": "user", "content": "search Atlas"}],
                 "session_id": "session-123",
@@ -492,6 +503,7 @@ def test_chat_completions_rate_limit_returns_429():
 
     set_agent_for_testing(FakeAgent())
     set_service_config(ServiceConfig(rate_limit_per_hour=1))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         body = {
@@ -499,8 +511,8 @@ def test_chat_completions_rate_limit_returns_429():
             "stream": False,
             "user_key": "web:alice",
         }
-        first = client.post("/v1/chat/completions", json=body)
-        second = client.post("/v1/chat/completions", json=body)
+        first = client.post("/v1/chat/completions", headers=trusted_headers("web:alice"), json=body)
+        second = client.post("/v1/chat/completions", headers=trusted_headers("web:alice"), json=body)
     finally:
         set_agent_for_testing(None)
         set_service_config(ServiceConfig())
@@ -516,10 +528,12 @@ def test_chat_completions_blocks_configured_user():
 
     set_agent_for_testing(FakeAgent())
     set_service_config(ServiceConfig(blocked_user_keys=["web:blocked"]))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/chat/completions",
+            headers=trusted_headers("web:blocked"),
             json={
                 "messages": [{"role": "user", "content": "search Atlas"}],
                 "stream": False,
@@ -540,10 +554,12 @@ def test_chat_completions_allowed_user_list_rejects_others():
 
     set_agent_for_testing(FakeAgent())
     set_service_config(ServiceConfig(allowed_user_keys=["web:alice"]))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         denied = client.post(
             "/v1/chat/completions",
+            headers=trusted_headers("web:bob"),
             json={
                 "messages": [{"role": "user", "content": "search Atlas"}],
                 "stream": False,
@@ -552,6 +568,7 @@ def test_chat_completions_allowed_user_list_rejects_others():
         )
         allowed = client.post(
             "/v1/chat/completions",
+            headers=trusted_headers("web:alice"),
             json={
                 "messages": [{"role": "user", "content": "search Atlas"}],
                 "stream": False,
@@ -611,10 +628,12 @@ def test_chat_completions_passes_tool_policy_to_runtime_metadata():
 
     agent = CapturingIdentityAgent()
     set_agent_for_testing(agent)
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/chat/completions",
+            headers=trusted_headers("web:alice"),
             json={
                 "messages": [{"role": "user", "content": "search Atlas"}],
                 "stream": False,
@@ -652,11 +671,13 @@ def test_pska_ask_stream_exposes_agentic_search_sequence():
     testclient = pytest.importorskip("fastapi.testclient")
 
     set_agent_for_testing(PSKAAskStreamAgent())
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         with client.stream(
             "POST",
             "/v1/chat/completions",
+            headers=trusted_headers("pska:user_primary"),
             json={
                 "messages": [{"role": "user", "content": "请分析 acme"}],
                 "stream": True,
@@ -838,7 +859,7 @@ def test_chat_completions_authnode_jwt_rejects_invalid_identity(claim_overrides,
     assert expected_detail in response.json()["detail"]
 
 
-def test_chat_completions_jwt_mode_accepts_service_token_identity():
+def test_chat_completions_jwt_mode_rejects_service_token_identity():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
 
@@ -861,17 +882,12 @@ def test_chat_completions_jwt_mode_accepts_service_token_identity():
     finally:
         set_agent_for_testing(None)
 
-    assert response.status_code == 200
-    assert agent.calls[0]["user_key"] == "pska:user_primary"
-    metadata = agent.calls[0]["run_metadata"]
-    assert metadata["tenant_key"] == "tenant_default"
-    assert metadata["user_key"] == "pska:user_primary"
-    assert metadata["identity"]["tenant_key"] == "tenant_default"
-    assert metadata["identity"]["user_key"] == "pska:user_primary"
-    assert metadata["identity"]["auth_provider"] == "service_token"
+    assert response.status_code == 401
+    assert "Bearer JWT required" in response.json()["detail"]
+    assert agent.calls == []
 
 
-def test_chat_completions_trusted_headers_mode_accepts_service_token_identity():
+def test_chat_completions_trusted_headers_mode_rejects_service_token_identity():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
 
@@ -894,10 +910,37 @@ def test_chat_completions_trusted_headers_mode_accepts_service_token_identity():
     finally:
         set_agent_for_testing(None)
 
-    assert response.status_code == 200
-    metadata = agent.calls[0]["run_metadata"]
-    assert metadata["tenant_key"] == "tenant_default"
-    assert metadata["identity"]["auth_provider"] == "service_token"
+    assert response.status_code == 401
+    assert "trusted identity header required" in response.json()["detail"]
+    assert agent.calls == []
+
+
+def test_chat_completions_service_token_mode_is_deprecated():
+    pytest = __import__("pytest")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    agent = CapturingIdentityAgent()
+    set_agent_for_testing(agent)
+    set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="service_token"))
+    try:
+        client = testclient.TestClient(create_app())
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"X-FastReAct-Service-Token": "service-secret"},
+            json={
+                "messages": [{"role": "user", "content": "search Atlas"}],
+                "stream": False,
+                "user_key": "pska:user_primary",
+                "metadata": {"tenant_key": "tenant_default"},
+            },
+        )
+    finally:
+        set_agent_for_testing(None)
+
+    assert response.status_code == 500
+    assert "service_token auth is deprecated" in response.json()["detail"]
+    assert agent.calls == []
 
 
 def test_background_run_trusted_headers_persist_identity_metadata(tmp_path):
@@ -930,7 +973,7 @@ def test_background_run_trusted_headers_persist_identity_metadata(tmp_path):
     assert record["metadata"]["identity"]["user_key"] == "sso:bob"
 
 
-def test_background_run_jwt_mode_accepts_service_token_identity(tmp_path):
+def test_background_run_jwt_mode_rejects_service_token_identity(tmp_path):
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
 
@@ -952,11 +995,9 @@ def test_background_run_jwt_mode_accepts_service_token_identity(tmp_path):
     finally:
         set_agent_for_testing(None)
 
-    assert response.status_code == 200
-    record = fake_agent.runs.get("jwt-service-token-background-run")
-    assert record["user_key"] == "pska:user_primary"
-    assert record["metadata"]["tenant_key"] == "tenant_default"
-    assert record["metadata"]["identity"]["auth_provider"] == "service_token"
+    assert response.status_code == 401
+    assert "Bearer JWT required" in response.json()["detail"]
+    assert fake_agent.runs.get("jwt-service-token-background-run") is None
 
 
 def test_background_run_persists_tool_policy_metadata(tmp_path):
@@ -965,10 +1006,12 @@ def test_background_run_persists_tool_policy_metadata(tmp_path):
 
     fake_agent = FakeTaskAgent(tmp_path / "tool-policy-agent")
     set_agent_for_testing(fake_agent)
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/runs",
+            headers=trusted_headers("web:alice"),
             json={
                 "messages": [{"role": "user", "content": "answer without tools"}],
                 "metadata": {"run_id": "tool-policy-run"},
@@ -989,10 +1032,12 @@ def test_background_run_create_rate_limit_returns_429(tmp_path):
 
     set_agent_for_testing(FakeTaskAgent(tmp_path / "rate-limit-agent"))
     set_service_config(ServiceConfig(rate_limit_per_hour=1))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     try:
         client = testclient.TestClient(create_app())
         first = client.post(
             "/v1/runs",
+            headers=trusted_headers("web:bob"),
             json={
                 "messages": [{"role": "user", "content": "search Atlas"}],
                 "user_key": "web:bob",
@@ -1001,6 +1046,7 @@ def test_background_run_create_rate_limit_returns_429(tmp_path):
         )
         second = client.post(
             "/v1/runs",
+            headers=trusted_headers("web:bob"),
             json={
                 "messages": [{"role": "user", "content": "search Atlas"}],
                 "user_key": "web:bob",
@@ -1021,13 +1067,15 @@ def test_readiness_payload_has_deployment_contract_fields():
 
     assert payload["service_contract"] == SERVICE_EVENT_SCHEMA_VERSION
     assert payload["auth"]["required"] is True
-    assert payload["auth"]["mode"] == "service_token"
-    assert payload["auth"]["header"] == "Authorization: Bearer <token>"
+    assert payload["auth"]["mode"] == "jwt"
+    assert payload["auth"]["header"] == "Authorization: Bearer <jwt>"
+    assert payload["auth"]["legacy_service_token_configured"] is False
+    assert payload["auth"]["service_token_accepted"] is False
     assert payload["mcp"]["ready"] is True
     assert payload["mcp"]["servers"] == [{"name": "pska", "alive": True}]
     assert payload["mcp"]["tools"] == ["pska_search"]
     assert "model" in payload
-    assert configured_service_token() == "service-secret"
+    assert configured_service_token() is None
 
 
 def test_http_service_agent_is_multitenant_by_default(tmp_path):
@@ -1188,11 +1236,22 @@ def test_metrics_payload_summarizes_headless_service_state(tmp_path):
     assert payload["store"]["total_records"] == 6
 
 
-def test_service_auth_blocks_chat_and_readiness_when_configured():
+def test_jwt_auth_blocks_service_token_and_allows_verified_identity():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="jwt", jwt_secret="secret", jwt_issuer="authnode.local", jwt_audience="fastreact"))
     set_agent_for_testing(FakeAgent())
+    token = signed_hs256_jwt(
+        {
+            "iss": "authnode.local",
+            "aud": ["fastreact"],
+            "sub": "pska:user_primary",
+            "tenant_id": "tenant_default",
+            "exp": int(time.time()) + 300,
+        }
+    )
+    headers = {"Authorization": f"Bearer {token}"}
     try:
         client = testclient.TestClient(create_app())
         unauthenticated = client.post(
@@ -1203,12 +1262,15 @@ def test_service_auth_blocks_chat_and_readiness_when_configured():
         assert client.get("/ready").status_code == 401
         assert client.get("/v1/metrics").status_code == 401
 
-        ready = client.get("/ready", headers={"Authorization": "Bearer service-secret"})
+        service_token_ready = client.get("/ready", headers={"X-FastReAct-Service-Token": "service-secret"})
+        assert service_token_ready.status_code == 401
+
+        ready = client.get("/ready", headers=headers)
         assert ready.status_code == 200
         assert ready.json()["auth"]["required"] is True
 
         set_agent_for_testing(FakeApprovalAgent())
-        metrics = client.get("/v1/metrics", headers={"Authorization": "Bearer service-secret"})
+        metrics = client.get("/v1/metrics", headers=headers)
         assert metrics.status_code == 200
         assert metrics.json()["schema"] == "fastreact.metrics.v1"
 
@@ -1219,7 +1281,7 @@ def test_service_auth_blocks_chat_and_readiness_when_configured():
                 "stream": False,
                 "metadata": {"run_id": "run-auth"},
             },
-            headers={"X-FastReAct-Service-Token": "service-secret"},
+            headers=headers,
         )
         assert response.status_code == 200
         assert response.json()["run_id"] == "run-auth"
@@ -1231,8 +1293,9 @@ def test_headless_approval_endpoints_list_get_and_resolve():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     set_agent_for_testing(FakeApprovalAgent())
-    headers = {"X-FastReAct-Service-Token": "service-secret"}
+    headers = trusted_headers("ops:admin")
     try:
         client = testclient.TestClient(create_app())
         assert client.get("/v1/approvals").status_code == 401
@@ -1317,12 +1380,13 @@ def test_skill_diagnostics_endpoint_reports_dependencies():
     pytest = __import__("pytest")
     testclient = pytest.importorskip("fastapi.testclient")
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     set_agent_for_testing(FakeSkillAgent())
     try:
         client = testclient.TestClient(create_app())
         response = client.get(
             "/v1/skills/diagnostics",
-            headers={"X-FastReAct-Service-Token": "service-secret"},
+            headers=trusted_headers("ops:admin"),
         )
     finally:
         set_agent_for_testing(None)
@@ -1349,12 +1413,13 @@ def test_extension_reload_disabled_by_default(tmp_path):
     testclient = pytest.importorskip("fastapi.testclient")
     agent, _skill_root = make_extension_test_agent(tmp_path, runtime_reload_enabled=False)
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     set_agent_for_testing(agent)
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/extensions/reload",
-            headers={"X-FastReAct-Service-Token": "service-secret"},
+            headers=trusted_headers("ops:admin"),
             json={"skills": True},
         )
     finally:
@@ -1369,6 +1434,7 @@ def test_extension_reload_rescans_skills_when_enabled(tmp_path):
     testclient = pytest.importorskip("fastapi.testclient")
     agent, skill_root = make_extension_test_agent(tmp_path, runtime_reload_enabled=True)
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     set_agent_for_testing(agent)
     try:
         client = testclient.TestClient(create_app())
@@ -1377,7 +1443,7 @@ def test_extension_reload_rescans_skills_when_enabled(tmp_path):
         write_test_skill(skill_root, "runtime_skill", "Runtime skill loaded after reload")
         response = client.post(
             "/v1/extensions/reload",
-            headers={"X-FastReAct-Service-Token": "service-secret"},
+            headers=trusted_headers("ops:admin"),
             json={"skills": True},
         )
         listed = client.get("/v1/skills")
@@ -1397,12 +1463,13 @@ def test_extension_reload_requires_separate_mcp_flag(tmp_path):
     testclient = pytest.importorskip("fastapi.testclient")
     agent, _skill_root = make_extension_test_agent(tmp_path, runtime_reload_enabled=True, mcp_reload_enabled=False)
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     set_agent_for_testing(agent)
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/extensions/reload",
-            headers={"X-FastReAct-Service-Token": "service-secret"},
+            headers=trusted_headers("ops:admin"),
             json={"skills": False, "mcp": True},
         )
     finally:
@@ -1418,12 +1485,13 @@ def test_chat_completions_passes_generation_options_to_runtime():
 
     agent = CapturingGenerationAgent()
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     set_agent_for_testing(agent)
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/chat/completions",
-            headers={"X-FastReAct-Service-Token": "service-secret"},
+            headers=trusted_headers("web:alice"),
             json={
                 "messages": [{"role": "user", "content": "say hi"}],
                 "stream": False,
@@ -1453,13 +1521,14 @@ def test_chat_stream_passes_generation_options_to_runtime():
 
     agent = CapturingGenerationAgent()
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     set_agent_for_testing(agent)
     try:
         client = testclient.TestClient(create_app())
         with client.stream(
             "POST",
             "/v1/chat/completions",
-            headers={"X-FastReAct-Service-Token": "service-secret"},
+            headers=trusted_headers("web:alice"),
             json={
                 "messages": [{"role": "user", "content": "say hi"}],
                 "stream": True,
@@ -1489,12 +1558,13 @@ def test_chat_request_rejects_invalid_generation_options():
     testclient = pytest.importorskip("fastapi.testclient")
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     set_agent_for_testing(CapturingGenerationAgent())
     try:
         client = testclient.TestClient(create_app())
         response = client.post(
             "/v1/chat/completions",
-            headers={"X-FastReAct-Service-Token": "service-secret"},
+            headers=trusted_headers("web:alice"),
             json={
                 "messages": [{"role": "user", "content": "say hi"}],
                 "temperature": 3.0,
@@ -1516,10 +1586,11 @@ def test_background_run_persists_and_passes_generation_options(tmp_path):
     from fastreact.runtime.store_service import StoreService
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     agent = CapturingGenerationAgent()
     agent.store = StoreService(tmp_path / "generation-store")
     set_agent_for_testing(agent)
-    headers = {"X-FastReAct-Service-Token": "service-secret"}
+    headers = trusted_headers("web:alice")
     run_id = f"run-generation-contract-{time.time_ns()}"
     expected_options = {
         "model": "run-model",
@@ -1569,10 +1640,11 @@ def test_background_run_endpoints_create_query_events_cancel_and_trace(tmp_path)
     from fastreact.runtime.store_service import StoreService
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     fake_agent = FakeAgent()
     fake_agent.store = StoreService(tmp_path / "store")
     set_agent_for_testing(fake_agent)
-    headers = {"X-FastReAct-Service-Token": "service-secret"}
+    headers = trusted_headers("web:alice")
     run_id = f"run-background-contract-{time.time_ns()}"
     try:
         client = testclient.TestClient(create_app())
@@ -1682,6 +1754,7 @@ def test_background_run_events_replay_from_durable_store(tmp_path):
     from fastreact.runtime.store_service import StoreService
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     fake_agent = FakeAgent()
     fake_agent.store = StoreService(tmp_path / "durable-store")
     fake_agent.runs = RunService(fake_agent.store)
@@ -1718,7 +1791,7 @@ def test_background_run_events_replay_from_durable_store(tmp_path):
     set_agent_for_testing(fake_agent)
     try:
         client = testclient.TestClient(create_app())
-        headers = {"X-FastReAct-Service-Token": "service-secret"}
+        headers = trusted_headers("web:alice")
         events = client.get(f"/v1/runs/{run_id}/events?limit=2", headers=headers)
         assert events.status_code == 200
         payload = events.json()
@@ -1758,6 +1831,7 @@ def test_lifespan_recovers_queued_run_from_durable_store(tmp_path):
     from fastreact.runtime.store_service import StoreService
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     fake_agent = FakeAgent()
     fake_agent.store = StoreService(tmp_path / "lifespan-recovery")
     fake_agent.runs = RunService(fake_agent.store)
@@ -1782,7 +1856,7 @@ def test_lifespan_recovers_queued_run_from_durable_store(tmp_path):
 
     set_agent_for_testing(fake_agent)
     try:
-        headers = {"X-FastReAct-Service-Token": "service-secret"}
+        headers = trusted_headers("web:alice")
         with testclient.TestClient(create_app()) as client:
             final_payload = None
             for _ in range(20):
@@ -1810,6 +1884,7 @@ def test_workspace_profile_endpoint_reads_and_updates_profile(tmp_path):
     testclient = pytest.importorskip("fastapi.testclient")
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     workspace = tmp_path / "workspace-profile"
     workspace.mkdir()
     (workspace / "AGENTS.md").write_text("Use project rules.", encoding="utf-8")
@@ -1818,7 +1893,7 @@ def test_workspace_profile_endpoint_reads_and_updates_profile(tmp_path):
     set_agent_for_testing(fake_agent)
     try:
         client = testclient.TestClient(create_app())
-        headers = {"X-FastReAct-Service-Token": "service-secret"}
+        headers = trusted_headers("ops:admin")
 
         response = client.get("/v1/workspace/profile", headers=headers)
         assert response.status_code == 200
@@ -1854,12 +1929,13 @@ def test_setup_status_summarizes_service_workspace_and_pska_preset(tmp_path):
     testclient = pytest.importorskip("fastapi.testclient")
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     fake_agent = FakeWorkspaceAgent(tmp_path / "setup-workspace")
 
     set_agent_for_testing(fake_agent)
     try:
         client = testclient.TestClient(create_app())
-        response = client.get("/v1/setup", headers={"X-FastReAct-Service-Token": "service-secret"})
+        response = client.get("/v1/setup", headers=trusted_headers("ops:admin"))
     finally:
         set_agent_for_testing(None)
 
@@ -1876,12 +1952,13 @@ def test_setup_presets_and_config_draft_are_safe_and_pska_aware(tmp_path):
     testclient = pytest.importorskip("fastapi.testclient")
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     fake_agent = FakeWorkspaceAgent(tmp_path / "setup-draft-workspace")
 
     set_agent_for_testing(fake_agent)
     try:
         client = testclient.TestClient(create_app())
-        headers = {"X-FastReAct-Service-Token": "service-secret"}
+        headers = trusted_headers("ops:admin")
         presets = client.get("/v1/setup/presets", headers=headers)
         assert presets.status_code == 200
         assert presets.json()["write_supported"] is False
@@ -1906,12 +1983,15 @@ def test_setup_presets_and_config_draft_are_safe_and_pska_aware(tmp_path):
     payload = draft.json()
     assert payload["schema"] == "fastreact.setup_config_draft.v1"
     assert payload["write_supported"] is False
-    assert payload["service_token"] == "local-token"
+    assert payload["service_token"] is None
     assert payload["config"]["llm"]["api_key_file"] == "~/api_key.txt"
     assert "api_key" not in payload["config"]["llm"]
+    assert "service_token" not in payload["config"]["service"]
+    assert payload["config"]["auth"]["mode"] == "jwt"
     assert payload["config"]["service"]["run_concurrency"] == 4
     assert payload["config"]["service"]["run_retry_base_seconds"] == 5
     assert payload["config"]["mcp"]["servers"][0]["name"] == "pska"
+    assert payload["config"]["mcp"]["servers"][0]["identity_forwarding"]["mode"] == "identity_params"
     assert payload["config"]["mcp"]["servers"][0]["identity_forwarding"]["audience"] == "pska"
     assert payload["config"]["policy"]["default_action"] == "deny"
     assert payload["config"]["policy"]["tool_rules"]["exec"] == "deny"
@@ -1933,12 +2013,13 @@ def test_task_endpoints_create_update_list_and_include_related_runs(tmp_path):
     testclient = pytest.importorskip("fastapi.testclient")
 
     set_service_config(ServiceConfig(service_token="service-secret"))
+    set_auth_config(AuthConfig(mode="trusted_headers"))
     fake_agent = FakeTaskAgent(tmp_path / "task-workspace")
 
     set_agent_for_testing(fake_agent)
     try:
         client = testclient.TestClient(create_app())
-        headers = {"X-FastReAct-Service-Token": "service-secret"}
+        headers = trusted_headers("ops:admin")
         created = client.post(
             "/v1/tasks",
             headers=headers,

@@ -14,7 +14,7 @@ HTTP/SSE 提供 agent loop、工具编排、MCP 调用、审批、run/trace/task
 - 当前产品入口是 HTTP/SSE daemon，`fastreact.adapters.gateway` 已废弃。
 - HTTP daemon 默认以 `Agent(multitenant=True)` 启动；不要把测试里的
   `Agent(config)` 当作服务入口行为。
-- 身份来源是外部认证层：`service_token`、`trusted_headers` 或 `jwt`。
+- 身份来源是外部认证层：`jwt` 或 `trusted_headers`。
   FastReAct 不做用户名密码登录、不保存密码、不维护组织后台。
 - 多租户路径固定为
   `{workspaces_root}/tenants/{tenant_key}/users/{safe_user_id}/`，默认根目录是
@@ -130,11 +130,12 @@ FastReAct 的认证边界是“验证外部身份声明”，不是“提供登�
 
 支持模式：
 
-- `service_token`：本地开发或后端服务调用。调用方必须提供 `user_key`，
-  需要隔离时也要提供 `metadata.tenant_key`。
+- `jwt`：验证外部 IdP/AuthNode 签发的 Bearer JWT，推荐生产和 SSO 集成使用。
 - `trusted_headers`：平台网关或 AuthNode proxy 注入
   `X-FastReAct-User-Key`、`X-FastReAct-Tenant-Key` 等可信 header。
-- `jwt`：验证外部 IdP/AuthNode 签发的 Bearer JWT，推荐生产和 SSO 集成使用。
+
+`service_token` 已废弃且会被拒绝：它无法证明真实 tenant/user，只会把
+“拿到服务口令的人可以冒充任意身份”变成隐患。
 
 JWT 配置推荐通过部署层 secret 注入：
 
@@ -185,22 +186,15 @@ Common service endpoints:
 - `GET /v1/skills`
 - `GET /v1/workspace/profile`
 
-If `service.service_token` is configured, protected endpoints require either:
+Protected endpoints require a verified identity. In JWT mode, send:
 
 ```http
-X-FastReAct-Service-Token: replace-with-local-service-token
+Authorization: Bearer <authnode-or-idp-jwt>
 ```
 
-or:
-
-```http
-Authorization: Bearer replace-with-local-service-token
-```
-
-User-facing `POST /v1/chat/completions` and `POST /v1/runs` will bind the run
-to the verified identity. In `service_token` mode, the caller-provided
-`user_key` and `metadata.tenant_key` become that identity. In `trusted_headers`
-or `jwt` mode, request-body identity fields are overridden by verified claims.
+User-facing `POST /v1/chat/completions` and `POST /v1/runs` bind the run to
+the verified identity. Request-body `user_key` / `metadata.tenant_key` are
+metadata only and must not override JWT or trusted-header claims.
 
 ## Prompt Layers
 

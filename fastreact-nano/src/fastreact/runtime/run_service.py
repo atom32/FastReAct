@@ -316,6 +316,8 @@ class RunService:
         )
         tool_issues = self.tool_issues(events)
         tool_arg_issues = self.tool_arg_issues(events)
+        tool_query_issues = self.tool_query_issues(events)
+        tool_budget_issues = self.tool_budget_issues(events)
         tool_scope_applications = self.tool_scope_applications(events)
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         for event in events:
@@ -345,6 +347,10 @@ class RunService:
             "tool_issues": tool_issues,
             "tool_arg_issue_count": len(tool_arg_issues),
             "tool_arg_issues": tool_arg_issues,
+            "tool_query_issue_count": len(tool_query_issues),
+            "tool_query_issues": tool_query_issues,
+            "tool_budget_issue_count": len(tool_budget_issues),
+            "tool_budget_issues": tool_budget_issues,
             "tool_scope_application_count": len(tool_scope_applications),
             "tool_scope_applications": tool_scope_applications,
             "llm_usage_total": usage_total,
@@ -377,6 +383,46 @@ class RunService:
                 "artifact_id": issue.get("artifact_id"),
                 "retry_attempts": issue.get("retry_attempts", 0),
                 "recovered": issue.get("recovered"),
+            })
+        return issues
+
+    @staticmethod
+    def tool_query_issues(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        issues: list[dict[str, Any]] = []
+        for event in events:
+            metadata = event.get("metadata") or {}
+            issue = metadata.get("tool_query_governance")
+            if not isinstance(issue, dict):
+                continue
+            issues.append({
+                "event_type": event.get("type"),
+                "tool_name": event.get("tool_name") or issue.get("tool_name"),
+                "error_code": issue.get("error_code"),
+                "query": issue.get("query"),
+                "similar_query_count": issue.get("similar_query_count"),
+                "configured_budget": issue.get("configured_budget"),
+                "tool_args": event.get("tool_args"),
+            })
+        return issues
+
+    @staticmethod
+    def tool_budget_issues(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        issues: list[dict[str, Any]] = []
+        for event in events:
+            metadata = event.get("metadata") or {}
+            issue = metadata.get("tool_budget_governance")
+            if not isinstance(issue, dict):
+                continue
+            issues.append({
+                "event_type": event.get("type"),
+                "tool_name": event.get("tool_name") or issue.get("tool_name"),
+                "canonical_tool_name": issue.get("canonical_tool_name"),
+                "error_code": issue.get("error_code"),
+                "profile": issue.get("profile"),
+                "observed_count": issue.get("observed_count"),
+                "configured_budget": issue.get("configured_budget"),
+                "retry": issue.get("retry"),
+                "tool_args": event.get("tool_args"),
             })
         return issues
 

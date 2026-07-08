@@ -22,7 +22,7 @@ class IdentityContext:
     email: str = ""
     groups: list[str] = field(default_factory=list)
     roles: list[str] = field(default_factory=list)
-    auth_provider: str = "service_token"
+    auth_provider: str = "jwt"
 
     def to_metadata(self) -> dict[str, Any]:
         identity = {

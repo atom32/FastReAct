@@ -68,7 +68,7 @@
 
   "react": {
     "_comment": "ReAct循环配置",
-    "max_iterations": 20,
+    "max_iterations": 128,
     "enable_steering": true,
     "enable_followup": true,
     "steering_file": ".steering.jsonl",

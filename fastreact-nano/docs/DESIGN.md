@@ -549,7 +549,7 @@ class ReActCore:
 class ReActConfig:
     """ReAct 配置"""
     # 基础配置
-    max_iterations: int = 20
+    max_iterations: int = 128
     timeout: int = 60
 
     # 工具模式

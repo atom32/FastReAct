@@ -56,7 +56,7 @@ class ReActCore:
         self,
         llm: LiteLLMProvider,
         tools: ToolRegistry,
-        max_iterations: int = 20,
+        max_iterations: int = 128,
     ):
         """
         Initialize pure reasoning core

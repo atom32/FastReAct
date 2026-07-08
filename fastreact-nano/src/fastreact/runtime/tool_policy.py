@@ -10,6 +10,7 @@ from fastreact.core.tools import ToolRegistry
 
 SCOPED_READ_TOOL_NAMES = frozenset({
     "pska_pska_search",
+    "pska_pska_index_status",
     "pska_pska_read_evidence_context",
     "pska_pska_graph_context",
     "pska_pska_digest_context",

@@ -94,8 +94,6 @@ def _read_api_key_file(path: Path) -> dict[str, str]:
         data["model"] = lines[1]
     if len(lines) > 2:
         data["base_url"] = lines[2]
-    if len(lines) > 3:
-        data["service_token"] = lines[3]
     return data
 
 
@@ -107,13 +105,6 @@ def _apply_api_key_file(config: LLMConfig) -> LLMConfig:
     config.model = config.model if config.model != "gpt-4o-mini" else data.get("model", config.model)
     config.api_base = config.api_base or data.get("base_url") or data.get("api_base")
     return config
-
-
-def _service_token_from_api_key_file(path: Optional[Path]) -> Optional[str]:
-    if not path:
-        return None
-    data = _read_api_key_file(path)
-    return data.get("service_token") or data.get("fastreact_service_token")
 
 
 def _csv_env_list(name: str) -> list[str]:
@@ -152,7 +143,7 @@ class ToolConfig:
 class ReactConfig:
     """ReAct loop configuration"""
 
-    max_iterations: int = 20
+    max_iterations: int = 128
     enable_steering: bool = True
     enable_followup: bool = True
     steering_file: Path = field(default_factory=lambda: Path.cwd() / ".steering.jsonl")
@@ -183,7 +174,7 @@ class ReactConfig:
         """Create from environment variables"""
         steering_path = os.getenv("FASTRACT_STEERING_FILE")
         return cls(
-            max_iterations=int(os.getenv("FASTRACT_MAX_ITERATIONS", "20")),
+            max_iterations=int(os.getenv("FASTRACT_MAX_ITERATIONS", "128")),
             enable_steering=os.getenv("FASTRACT_ENABLE_STEERING", "true").lower() == "true",
             enable_followup=os.getenv("FASTRACT_ENABLE_FOLLOWUP", "true").lower() == "true",
             steering_file=Path(steering_path) if steering_path else Path.cwd() / ".steering.jsonl",
@@ -327,7 +318,7 @@ class PathsConfig:
 class AuthConfig:
     """Inbound identity verification boundary for HTTP/SSE deployments."""
 
-    mode: str = "service_token"
+    mode: str = "jwt"
     trusted_header_user_key: str = "X-FastReAct-User-Key"
     trusted_header_tenant_key: str = "X-FastReAct-Tenant-Key"
     trusted_header_subject: str = "X-FastReAct-Subject"
@@ -356,7 +347,7 @@ class AuthConfig:
         if not jwt_secret and jwt_secret_env:
             jwt_secret = os.getenv(jwt_secret_env)
         return cls(
-            mode=os.getenv("FASTREACT_AUTH_MODE", "service_token"),
+            mode=os.getenv("FASTREACT_AUTH_MODE", "jwt"),
             trusted_header_user_key=os.getenv("FASTREACT_AUTH_HEADER_USER_KEY", cls.trusted_header_user_key),
             trusted_header_tenant_key=os.getenv("FASTREACT_AUTH_HEADER_TENANT_KEY", cls.trusted_header_tenant_key),
             trusted_header_subject=os.getenv("FASTREACT_AUTH_HEADER_SUBJECT", cls.trusted_header_subject),
@@ -389,7 +380,7 @@ class AuthConfig:
         if not jwt_secret and jwt_secret_env:
             jwt_secret = os.getenv(str(jwt_secret_env))
         return cls(
-            mode=data.get("mode", "service_token"),
+            mode=data.get("mode", "jwt"),
             trusted_header_user_key=data.get("trusted_header_user_key", cls.trusted_header_user_key),
             trusted_header_tenant_key=data.get("trusted_header_tenant_key", cls.trusted_header_tenant_key),
             trusted_header_subject=data.get("trusted_header_subject", cls.trusted_header_subject),
@@ -435,12 +426,11 @@ class ServiceConfig:
 
     @classmethod
     def from_env(cls, api_key_file: Optional[Path] = None) -> "ServiceConfig":
-        token = _service_token_from_api_key_file(api_key_file)
         return cls(
             host=os.getenv("FASTREACT_HOST", "0.0.0.0"),
             port=int(os.getenv("FASTREACT_PORT", str(DEFAULT_SERVICE_PORT))),
             log_level=os.getenv("FASTREACT_LOG_LEVEL", "info"),
-            service_token=token,
+            service_token=None,
             approval_timeout_seconds=float(os.getenv("FASTREACT_APPROVAL_TIMEOUT_SECONDS", "300")),
             run_lease_seconds=float(os.getenv("FASTREACT_RUN_LEASE_SECONDS", "300")),
             run_max_attempts=int(os.getenv("FASTREACT_RUN_MAX_ATTEMPTS", "3")),
@@ -455,7 +445,6 @@ class ServiceConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], api_key_file: Optional[Path] = None) -> "ServiceConfig":
-        token = data.get("service_token") or data.get("token") or _service_token_from_api_key_file(api_key_file)
         cors_origins = data.get("cors_origins", []) or []
         if isinstance(cors_origins, str):
             cors_origins = [cors_origins]
@@ -463,7 +452,7 @@ class ServiceConfig:
             host=data.get("host", "0.0.0.0"),
             port=int(data.get("port", DEFAULT_SERVICE_PORT)),
             log_level=data.get("log_level", "info"),
-            service_token=token,
+            service_token=None,
             approval_timeout_seconds=float(data.get("approval_timeout_seconds", 300.0)),
             run_lease_seconds=float(data.get("run_lease_seconds", 300.0)),
             run_max_attempts=int(data.get("run_max_attempts", 3)),
@@ -639,7 +628,7 @@ class Config:
         FASTRACT_MAX_FILE_SIZE: Max file size in bytes (default: 1048576)
         FASTRACT_EXEC_TIMEOUT: Exec timeout in seconds (default: 30)
         FASTRACT_WORKING_DIR: Working directory for exec
-        FASTRACT_MAX_ITERATIONS: Max ReAct iterations (default: 20)
+        FASTRACT_MAX_ITERATIONS: Runtime circuit breaker for ReAct iterations (default: 128)
         FASTRACT_ENABLE_STEERING: Enable steering (default: true)
         FASTRACT_ENABLE_FOLLOWUP: Enable follow-up (default: true)
         FASTRACT_STEERING_FILE: Steering file path
@@ -664,7 +653,7 @@ class Config:
         FASTRACT_USER_SKILLS_TEMPLATE: User skills path template (default: {user_workspace}/skills)
         FASTREACT_WORKSPACES_ROOT: Runtime workspace root (default: ~/FastReAct_workspaces)
         FASTREACT_GATEWAY_WORKSPACE: Legacy single-workspace override (default: {workspaces_root}/single/default)
-        FASTREACT_AUTH_MODE: service_token, trusted_headers, or jwt (default: service_token)
+        FASTREACT_AUTH_MODE: jwt or trusted_headers (default: jwt). service_token is deprecated and rejected.
         FASTREACT_AUTH_JWT_SECRET: JWT shared secret for env-based config
         FASTREACT_AUTH_JWT_SECRET_ENV: Name of the env var holding the JWT shared secret
         FASTRACT_EXTENSIONS_RUNTIME_RELOAD: Enable authenticated runtime extension reload (default: false)

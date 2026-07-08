@@ -42,7 +42,7 @@
     "gateway_workspace": "~/FastReAct_workspaces/single/pska"
   },
   "react": {
-    "max_iterations": 20,
+    "max_iterations": 128,
     "max_context_tokens": 128000,
     "sliding_window_size": 15,
     "max_tool_output_chars": 20000,
